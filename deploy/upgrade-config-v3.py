@@ -123,7 +123,7 @@ def main() -> None:
         "endpoint": old.get("endpoint"),
         "secret": old.get("secret"),
         "report_interval_seconds": old.get("report_interval_seconds", 60),
-        "probe_interval_seconds": old.get("probe_interval_seconds", 300),
+        "probe_interval_seconds": old.get("probe_interval_seconds", 60),
         "services": services,
         "probes": probes,
         "spool_path": old.get("spool_path", "/var/lib/vpsmon/pending.json"),

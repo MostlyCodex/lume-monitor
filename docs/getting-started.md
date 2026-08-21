@@ -305,27 +305,40 @@ ssh <ssh-user>@<vps-host> "systemctl is-active vpsmon-agent.service && sudo jour
 | 配置 | 含义 | 模板默认值 |
 | --- | --- | ---: |
 | `report_interval_seconds` | 采集资源、服务状态并上报最新值 | 60 秒 |
-| `probe_interval_seconds` | 真正执行 ICMP/TCP/TLS 主动探测 | 300 秒 |
+| `probe_interval_seconds` | 真正执行 ICMP/TCP/TLS 主动探测 | 60 秒 |
 
-所以默认状态下，CPU/RAM/Disk 每分钟更新，网络探针每 5 分钟产生一个新样本；中间报告会携带最近一次探测结果，不会重复发包。
+所以默认状态下，CPU/RAM/Disk 和网络质量都按分钟更新。ICMP 默认每个目标发送 5 个 Echo；一次探测仍只形成该节点这一轮的一条紧凑 D1 记录，不会按目标拆成多行。
 
 约束：上报间隔为 30–600 秒；探测间隔不得短于上报间隔，且不得超过 3600 秒。
 
 建议：
 
-- 免费 D1、节点或探针较多：保留 300 秒最稳妥；
-- 约 5 台节点、十余个探针，希望更及时：优化后的后端建议先试 180 秒并观察 D1；
-- 需要 1 分钟线路曲线：可设为 60 秒，但应使用 Workers Paid，或先根据实际探针数核算并持续观察 D1 写入量；
+- 约 5 台节点、十余个探针：保持 60 秒默认值，并在运行 24 小时后核对 D1 Analytics；
+- 免费计划扩容前：按下式重新核算，建议将日写入控制在 8 万以内，为目录变化、事件和迁移保留余量；
+- 若接近预算：先将 `probe_interval_seconds` 调为 120 或 180 秒；仍不足时再同步提高 `report_interval_seconds`；
 - 30 秒虽然是技术下限，但会同时加倍 Worker 请求、资源样本和数据库写入，不建议作为长期默认值。
 
-估算探测量：
+当前存储会将资源样本和整轮探针分别写成一行，并使用时间开头的 `WITHOUT ROWID` 主键。旧表只读兼容至历史自然过期，不进行高成本回填。保守估算免费额度：
 
 ```text
-每日探测轮数 = 所有节点的探针总数 × 86400 ÷ probe_interval_seconds
+R = 86400 ÷ report_interval_seconds
+N = 在线节点数
+Q = 至少配置一个探针的节点数
+P = 全部节点的探针总数
+
+每日稳态写入约为：
+  R × (4N + 2Q)       # 最新状态、资源历史、探针轮次及30天后的删除
+  + 1512N + 216P      # 重叠窗口的小时聚合（保守按索引写入计）
+  + 3 × (7N + P)      # 日聚合
+
+示例 N=5、Q=4、P=21、R=1440：约 52,584 行/日；
+计入偶发目录和事件写入后，按约 5.5–6.5 万行/日规划。
+
+每日探测轮数 = P × 86400 ÷ probe_interval_seconds
 每日 ICMP Echo 数 = ICMP 探测轮数 × samples
 ```
 
-D1 按实际读写行计量，索引更新也可能计为额外写入。修改频率前请查看 Cloudflare D1 Analytics；免费额度以 [Cloudflare D1 官方定价](https://developers.cloudflare.com/d1/platform/pricing/) 为准。
+D1 按实际读写行计量，索引更新和删除也会计入写入。公式是容量规划上界，不替代账单数据；运行满 24 小时后应查看 Cloudflare D1 Analytics。当前免费额度和数据库尺寸限制以 [Cloudflare D1 官方定价](https://developers.cloudflare.com/d1/platform/pricing/) 为准。
 
 ## 9. 常见问题
 

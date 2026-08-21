@@ -13,7 +13,7 @@ import {
   compactRecentObservability,
   computeNetworkRates,
   metricSampleStatement,
-  probeSampleStatement,
+  probeRoundStatement,
   rebuildObservabilityDay,
 } from "./observability";
 import {
@@ -72,6 +72,28 @@ function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+function reportMaxAgeSeconds(env: Env): number {
+  return Math.max(60, Math.min(900, Number(env.REPORT_MAX_AGE_SECONDS) || 300));
+}
+
+function nextRecentNonces(raw: string | null | undefined, nonce: string, now: number, maxAge: number): string | null {
+  let parsed: unknown = [];
+  try {
+    parsed = JSON.parse(raw ?? "[]");
+  } catch {
+    parsed = [];
+  }
+  const active: Array<[string, number]> = Array.isArray(parsed)
+    ? parsed
+        .filter((entry): entry is [string, number] =>
+          Array.isArray(entry) && typeof entry[0] === "string" && Number.isInteger(entry[1]) && now - entry[1] <= maxAge
+        )
+        .slice(-40)
+    : [];
+  if (active.some(([value]) => value === nonce)) return null;
+  return JSON.stringify([...active, [nonce, now]].slice(-40));
+}
+
 function sourceIdentity(request: Request): SourceIdentity {
   const cf = ((request as Request & { cf?: Record<string, unknown> }).cf ?? {}) as Record<string, unknown>;
   const asn = typeof cf.asn === "number" && Number.isInteger(cf.asn) ? cf.asn : null;
@@ -109,7 +131,7 @@ async function authenticateReport(
     return json({ error: "invalid authentication headers" }, 401);
   }
   const timestampNumber = Number(timestamp);
-  const maxAge = Math.max(60, Math.min(900, Number(env.REPORT_MAX_AGE_SECONDS) || 300));
+  const maxAge = reportMaxAgeSeconds(env);
   if (!Number.isInteger(timestampNumber) || Math.abs(now - timestampNumber) > maxAge) {
     return json({ error: "request timestamp outside allowed window", server_time: now }, 401);
   }
@@ -430,14 +452,10 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
     return json({ error: error instanceof Error ? error.message : "invalid report" }, 422);
   }
 
-  const dedup = await env.DB.prepare("INSERT OR IGNORE INTO ingest_dedup(node_id, nonce, received_at) VALUES (?, ?, ?)")
-    .bind(report.node_id, authentication.nonce, now)
-    .run();
-  if ((dedup.meta.changes ?? 0) !== 1) return json({ error: "replayed request" }, 409);
-
   const source = sourceIdentity(request);
   const prior = await env.DB.prepare(
-    "SELECT approved_ip, source_ip, reported_at, last_boot_id, report_json FROM node_latest WHERE node_id = ?",
+    "SELECT approved_ip, source_ip, reported_at, last_boot_id, report_json, recent_nonces_json " +
+      "FROM node_latest WHERE node_id = ?",
   )
     .bind(report.node_id)
     .first<{
@@ -446,7 +464,15 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
       reported_at: number;
       last_boot_id: string | null;
       report_json: string;
+      recent_nonces_json: string;
     }>();
+  const recentNoncesJson = nextRecentNonces(
+    prior?.recent_nonces_json,
+    authentication.nonce,
+    now,
+    reportMaxAgeSeconds(env),
+  );
+  if (recentNoncesJson === null) return json({ error: "replayed request" }, 409);
   const approvedIp = prior?.approved_ip ?? source.ip;
   let previousReport: AgentReport | null = null;
   try {
@@ -461,16 +487,23 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
     previousReport = null;
   }
   const networkRates = computeNetworkRates(report, previousReport);
+  const currentProbeRoundAt = report.probes.reduce((latest, probe) => Math.max(latest, probe.checked_at), 0);
+  const previousProbeRoundAt = previousReport?.probes.reduce(
+    (latest, probe) => Math.max(latest, probe.checked_at),
+    0,
+  ) ?? 0;
   const normalized = JSON.stringify(report);
   const statements = [
     ...catalogStatements(env, report, now),
     env.DB.prepare(
-      "INSERT INTO node_latest(node_id, received_at, reported_at, source_ip, source_asn, source_org, source_country, source_colo, approved_ip, last_boot_id, report_json) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+      "INSERT INTO node_latest(node_id, received_at, reported_at, source_ip, source_asn, source_org, source_country, " +
+        "source_colo, approved_ip, last_boot_id, report_json, recent_nonces_json, network_rx_rate_bps, network_tx_rate_bps) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
         "ON CONFLICT(node_id) DO UPDATE SET received_at=excluded.received_at, reported_at=excluded.reported_at, " +
         "source_ip=excluded.source_ip, source_asn=excluded.source_asn, source_org=excluded.source_org, source_country=excluded.source_country, " +
         "source_colo=excluded.source_colo, approved_ip=COALESCE(node_latest.approved_ip, excluded.approved_ip), " +
-        "last_boot_id=excluded.last_boot_id, report_json=excluded.report_json " +
+        "last_boot_id=excluded.last_boot_id, report_json=excluded.report_json, recent_nonces_json=excluded.recent_nonces_json, " +
+        "network_rx_rate_bps=excluded.network_rx_rate_bps, network_tx_rate_bps=excluded.network_tx_rate_bps " +
         "WHERE excluded.reported_at >= node_latest.reported_at",
     ).bind(
       report.node_id,
@@ -484,11 +517,14 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
       approvedIp,
       report.system.boot_id,
       normalized,
+      recentNoncesJson,
+      networkRates.rxBps,
+      networkRates.txBps,
     ),
     metricSampleStatement(env, report, now, networkRates),
   ];
-  for (const probe of report.probes) {
-    statements.push(probeSampleStatement(env, report.node_id, probe, now));
+  if (report.probes.length > 0 && currentProbeRoundAt > previousProbeRoundAt) {
+    statements.push(probeRoundStatement(env, report.node_id, report.probes, now));
   }
   if (source.ip && (!prior || prior.source_ip !== source.ip)) {
     statements.push(
@@ -606,13 +642,14 @@ async function telegramCommandMessage(env: Env, command: TelegramCommand, now: n
 
 async function cleanup(env: Env, now: number): Promise<void> {
   await env.DB.batch([
-    env.DB.prepare("DELETE FROM ingest_dedup WHERE received_at < ?").bind(now - 10 * 60),
     env.DB.prepare("DELETE FROM snapshots WHERE received_at < ?").bind(now - 30 * DAY_SECONDS),
     env.DB.prepare("DELETE FROM metric_rollups WHERE bucket < ?").bind(now - 30 * DAY_SECONDS),
     env.DB.prepare("DELETE FROM probe_rollups WHERE bucket < ?").bind(now - 30 * DAY_SECONDS),
     env.DB.prepare("DELETE FROM probe_sample_dedup WHERE ingested_at < ?").bind(now - 30 * DAY_SECONDS),
     env.DB.prepare("DELETE FROM metric_samples_v2 WHERE received_at < ?").bind(now - 30 * DAY_SECONDS),
     env.DB.prepare("DELETE FROM probe_samples_v2 WHERE received_at < ?").bind(now - 30 * DAY_SECONDS),
+    env.DB.prepare("DELETE FROM metric_samples_v3 WHERE received_at < ?").bind(now - 30 * DAY_SECONDS),
+    env.DB.prepare("DELETE FROM probe_rounds_v3 WHERE received_at < ?").bind(now - 30 * DAY_SECONDS),
     env.DB.prepare("DELETE FROM metric_series_rollups WHERE resolution = 'hour' AND bucket < ?").bind(now - 400 * DAY_SECONDS),
     env.DB.prepare("DELETE FROM probe_series_rollups WHERE resolution = 'hour' AND bucket < ?").bind(now - 400 * DAY_SECONDS),
     env.DB.prepare("DELETE FROM metric_series_rollups WHERE resolution = 'day' AND bucket < ?").bind(now - 730 * DAY_SECONDS),

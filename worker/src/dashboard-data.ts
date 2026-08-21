@@ -6,7 +6,15 @@ import {
   type NodeCatalogRow,
   type ProbeCatalogRow,
 } from "./catalog";
-import { summarizeNumbers, summarizeRoute, type ProbeSampleRow } from "./observability";
+import {
+  metricSamplesRangeBindings,
+  metricSamplesRangeSourceSql,
+  probeSamplesRangeBindings,
+  probeSamplesRangeSourceSql,
+  summarizeNumbers,
+  summarizeRoute,
+  type ProbeSampleRow,
+} from "./observability";
 import type { AgentReport, Env, NodeId, Severity } from "./types";
 
 interface LatestRow {
@@ -17,13 +25,9 @@ interface LatestRow {
   source_asn: number | null;
   source_country: string | null;
   source_colo: string | null;
-  report_json: string;
-}
-
-interface LatestMetricRow {
-  node_id: NodeId;
   network_rx_rate_bps: number | null;
   network_tx_rate_bps: number | null;
+  report_json: string;
 }
 
 interface ObservabilityEventRow {
@@ -156,19 +160,19 @@ export function normalizeHistoryHours(value: string | null): HistoryHours {
   return 24;
 }
 
+function rawHistoryEnd(env: Env, now: number): number {
+  const acceptedClockSkew = Math.max(60, Math.min(900, Number(env.REPORT_MAX_AGE_SECONDS) || 300));
+  return now + acceptedClockSkew + 1;
+}
+
 export async function latestDashboardData(env: Env, now: number): Promise<Record<string, unknown>> {
-  const [catalog, nodeRows, latestMetricRows, operationalEvents] = await Promise.all([
+  const [catalog, nodeRows, operationalEvents] = await Promise.all([
     loadDashboardCatalog(env),
     env.DB.prepare(
-      "SELECT node_id, received_at, reported_at, source_ip, source_asn, source_country, source_colo, report_json " +
+      "SELECT node_id, received_at, reported_at, source_ip, source_asn, source_country, source_colo, " +
+        "network_rx_rate_bps, network_tx_rate_bps, report_json " +
         "FROM node_latest ORDER BY node_id",
     ).all<LatestRow>(),
-    env.DB.prepare(
-      "SELECT samples.node_id, samples.network_rx_rate_bps, samples.network_tx_rate_bps " +
-        "FROM metric_samples_v2 AS samples INNER JOIN (" +
-        "SELECT node_id, MAX(reported_at) AS reported_at FROM metric_samples_v2 GROUP BY node_id" +
-        ") AS latest ON latest.node_id = samples.node_id AND latest.reported_at = samples.reported_at",
-    ).all<LatestMetricRow>(),
     env.DB.prepare(
       "SELECT node_id, severity, event_type, occurred_at, title, detail " +
         "FROM observability_events WHERE occurred_at >= ? ORDER BY occurred_at DESC LIMIT 50",
@@ -179,7 +183,6 @@ export async function latestDashboardData(env: Env, now: number): Promise<Record
   const { byInternal } = nodeMaps(catalog);
   const probesByKey = probeMap(catalog);
   const reports = new Map(nodeRows.results.map((row) => [row.node_id, row]));
-  const rates = new Map(latestMetricRows.results.map((row) => [row.node_id, row]));
 
   const nodes = catalog.nodes.map((meta) => {
     const row = reports.get(meta.node_id);
@@ -236,7 +239,6 @@ export async function latestDashboardData(env: Env, now: number): Promise<Record
       })
       .sort((left, right) => left.order - right.order);
     const unhealthyService = services.find((service) => service.state !== "active");
-    const rate = rates.get(meta.node_id);
     return {
       ...publicNodeCatalogEntry(meta),
       online,
@@ -271,8 +273,8 @@ export async function latestDashboardData(env: Env, now: number): Promise<Record
         uptime_seconds: Math.max(0, report.system.uptime_seconds),
         network_rx_bytes: Math.max(0, report.system.network_rx_bytes),
         network_tx_bytes: Math.max(0, report.system.network_tx_bytes),
-        network_rx_rate_bps: rate?.network_rx_rate_bps ?? null,
-        network_tx_rate_bps: rate?.network_tx_rate_bps ?? null,
+        network_rx_rate_bps: row.network_rx_rate_bps ?? null,
+        network_tx_rate_bps: row.network_tx_rate_bps ?? null,
         network_rx_errors: Math.max(0, report.system.network_rx_errors),
         network_tx_errors: Math.max(0, report.system.network_tx_errors),
         network_rx_drops: Math.max(0, report.system.network_rx_drops),
@@ -357,7 +359,7 @@ export async function latestDashboardData(env: Env, now: number): Promise<Record
     nodes,
     alerts: [],
     recent_events: recentEvents,
-    cadence: { resources_seconds: 60, probes_seconds: 300 },
+    cadence: { resources_seconds: 60, probes_seconds: 60 },
   };
 }
 
@@ -404,7 +406,11 @@ export async function dashboardHistoryData(
   const internalNodeId = selectedNode?.node_id ?? null;
   const outputBucket = hours <= 24 ? 300 : hours <= 720 ? 3600 : 86400;
   const since = now - hours * 60 * 60;
-  const nodeFilter = historyNodeClause(internalNodeId);
+  const rawEnd = rawHistoryEnd(env, now);
+  const metricTrendSource = metricSamplesRangeSourceSql(internalNodeId !== null);
+  const metricTrendBindings = metricSamplesRangeBindings(since, rawEnd, internalNodeId);
+  const probeTrendSource = probeSamplesRangeSourceSql(internalNodeId !== null);
+  const probeTrendBindings = probeSamplesRangeBindings(since, rawEnd, internalNodeId);
 
   let metricRows: MetricTrendRow[];
   let probeRows: ProbeTrendRow[];
@@ -417,10 +423,10 @@ export async function dashboardHistoryData(
           "ROUND(AVG(disk_used_percent), 2) AS disk_used_percent, ROUND(AVG(inode_used_percent), 2) AS inode_used_percent, " +
           "ROUND(AVG(load1), 2) AS load1, ROUND(AVG(network_rx_rate_bps), 2) AS network_rx_rate_bps, " +
           "ROUND(AVG(network_tx_rate_bps), 2) AS network_tx_rate_bps " +
-          "FROM metric_samples_v2 WHERE reported_at >= ?" + nodeFilter.sql +
+          "FROM " + metricTrendSource + " AS samples" +
           " GROUP BY node_id, timestamp ORDER BY timestamp, node_id",
       )
-        .bind(outputBucket, outputBucket, since, ...nodeFilter.values)
+        .bind(outputBucket, outputBucket, ...metricTrendBindings)
         .all<MetricTrendRow>(),
       env.DB.prepare(
         "SELECT node_id, probe_name, CAST(checked_at / ? AS INTEGER) * ? AS timestamp, " +
@@ -433,10 +439,10 @@ export async function dashboardHistoryData(
           "ROUND(100.0 * (SUM(attempted_samples) - SUM(successful_samples)) / " +
           "NULLIF(SUM(attempted_samples), 0), 3) AS sample_failure_percent, " +
           "ROUND(100.0 * SUM(attempted_samples) / NULLIF(SUM(samples), 0), 3) AS sample_coverage_percent, " +
-          "COUNT(*) AS rounds FROM probe_samples_v2 WHERE checked_at >= ?" + nodeFilter.sql +
+          "COUNT(*) AS rounds FROM " + probeTrendSource + " AS samples" +
           " GROUP BY node_id, probe_name, timestamp ORDER BY timestamp, node_id, probe_name",
       )
-        .bind(outputBucket, outputBucket, since, ...nodeFilter.values)
+        .bind(outputBucket, outputBucket, ...probeTrendBindings)
         .all<ProbeTrendRow>(),
     ]);
     metricRows = metrics.results;
@@ -483,16 +489,17 @@ export async function dashboardHistoryData(
   probeRows = probeRows.filter((row) => probesByKey.has(`${row.node_id}:${row.probe_name}`));
 
   const routeSince = Math.max(since, now - 30 * 86400);
+  const routeProbeSource = probeSamplesRangeSourceSql();
   const routeSamples = await env.DB.prepare(
     "SELECT samples.node_id, samples.probe_name, samples.checked_at, samples.success, samples.duration_ms, " +
       "samples.average_duration_ms, samples.p95_duration_ms, samples.min_duration_ms, samples.max_duration_ms, " +
       "samples.range_ms, samples.jitter_ms, samples.samples, samples.attempted_samples, samples.successful_samples, " +
       "samples.sample_failure_percent, samples.packet_loss_percent, samples.complete " +
-      "FROM probe_samples_v2 AS samples INNER JOIN business_routes AS routes " +
+      "FROM " + routeProbeSource + " AS samples INNER JOIN business_routes AS routes " +
       "ON routes.source_node_id = samples.node_id AND routes.probe_name = samples.probe_name " +
-      "WHERE routes.enabled = 1 AND samples.checked_at >= ? ORDER BY samples.node_id, samples.probe_name, samples.checked_at",
+      "WHERE routes.enabled = 1 ORDER BY samples.node_id, samples.probe_name, samples.checked_at",
   )
-    .bind(routeSince)
+    .bind(...probeSamplesRangeBindings(routeSince, rawEnd))
     .all<ProbeSampleRow>();
   const routeData = catalog.routes.map((route) => {
     const rows = routeSamples.results.filter(
@@ -540,13 +547,14 @@ export async function dashboardHistoryData(
   let probeSummaries: Array<Record<string, unknown>> = [];
   if (selectedNode) {
     const summarySince = Math.max(since, now - 30 * 86400);
+    const summaryProbeSource = probeSamplesRangeSourceSql(true);
     const samples = await env.DB.prepare(
       "SELECT node_id, probe_name, checked_at, success, duration_ms, average_duration_ms, p95_duration_ms, " +
         "min_duration_ms, max_duration_ms, range_ms, jitter_ms, samples, attempted_samples, successful_samples, " +
-        "sample_failure_percent, packet_loss_percent, complete FROM probe_samples_v2 " +
-        "WHERE node_id = ? AND checked_at >= ? ORDER BY probe_name, checked_at",
+        "sample_failure_percent, packet_loss_percent, complete FROM " + summaryProbeSource +
+        " AS samples ORDER BY probe_name, checked_at",
     )
-      .bind(selectedNode.node_id, summarySince)
+      .bind(...probeSamplesRangeBindings(summarySince, rawEnd, selectedNode.node_id))
       .all<ProbeSampleRow>();
     const grouped = new Map<string, ProbeSampleRow[]>();
     for (const sample of samples.results) {

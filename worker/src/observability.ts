@@ -137,15 +137,15 @@ export function metricSampleStatement(
     ? (report.system.swap_used_bytes / report.system.swap_total_bytes) * 100
     : 0;
   return env.DB.prepare(
-    "INSERT OR IGNORE INTO metric_samples_v2(" +
-      "node_id, reported_at, received_at, boot_id, cpu_percent, memory_used_percent, " +
+    "INSERT OR IGNORE INTO metric_samples_v3(" +
+      "reported_at, node_id, received_at, boot_id, cpu_percent, memory_used_percent, " +
       "disk_used_percent, inode_used_percent, load1, load5, load15, swap_used_percent, " +
       "network_rx_bytes, network_tx_bytes, network_rx_rate_bps, network_tx_rate_bps, " +
       "network_rx_errors, network_tx_errors, network_rx_drops, network_tx_drops" +
       ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).bind(
-    report.node_id,
     report.generated_at,
+    report.node_id,
     receivedAt,
     report.system.boot_id,
     report.system.cpu_percent,
@@ -167,41 +167,107 @@ export function metricSampleStatement(
   );
 }
 
-export function probeSampleStatement(
+export function metricSamplesRangeSourceSql(nodeFiltered = false): string {
+  const legacyNodeClause = nodeFiltered ? " AND node_id = ?" : "";
+  const currentNodeClause = nodeFiltered ? " AND node_id = ?" : "";
+  const columns = "node_id, reported_at, cpu_percent, memory_used_percent, disk_used_percent, " +
+    "inode_used_percent, load1, network_rx_rate_bps, network_tx_rate_bps";
+  return "(" +
+    "SELECT " + columns + " FROM metric_samples_v2 WHERE reported_at >= ? AND reported_at < ?" + legacyNodeClause +
+    " UNION ALL " +
+    "SELECT " + columns + " FROM metric_samples_v3 WHERE reported_at >= ? AND reported_at < ?" + currentNodeClause +
+    ")";
+}
+
+export function metricSamplesRangeBindings(
+  start: number,
+  end: number,
+  nodeId: string | null = null,
+): Array<number | string> {
+  return nodeId === null
+    ? [start, end, start, end]
+    : [start, end, nodeId, start, end, nodeId];
+}
+
+export function probeRoundStatement(
   env: Env,
   nodeId: string,
-  probe: ProbeResult,
+  probes: ProbeResult[],
   receivedAt: number,
 ): D1PreparedStatement {
-  const samples = Math.max(1, probe.samples ?? 1);
-  const attemptedSamples = Math.max(0, probe.attempted_samples ?? samples);
-  const successfulSamples = Math.max(0, probe.successful_samples ?? (probe.success ? 1 : 0));
+  if (probes.length === 0) throw new Error("probe round must contain at least one probe");
+  const roundAt = Math.max(...probes.map((probe) => probe.checked_at));
+  const packed = probes.map((probe) => {
+    const samples = Math.max(1, probe.samples ?? 1);
+    const attemptedSamples = Math.max(0, probe.attempted_samples ?? samples);
+    const successfulSamples = Math.max(0, probe.successful_samples ?? (probe.success ? 1 : 0));
+    return [
+      probe.name,
+      probe.checked_at,
+      probe.success ? 1 : 0,
+      probe.duration_ms,
+      probe.average_duration_ms ?? probe.duration_ms,
+      probe.p95_duration_ms ?? probe.duration_ms,
+      probe.min_duration_ms ?? null,
+      probe.max_duration_ms ?? null,
+      probe.range_ms ?? null,
+      probe.jitter_ms ?? null,
+      samples,
+      attemptedSamples,
+      successfulSamples,
+      probe.sample_failure_percent,
+      probe.packet_loss_percent ?? null,
+      probe.complete ? 1 : 0,
+    ];
+  });
   return env.DB.prepare(
-    "INSERT OR IGNORE INTO probe_samples_v2(" +
-      "node_id, probe_name, checked_at, received_at, success, duration_ms, average_duration_ms, p95_duration_ms, " +
-      "min_duration_ms, max_duration_ms, range_ms, jitter_ms, samples, attempted_samples, successful_samples, " +
-      "sample_failure_percent, packet_loss_percent, complete" +
-      ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT OR IGNORE INTO probe_rounds_v3(round_at, node_id, received_at, probes_json) VALUES (?, ?, ?, ?)",
   ).bind(
+    roundAt,
     nodeId,
-    probe.name,
-    probe.checked_at,
     receivedAt,
-    probe.success ? 1 : 0,
-    probe.duration_ms,
-    probe.average_duration_ms ?? probe.duration_ms,
-    probe.p95_duration_ms ?? probe.duration_ms,
-    probe.min_duration_ms ?? null,
-    probe.max_duration_ms ?? null,
-    probe.range_ms ?? null,
-    probe.jitter_ms ?? null,
-    samples,
-    attemptedSamples,
-    successfulSamples,
-    probe.sample_failure_percent,
-    probe.packet_loss_percent ?? null,
-    probe.complete ? 1 : 0,
+    JSON.stringify(packed),
   );
+}
+
+export function probeSamplesRangeSourceSql(nodeFiltered = false): string {
+  const legacyNodeClause = nodeFiltered ? " AND node_id = ?" : "";
+  const packedNodeClause = nodeFiltered ? " AND rounds.node_id = ?" : "";
+  return "(" +
+    "SELECT node_id, probe_name, checked_at, success, duration_ms, average_duration_ms, p95_duration_ms, " +
+      "min_duration_ms, max_duration_ms, range_ms, jitter_ms, samples, attempted_samples, successful_samples, " +
+      "sample_failure_percent, packet_loss_percent, complete FROM probe_samples_v2 " +
+      "WHERE checked_at >= ? AND checked_at < ?" + legacyNodeClause +
+    " UNION ALL " +
+    "SELECT rounds.node_id AS node_id, CAST(json_extract(sample.value, '$[0]') AS TEXT) AS probe_name, " +
+      "CAST(json_extract(sample.value, '$[1]') AS INTEGER) AS checked_at, " +
+      "CAST(json_extract(sample.value, '$[2]') AS INTEGER) AS success, " +
+      "CAST(json_extract(sample.value, '$[3]') AS REAL) AS duration_ms, " +
+      "CAST(json_extract(sample.value, '$[4]') AS REAL) AS average_duration_ms, " +
+      "CAST(json_extract(sample.value, '$[5]') AS REAL) AS p95_duration_ms, " +
+      "CAST(json_extract(sample.value, '$[6]') AS REAL) AS min_duration_ms, " +
+      "CAST(json_extract(sample.value, '$[7]') AS REAL) AS max_duration_ms, " +
+      "CAST(json_extract(sample.value, '$[8]') AS REAL) AS range_ms, " +
+      "CAST(json_extract(sample.value, '$[9]') AS REAL) AS jitter_ms, " +
+      "CAST(json_extract(sample.value, '$[10]') AS INTEGER) AS samples, " +
+      "CAST(json_extract(sample.value, '$[11]') AS INTEGER) AS attempted_samples, " +
+      "CAST(json_extract(sample.value, '$[12]') AS INTEGER) AS successful_samples, " +
+      "CAST(json_extract(sample.value, '$[13]') AS REAL) AS sample_failure_percent, " +
+      "CAST(json_extract(sample.value, '$[14]') AS REAL) AS packet_loss_percent, " +
+      "CAST(json_extract(sample.value, '$[15]') AS INTEGER) AS complete " +
+      "FROM probe_rounds_v3 AS rounds CROSS JOIN json_each(rounds.probes_json) AS sample " +
+      "WHERE rounds.round_at >= ? AND rounds.round_at < ?" + packedNodeClause +
+    ")";
+}
+
+export function probeSamplesRangeBindings(
+  start: number,
+  end: number,
+  nodeId: string | null = null,
+): Array<number | string> {
+  return nodeId === null
+    ? [start, end, start, end]
+    : [start, end, nodeId, start, end, nodeId];
 }
 
 async function runBatches(env: Env, statements: D1PreparedStatement[]): Promise<void> {
@@ -222,21 +288,23 @@ export async function compactObservabilityRange(
   resolution: "hour" | "day",
 ): Promise<{ metricRollups: number; probeRollups: number }> {
   const seconds = resolution === "hour" ? 3600 : 86400;
+  const metricSource = metricSamplesRangeSourceSql();
+  const probeSource = probeSamplesRangeSourceSql();
   const [metricResult, probeResult] = await Promise.all([
     env.DB.prepare(
       "SELECT node_id, reported_at, cpu_percent, memory_used_percent, disk_used_percent, " +
-        "inode_used_percent, load1, network_rx_rate_bps, network_tx_rate_bps " +
-        "FROM metric_samples_v2 WHERE reported_at >= ? AND reported_at < ? ORDER BY node_id, reported_at",
+        "inode_used_percent, load1, network_rx_rate_bps, network_tx_rate_bps FROM " + metricSource +
+        " AS samples ORDER BY node_id, reported_at",
     )
-      .bind(start, end)
+      .bind(...metricSamplesRangeBindings(start, end))
       .all<MetricSampleRow>(),
     env.DB.prepare(
       "SELECT node_id, probe_name, checked_at, success, duration_ms, average_duration_ms, p95_duration_ms, " +
         "min_duration_ms, max_duration_ms, range_ms, jitter_ms, samples, attempted_samples, successful_samples, " +
-        "sample_failure_percent, packet_loss_percent, complete FROM probe_samples_v2 " +
-        "WHERE checked_at >= ? AND checked_at < ? ORDER BY node_id, probe_name, checked_at",
+        "sample_failure_percent, packet_loss_percent, complete FROM " + probeSource +
+        " AS samples ORDER BY node_id, probe_name, checked_at",
     )
-      .bind(start, end)
+      .bind(...probeSamplesRangeBindings(start, end))
       .all<ProbeSampleRow>(),
   ]);
 

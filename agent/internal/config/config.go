@@ -194,7 +194,7 @@ func (c *Config) Validate() error {
 		c.ReportIntervalSeconds = 60
 	}
 	if c.ProbeIntervalSeconds == 0 {
-		c.ProbeIntervalSeconds = 300
+		c.ProbeIntervalSeconds = 60
 	}
 	if c.ReportIntervalSeconds < 30 || c.ReportIntervalSeconds > 600 {
 		return errors.New("report_interval_seconds must be between 30 and 600")

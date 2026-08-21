@@ -15,7 +15,7 @@
   "endpoint": "https://monitor.example.workers.dev/api/v1/report",
   "secret": "REPLACE_WITH_A_RANDOM_SECRET_AT_LEAST_32_CHARACTERS",
   "report_interval_seconds": 60,
-  "probe_interval_seconds": 300,
+  "probe_interval_seconds": 60,
   "services": [],
   "probes": [],
   "spool_path": "/var/lib/vpsmon/pending.json"

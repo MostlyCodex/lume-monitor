@@ -51,7 +51,7 @@ D1 contains no seeded node topology. Catalog tables are data-driven:
 - `probe_catalog`: zero or more probes per node;
 - `business_routes`: derived node-to-node relationships.
 
-Other tables store the latest report, metric/probe samples, long-term series rollups, operational events, source-IP history and dashboard login tokens. Runtime ingestion avoids redundant full-report snapshots and obsolete short-term rollup writes; compatibility tables remain in the schema so an upgrade does not destroy existing data. Legacy alert tables likewise remain for migration compatibility but are not read or written by the runtime. Scheduled Worker jobs maintain retention and long-term rollups.
+Other tables store the latest report, metric/probe samples, long-term series rollups, operational events, source-IP history and dashboard login tokens. Current raw history uses time-leading `WITHOUT ROWID` tables: one row per node resource report and one compact JSON row per node probe round. This avoids per-probe and secondary-index write amplification while history queries transparently merge pre-upgrade rows until they expire. Recent replay nonces and current network rates share the already-updated latest-state row instead of creating another write per report. Compatibility tables remain in the schema so an upgrade does not destroy existing data. Legacy alert tables likewise remain for migration compatibility but are not read or written by the runtime. Scheduled Worker jobs maintain retention and long-term rollups.
 
 ### Telegram and dashboard
 

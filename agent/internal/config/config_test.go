@@ -17,7 +17,7 @@ func TestValidateAppliesGenericSafeDefaults(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if cfg.ReportIntervalSeconds != 60 || cfg.ProbeIntervalSeconds != 300 || cfg.Probes[0].TimeoutSeconds != 4 ||
+	if cfg.ReportIntervalSeconds != 60 || cfg.ProbeIntervalSeconds != 60 || cfg.Probes[0].TimeoutSeconds != 4 ||
 		cfg.Probes[0].Samples != 1 || cfg.Probes[0].SampleIntervalMS != 250 {
 		t.Fatalf("safe defaults not applied: %+v", cfg)
 	}

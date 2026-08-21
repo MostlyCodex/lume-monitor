@@ -94,7 +94,7 @@ function latestData() {
     nodes,
     alerts: [],
     recent_events: [],
-    cadence: { resources_seconds: 60, probes_seconds: 300 },
+    cadence: { resources_seconds: 60, probes_seconds: 60 },
   };
 }
 
