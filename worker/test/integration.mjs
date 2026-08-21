@@ -297,6 +297,10 @@ const alphaHistory = historyBody.probes.find((probe) => probe.node_id === "alpha
 assert(alphaHistory?.latency_ms === 11.5, `repeated probe sample was not deduplicated: ${alphaHistory?.latency_ms}`);
 const icmpHistory = historyBody.probes.find((probe) => probe.node_id === "alpha-vps" && probe.probe_name === "external_icmp");
 assert(icmpHistory?.kind === "icmp" && icmpHistory?.packet_loss_percent === 20, "ICMP history semantics are incorrect");
+assert(
+  icmpHistory?.attempted_samples === 5 && icmpHistory?.successful_samples === 4,
+  "fleet history did not expose exact sample counts for weighted loss",
+);
 
 const detail = await fetch(`${base}/api/v1/dashboard/history?hours=24&node=alpha-vps`, { headers: adminHeaders });
 const detailBody = await detail.json();

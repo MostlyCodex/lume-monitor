@@ -12,6 +12,13 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).toContain('.filter((probe) => probe.kind === "icmp")');
     expect(app).toContain("probe.packet_loss_percent");
     expect(app).toContain('metricEnergyStrip(node.id, probe, metric');
+    expect(app).toContain("const ENERGY_LOSS_WARNING_PERCENT = 2");
+    expect(app).toContain("const ENERGY_LOSS_CRITICAL_PERCENT = 10");
+    expect(app).toContain("const ENERGY_LOSS_BURST_PERCENT = 60");
+    expect(app).toContain("function energyLossSeverity");
+    expect(app).toContain("row.attempted_samples");
+    expect(app).toContain("row.successful_samples");
+    expect(app).toContain("severeFiveMinuteLoss");
     expect(app).toContain('probeMetricCard(node, probe, "latency"');
     expect(app).toContain('probeMetricCard(node, probe, "loss"');
     expect(app).toContain('resourceGauge("CPU"');
@@ -122,8 +129,8 @@ describe("dashboard presentation hierarchy", () => {
   });
 
   it("loads the pinned chart library locally instead of from a CDN", () => {
-    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=history-1m');
-    expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=history-1m');
+    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=loss-energy-2-10');
+    expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=loss-energy-2-10');
     expect(html).toContain('/dashboard/vendor/uPlot.iife.min.js');
     expect(html).toContain('/dashboard/vendor/uPlot.min.css');
     expect(html).not.toMatch(/https?:\/\/[^\s"']+u[Pp]lot/);

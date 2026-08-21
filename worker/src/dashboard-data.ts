@@ -67,6 +67,8 @@ interface ProbeTrendRow {
   successful_sample_percent: number;
   sample_failure_percent: number;
   sample_coverage_percent: number;
+  attempted_samples?: number | null;
+  successful_samples?: number | null;
   rounds: number;
 }
 
@@ -445,6 +447,7 @@ export async function dashboardHistoryData(
           "ROUND(100.0 * (SUM(attempted_samples) - SUM(successful_samples)) / " +
           "NULLIF(SUM(attempted_samples), 0), 3) AS sample_failure_percent, " +
           "ROUND(100.0 * SUM(attempted_samples) / NULLIF(SUM(samples), 0), 3) AS sample_coverage_percent, " +
+          "SUM(attempted_samples) AS attempted_samples, SUM(successful_samples) AS successful_samples, " +
           "COUNT(*) AS rounds FROM " + probeTrendSource + " AS samples" +
           " GROUP BY node_id, probe_name, timestamp ORDER BY timestamp, node_id, probe_name",
       )
@@ -478,7 +481,7 @@ export async function dashboardHistoryData(
           "latency_p95 AS latency_p95_ms, jitter_average AS jitter_ms, " +
           "ROUND(100.0 * successes / NULLIF(rounds, 0), 3) AS success_percent, " +
           "successful_sample_percent, 100.0 - successful_sample_percent AS sample_failure_percent, " +
-          "sample_coverage_percent, rounds FROM probe_series_rollups " +
+          "sample_coverage_percent, NULL AS attempted_samples, NULL AS successful_samples, rounds FROM probe_series_rollups " +
           "WHERE resolution = 'day' AND bucket >= ?" + rollupFilter.sql +
           " ORDER BY bucket, node_id, probe_name",
       )

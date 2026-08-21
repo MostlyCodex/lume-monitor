@@ -110,11 +110,13 @@ A TLS probe resolves DNS once per round, connects to the resolved address and co
 | `samples` | 1–10 requested measurements; defaults to 5 for ICMP and 1 otherwise |
 | `sample_interval_ms` | Start interval, 100–5000 ms; defaults to 250 ms |
 | `warning_ms` / `critical_ms` | Optional p50 latency thresholds; zero disables one |
-| `warning_failure_percent` / `critical_failure_percent` | Optional ICMP loss or TCP/TLS connection-failure thresholds; zero disables one |
+| `warning_failure_percent` / `critical_failure_percent` | Optional single-round ICMP loss or TCP/TLS connection-failure thresholds used by current state and route analysis |
 | `severity` | `P1`, `P2`, or `INFO` state classification retained for report compatibility |
 | `display_order` | Stable UI ordering |
 | `primary` | Preferred summary probe for the node |
 
 The warning threshold must not exceed its critical threshold when both are enabled. The sample schedule must fit inside the whole-round timeout. Probe targets generate outbound traffic from your VPS; review authorization, provider policy and expected request volume before enabling them.
+
+The per-probe failure thresholds describe the latest measurement round. They intentionally do not color the dashboard's 24-hour packet-loss energy cells: those long-window cells use exact sample-count weighting, fixed 2%/10% levels, and a 60% five-minute severe-loss guard. This separation prevents a threshold such as 20%—appropriate for one lost Echo out of five—from hiding sustained lower loss across an 80-minute cell. See [monitoring-methodology.md](monitoring-methodology.md#首页当前值与-24-小时能量棒) for the formulas and time scopes.
 
 Exact formulas and limitations are in [monitoring-methodology.md](monitoring-methodology.md).

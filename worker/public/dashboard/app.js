@@ -3,6 +3,9 @@
 
   const ENERGY_SLOTS = 18;
   const ENERGY_WINDOW_HOURS = 24;
+  const ENERGY_LOSS_WARNING_PERCENT = 2;
+  const ENERGY_LOSS_CRITICAL_PERCENT = 10;
+  const ENERGY_LOSS_BURST_PERCENT = 60;
   const PROBE_COLOR_VARIABLES = Object.freeze({
     telecom: "--probe-telecom",
     unicom: "--probe-unicom",
@@ -352,6 +355,16 @@
     return "healthy";
   }
 
+  function energyLossSeverity(lossPercent, worstFiveMinuteLossPercent = 0) {
+    const loss = Number(lossPercent);
+    const worstFiveMinuteLoss = Number(worstFiveMinuteLossPercent);
+    if (!Number.isFinite(loss)) return "healthy";
+    if ((Number.isFinite(worstFiveMinuteLoss) && worstFiveMinuteLoss >= ENERGY_LOSS_BURST_PERCENT) ||
+        loss > ENERGY_LOSS_CRITICAL_PERCENT) return "critical";
+    if (loss > ENERGY_LOSS_WARNING_PERCENT) return "warning";
+    return "healthy";
+  }
+
   function measurementSeverity({ latency, loss, success = true, complete = true }, probe, rows = []) {
     if (!success || complete === false) return "critical";
     return [
@@ -453,27 +466,52 @@
         buckets.push({ empty: true, start: slotStart, end: slotEnd, severity: "empty" });
         continue;
       }
+      if (metric === "loss") {
+        const configuredSamples = Math.max(1, Number(probe?.samples) || 1);
+        const totals = members.reduce((total, row) => {
+          const attempted = Number(row.attempted_samples);
+          const successful = Number(row.successful_samples);
+          const rawLoss = Number(row.packet_loss_percent ?? row.sample_failure_percent);
+          if (Number.isFinite(attempted) && attempted > 0 && Number.isFinite(successful)) {
+            total.attempted += attempted;
+            total.successful += clamp(successful, 0, attempted);
+          } else if (Number.isFinite(rawLoss)) {
+            const estimatedAttempts = Math.max(1, Number(row.rounds) || 1) * configuredSamples;
+            total.attempted += estimatedAttempts;
+            total.successful += estimatedAttempts * (1 - clamp(rawLoss, 0, 100) / 100);
+          }
+          if (Number.isFinite(rawLoss)) total.worstFiveMinuteLoss = Math.max(total.worstFiveMinuteLoss, rawLoss);
+          return total;
+        }, { attempted: 0, successful: 0, worstFiveMinuteLoss: 0 });
+        const loss = totals.attempted
+          ? 100 * (totals.attempted - totals.successful) / totals.attempted
+          : null;
+        buckets.push({
+          empty: loss === null,
+          start: slotStart,
+          end: slotEnd,
+          value: loss,
+          attempted: totals.attempted,
+          successful: totals.successful,
+          severeFiveMinuteLoss: totals.worstFiveMinuteLoss >= ENERGY_LOSS_BURST_PERCENT,
+          severity: energyLossSeverity(loss, totals.worstFiveMinuteLoss),
+        });
+        continue;
+      }
       const latencyValues = members.map((row) => Number(row.latency_ms)).filter(Number.isFinite);
       const latency = latencyValues.length ? latencyValues.reduce((sum, value) => sum + value, 0) / latencyValues.length : null;
-      const weighted = members.reduce((total, row) => {
-        const rawLoss = Number(row.packet_loss_percent ?? row.sample_failure_percent);
-        if (!Number.isFinite(rawLoss)) return total;
-        const rounds = Math.max(1, Number(row.rounds) || 1);
-        return { loss: total.loss + clamp(rawLoss, 0, 100) * rounds, rounds: total.rounds + rounds };
-      }, { loss: 0, rounds: 0 });
-      const loss = weighted.rounds ? weighted.loss / weighted.rounds : null;
-      const value = metric === "latency" ? latency : loss;
-      let severity = probeMetricSeverity(metric, value, probe, thresholdsRows, value !== null);
+      const value = latency;
+      let severity = probeMetricSeverity("latency", value, probe, thresholdsRows, value !== null);
       let criticalSamples = 0;
       let warningSamples = 0;
       for (const row of members) {
-        const sample = metric === "latency" ? row.latency_ms : row.packet_loss_percent ?? row.sample_failure_percent;
+        const sample = row.latency_ms;
         const rowSeverity = probeMetricSeverity(
-          metric,
+          "latency",
           sample,
           probe,
           thresholdsRows,
-          Number.isFinite(Number(sample)) && (metric === "loss" || Number(row.success_percent ?? 100) > 0),
+          Number.isFinite(Number(sample)) && Number(row.success_percent ?? 100) > 0,
         );
         if (rowSeverity === "critical") criticalSamples += 1;
         else if (rowSeverity === "warning") warningSamples += 1;
@@ -494,7 +532,11 @@
       ${buckets.map((bucket, index) => {
         if (bucket.empty) return `<i class="energy-cell is-empty ${index === buckets.length - 1 ? "is-latest" : ""}" title="${escapeHtml(formatTime(bucket.start, true))} · 无采样"></i>`;
         const formattedValue = metric === "latency" ? `${Math.round(bucket.value || 0)} ms` : formatLoss(bucket.value);
-        const title = `${formatTime(bucket.start, true)} · ${metricLabel} ${formattedValue}`;
+        const sampleDetail = metric === "loss" && Number(bucket.attempted) > 0
+          ? ` · 丢失 ${Math.round(Math.max(0, bucket.attempted - bucket.successful))}/${Math.round(bucket.attempted)} 包`
+          : "";
+        const burstDetail = metric === "loss" && bucket.severeFiveMinuteLoss ? " · 含5分钟严重丢包" : "";
+        const title = `${formatTime(bucket.start, true)} · ${metricLabel} ${formattedValue}${sampleDetail}${burstDetail}`;
         return `<i class="energy-cell is-${bucket.severity} ${index === buckets.length - 1 ? "is-latest" : ""}" title="${escapeHtml(title)}"></i>`;
       }).join("")}
     </div>`;
