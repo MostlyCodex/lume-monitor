@@ -2,6 +2,8 @@
 
 This guide describes a fresh generic installation. Replace every example value with your own and never commit the resulting secret-bearing files.
 
+For a PowerShell-friendly, end-to-end first installation including Telegram binding and exact add-node steps, start with [getting-started.md](getting-started.md). This document is the concise operator reference for installation, upgrades and rollback.
+
 ## 1. Prerequisites
 
 - Cloudflare account with Workers and D1 access.
@@ -129,6 +131,7 @@ Create a private staging directory on the VPS matching `/tmp/vpsmon-stage.*`. Pl
 - compiled binary named `vpsmon-agent`;
 - that node's configuration named `config.json`;
 - `deploy/vpsmon-agent.service`;
+- `deploy/install-agent.sh`;
 - `checksums.sha256` covering the three files above.
 
 Example checksum creation inside the staging directory:
@@ -156,9 +159,10 @@ The first accepted report automatically creates the node, service and probe cata
 
 ## 7. Add another VPS later
 
-1. Add a new ID and a new secret to the `NODE_KEYS` JSON secret.
+1. Add a new ID and a new secret to your securely retained **complete** `NODE_KEYS` JSON mapping, then write the complete mapping back with `wrangler secret put NODE_KEYS`. Cloudflare Secrets cannot be read back; submitting only the new entry revokes every omitted node.
 2. Copy `deploy/config.example.json` again and set the new metadata/secret.
-3. Install the same binary and systemd unit.
+3. Reuse the same binary when the CPU architecture matches, then install it with the same unit and installer.
+4. Verify `vpsmon-agent.service`, `/status` and the dashboard after the first accepted report.
 
 Do not reuse node IDs or secrets. No code or schema edit is needed.
 

@@ -36,8 +36,8 @@ The Cloudflare Worker authenticates each report with a per-node HMAC key from `N
 
 After authentication, the Worker:
 
-1. upserts node metadata into `node_catalog`;
-2. synchronizes the node's service and probe catalogs;
+1. inserts or updates node metadata in `node_catalog` only when metadata actually changes;
+2. synchronizes only changed, added or removed service/probe catalog rows rather than rewriting the whole catalog on every report;
 3. derives `business_routes` from probes whose category is `node-link`;
 4. stores current state and history;
 5. exposes current state and historical trends to the dashboard and on-demand Telegram queries.
@@ -51,7 +51,7 @@ D1 contains no seeded node topology. Catalog tables are data-driven:
 - `probe_catalog`: zero or more probes per node;
 - `business_routes`: derived node-to-node relationships.
 
-Other tables store latest reports, raw samples, long-term rollups, operational events, source-IP history and dashboard login tokens. Legacy alert tables remain in the schema for migration compatibility but are not read or written by the runtime. Scheduled Worker jobs maintain retention and rollups.
+Other tables store the latest report, metric/probe samples, long-term series rollups, operational events, source-IP history and dashboard login tokens. Runtime ingestion avoids redundant full-report snapshots and obsolete short-term rollup writes; compatibility tables remain in the schema so an upgrade does not destroy existing data. Legacy alert tables likewise remain for migration compatibility but are not read or written by the runtime. Scheduled Worker jobs maintain retention and long-term rollups.
 
 ### Telegram and dashboard
 

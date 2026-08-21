@@ -57,16 +57,88 @@
 
 设计说明见 [docs/architecture.md](docs/architecture.md)，测量口径见 [docs/monitoring-methodology.md](docs/monitoring-methodology.md)，探针示例见 [docs/probes.md](docs/probes.md)。
 
-## 快速开始
+## 开始使用
 
-1. 安装 Go 1.26、Node.js 22+，并登录 Wrangler。
-2. 在 `worker` 目录执行 `npm ci`。
-3. 创建 D1 数据库，将 `wrangler.example.jsonc` 复制为 `wrangler.jsonc` 并填写配置。
-4. 设置任意节点密钥映射和管理密钥。
-5. 应用 D1 migration 并部署 Worker。
-6. 编译一次 Agent；为每台 VPS 复制同一份 `deploy/config.example.json` 并安装。
+如果这是第一次接触本项目，请直接打开 **[从零搭建远山Monitor](docs/getting-started.md)**。它包含 Windows/Linux 命令、Cloudflare、Telegram、Agent 安装、验收和常见问题。下面是同一流程的最短检查表。
 
-逐步命令见 [docs/deployment.md](docs/deployment.md)。
+### 第一次部署：从零到面板
+
+1. 准备 Git、Node.js 22+、Go 1.26+、Cloudflare 账号、Telegram Bot 和至少一台 systemd Linux VPS。
+2. 创建后端：
+
+   ```bash
+   git clone https://github.com/MostlyCodex/yuanshan-monitor.git
+   cd yuanshan-monitor/worker
+   npm ci
+   npx wrangler login
+   npx wrangler d1 create yuanshan-monitor
+   ```
+
+3. 将 `worker/wrangler.example.jsonc` 复制为被 Git 忽略的 `worker/wrangler.jsonc`，填写 Worker 名称、D1 `database_id`、最终 Worker URL 和 Bot 用户名，然后执行：
+
+   ```bash
+   npx wrangler d1 migrations apply yuanshan-monitor --remote
+   npm run check
+   npm run deploy
+   ```
+
+4. 为每台 VPS 生成独立随机密钥，以**完整 JSON 映射**写入 `NODE_KEYS`，再设置管理令牌：
+
+   ```json
+   {"my-vps-01":"<NODE_SECRET_1>"}
+   ```
+
+   ```bash
+   npx wrangler secret put NODE_KEYS
+   npx wrangler secret put ADMIN_TOKEN
+   ```
+
+5. 按[完整教程第 3 节](docs/getting-started.md#3-配置-telegram-和面板登录)设置 Telegram 的 Bot Token、Webhook Secret 和一次性绑定码哈希，然后在 Bot 私聊中发送 `/bind <code>`。内置网页面板使用 `/panel` 生成登录链接，不需要 Telegram 群组。
+6. 编译一次通用 Linux Agent：
+
+   ```bash
+   cd ../agent
+   mkdir -p bin
+   go test ./...
+   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+     -ldflags="-s -w -X main.version=1.0.0" \
+     -o bin/vpsmon-agent-linux-amd64 ./cmd/vpsmon-agent
+   cd ..
+   ```
+
+   ARM VPS 将 `GOARCH` 改为 `arm64`。Windows PowerShell 的对应命令见[完整教程第 4 节](docs/getting-started.md#4-编译通用-agent)。
+
+7. 把 `deploy/config.example.json` 复制到仓库外的私密目录，至少修改 `node.id`、展示信息、Worker `endpoint` 和匹配的节点 `secret`。不需要附加监测时保持：
+
+   ```json
+   "services": [],
+   "probes": []
+   ```
+
+8. 按[完整教程第 6 节](docs/getting-started.md#6-安装首台-agent)将二进制、私密配置、systemd unit 和安装脚本放入 VPS 的 `/tmp/vpsmon-stage.<random>`，生成校验和并运行安装器。首份认证报告会自动创建面板目录，最后用 `/status`、`/panel` 验收。
+
+### 以后增加一台 VPS
+
+不需要改 Agent/Worker 源码，也不需要写 D1 migration：
+
+1. 选一个新的唯一节点 ID；
+2. 生成新的独立密钥；
+3. 在安全保存的完整 `NODE_KEYS` JSON 中追加它；
+4. 重新执行 `npx wrangler secret put NODE_KEYS` 并粘贴**包含所有旧节点和新节点**的完整映射；
+5. 再复制一份 `deploy/config.example.json`，填写新节点信息和新密钥；
+6. CPU 架构相同就复用已有 Agent 二进制；
+7. 用同一安装脚本部署；
+8. 等待首份上报，节点会自动出现在 `/status` 和面板。
+
+只提交新节点的局部 `NODE_KEYS` 会让所有旧节点失去认证能力。完整示例见[新增 VPS 指南](docs/getting-started.md#7-以后增加一台-vps)。
+
+### 默认频率
+
+- CPU、RAM、磁盘、流量和服务状态：每 60 秒采集并上报；
+- ICMP/TCP/TLS 主动探测：模板默认每 300 秒执行；
+- 推荐免费 D1 的多节点部署先保持 300 秒；需要更及时可先试 180 秒；60 秒线路采样应先核算 D1 写入或使用 Workers Paid；长期 30 秒不推荐。
+
+频率约束、流量公式和容量建议见[完整教程第 8 节](docs/getting-started.md#8-采集与探测频率)。
 
 ## 手动下线节点
 

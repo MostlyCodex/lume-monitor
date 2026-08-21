@@ -1,5 +1,5 @@
 import { canonicalMessage, constantTimeEqual, hmacHex, parseNodeKeys } from "./auth";
-import { loadDashboardCatalog, type NodeCatalogRow } from "./catalog";
+import { loadDashboardCatalog } from "./catalog";
 import {
   clearDashboardSessionCookie,
   cleanupDashboardAuth,
@@ -25,11 +25,11 @@ import {
   type TelegramCommand,
   type TelegramUpdate,
 } from "./telegram";
+import { formatTelegramStatusMessage, type TelegramStatusNodeRow } from "./telegram-status";
 import type {
   AgentReport,
   Env,
   NodeId,
-  ProbeResult,
   Severity,
   SourceIdentity,
 } from "./types";
@@ -247,7 +247,18 @@ function catalogStatements(env: Env, report: AgentReport, now: number): D1Prepar
         "short_mark=excluded.short_mark, role_label=excluded.role_label, group_name=excluded.group_name, " +
         "region_label=excluded.region_label, stale_seconds=excluded.stale_seconds, display_order=excluded.display_order, " +
         "color_key=excluded.color_key, offline_severity=excluded.offline_severity, " +
-        "ip_change_severity=excluded.ip_change_severity, enabled=1, updated_at=excluded.updated_at",
+        "ip_change_severity=excluded.ip_change_severity, enabled=1, updated_at=excluded.updated_at " +
+        "WHERE node_catalog.display_name IS NOT excluded.display_name " +
+        "OR node_catalog.short_mark IS NOT excluded.short_mark " +
+        "OR node_catalog.role_label IS NOT excluded.role_label " +
+        "OR node_catalog.group_name IS NOT excluded.group_name " +
+        "OR node_catalog.region_label IS NOT excluded.region_label " +
+        "OR node_catalog.stale_seconds IS NOT excluded.stale_seconds " +
+        "OR node_catalog.display_order IS NOT excluded.display_order " +
+        "OR node_catalog.color_key IS NOT excluded.color_key " +
+        "OR node_catalog.offline_severity IS NOT excluded.offline_severity " +
+        "OR node_catalog.ip_change_severity IS NOT excluded.ip_change_severity " +
+        "OR node_catalog.enabled IS NOT 1",
     ).bind(
       node.id,
       node.id,
@@ -263,9 +274,6 @@ function catalogStatements(env: Env, report: AgentReport, now: number): D1Prepar
       node.ip_change_severity,
       now,
     ),
-    env.DB.prepare("UPDATE service_catalog SET enabled = 0, updated_at = ? WHERE node_id = ?").bind(now, node.id),
-    env.DB.prepare("UPDATE probe_catalog SET enabled = 0, updated_at = ? WHERE node_id = ?").bind(now, node.id),
-    env.DB.prepare("UPDATE business_routes SET enabled = 0, updated_at = ? WHERE source_node_id = ?").bind(now, node.id),
   ];
   report.services.forEach((service, index) => {
     statements.push(
@@ -273,10 +281,24 @@ function catalogStatements(env: Env, report: AgentReport, now: number): D1Prepar
         "INSERT INTO service_catalog(node_id, service_name, display_name, severity, display_order, enabled, updated_at) " +
           "VALUES (?, ?, ?, ?, ?, 1, ?) ON CONFLICT(node_id, service_name) DO UPDATE SET " +
           "display_name=excluded.display_name, severity=excluded.severity, display_order=excluded.display_order, " +
-          "enabled=1, updated_at=excluded.updated_at",
+          "enabled=1, updated_at=excluded.updated_at " +
+          "WHERE service_catalog.display_name IS NOT excluded.display_name " +
+          "OR service_catalog.severity IS NOT excluded.severity " +
+          "OR service_catalog.display_order IS NOT excluded.display_order " +
+          "OR service_catalog.enabled IS NOT 1",
       ).bind(node.id, service.name, service.label, service.severity, (index + 1) * 10, now),
     );
   });
+  const serviceNames = report.services.map((service) => service.name);
+  const servicePlaceholders = serviceNames.map(() => "?").join(", ");
+  statements.push(
+    env.DB.prepare(
+      "UPDATE service_catalog SET enabled = 0, updated_at = ? WHERE node_id = ? AND enabled = 1" +
+        (serviceNames.length > 0 ? ` AND service_name NOT IN (${servicePlaceholders})` : ""),
+    ).bind(now, node.id, ...serviceNames),
+  );
+
+  const activeRouteKeys: string[] = [];
   for (const probe of report.probes) {
     statements.push(
       env.DB.prepare(
@@ -289,7 +311,19 @@ function catalogStatements(env: Env, report: AgentReport, now: number): D1Prepar
           "target_node_id=excluded.target_node_id, warning_ms=excluded.warning_ms, critical_ms=excluded.critical_ms, " +
           "warning_failure_percent=excluded.warning_failure_percent, " +
           "critical_failure_percent=excluded.critical_failure_percent, severity=excluded.severity, " +
-          "display_order=excluded.display_order, is_primary=excluded.is_primary, enabled=1, updated_at=excluded.updated_at",
+          "display_order=excluded.display_order, is_primary=excluded.is_primary, enabled=1, updated_at=excluded.updated_at " +
+          "WHERE probe_catalog.display_name IS NOT excluded.display_name " +
+          "OR probe_catalog.category IS NOT excluded.category " +
+          "OR probe_catalog.kind IS NOT excluded.kind " +
+          "OR probe_catalog.target_node_id IS NOT excluded.target_node_id " +
+          "OR probe_catalog.warning_ms IS NOT excluded.warning_ms " +
+          "OR probe_catalog.critical_ms IS NOT excluded.critical_ms " +
+          "OR probe_catalog.warning_failure_percent IS NOT excluded.warning_failure_percent " +
+          "OR probe_catalog.critical_failure_percent IS NOT excluded.critical_failure_percent " +
+          "OR probe_catalog.severity IS NOT excluded.severity " +
+          "OR probe_catalog.display_order IS NOT excluded.display_order " +
+          "OR probe_catalog.is_primary IS NOT excluded.is_primary " +
+          "OR probe_catalog.enabled IS NOT 1",
       ).bind(
         node.id,
         probe.name,
@@ -309,6 +343,8 @@ function catalogStatements(env: Env, report: AgentReport, now: number): D1Prepar
       ),
     );
     if (probe.category === "node-link" && probe.target_node_id) {
+      const routeKey = `${node.id}--${probe.name}`;
+      activeRouteKeys.push(routeKey);
       const warning = probe.warning_ms > 0 ? probe.warning_ms : 1000;
       const critical = probe.critical_ms > 0 ? Math.max(probe.critical_ms, warning) : Math.max(3000, warning);
       statements.push(
@@ -320,9 +356,18 @@ function catalogStatements(env: Env, report: AgentReport, now: number): D1Prepar
             "display_name=excluded.display_name, source_node_id=excluded.source_node_id, " +
             "target_node_id=excluded.target_node_id, probe_name=excluded.probe_name, target_label=excluded.target_label, " +
             "warning_ms=excluded.warning_ms, critical_ms=excluded.critical_ms, display_order=excluded.display_order, " +
-            "enabled=1, updated_at=excluded.updated_at",
+            "enabled=1, updated_at=excluded.updated_at " +
+            "WHERE business_routes.display_name IS NOT excluded.display_name " +
+            "OR business_routes.source_node_id IS NOT excluded.source_node_id " +
+            "OR business_routes.target_node_id IS NOT excluded.target_node_id " +
+            "OR business_routes.probe_name IS NOT excluded.probe_name " +
+            "OR business_routes.target_label IS NOT excluded.target_label " +
+            "OR business_routes.warning_ms IS NOT excluded.warning_ms " +
+            "OR business_routes.critical_ms IS NOT excluded.critical_ms " +
+            "OR business_routes.display_order IS NOT excluded.display_order " +
+            "OR business_routes.enabled IS NOT 1",
         ).bind(
-          `${node.id}--${probe.name}`,
+          routeKey,
           probe.label,
           node.id,
           probe.target_node_id,
@@ -336,6 +381,21 @@ function catalogStatements(env: Env, report: AgentReport, now: number): D1Prepar
       );
     }
   }
+  const probeNames = report.probes.map((probe) => probe.name);
+  const probePlaceholders = probeNames.map(() => "?").join(", ");
+  statements.push(
+    env.DB.prepare(
+      "UPDATE probe_catalog SET enabled = 0, updated_at = ? WHERE node_id = ? AND enabled = 1" +
+        (probeNames.length > 0 ? ` AND probe_name NOT IN (${probePlaceholders})` : ""),
+    ).bind(now, node.id, ...probeNames),
+  );
+  const routePlaceholders = activeRouteKeys.map(() => "?").join(", ");
+  statements.push(
+    env.DB.prepare(
+      "UPDATE business_routes SET enabled = 0, updated_at = ? WHERE source_node_id = ? AND enabled = 1" +
+        (activeRouteKeys.length > 0 ? ` AND route_key NOT IN (${routePlaceholders})` : ""),
+    ).bind(now, node.id, ...activeRouteKeys),
+  );
   return statements;
 }
 
@@ -402,15 +462,8 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
   }
   const networkRates = computeNetworkRates(report, previousReport);
   const normalized = JSON.stringify(report);
-  const rollupBucket = Math.floor(report.generated_at / 300) * 300;
-  const memoryUsedPercent = report.system.memory_total_bytes > 0
-    ? 100 - (report.system.memory_available_bytes / report.system.memory_total_bytes) * 100
-    : 0;
   const statements = [
     ...catalogStatements(env, report, now),
-    env.DB.prepare(
-      "INSERT INTO snapshots(node_id, received_at, reported_at, source_ip, report_json) VALUES (?, ?, ?, ?, ?)",
-    ).bind(report.node_id, now, report.generated_at, source.ip, normalized),
     env.DB.prepare(
       "INSERT INTO node_latest(node_id, received_at, reported_at, source_ip, source_asn, source_org, source_country, source_colo, approved_ip, last_boot_id, report_json) " +
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
@@ -432,55 +485,9 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
       report.system.boot_id,
       normalized,
     ),
-    env.DB.prepare(
-      "INSERT INTO metric_rollups(node_id, bucket, samples, cpu_sum, memory_used_sum, disk_used_sum, inode_used_sum, network_rx_max, network_tx_max) " +
-        "VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?) " +
-        "ON CONFLICT(node_id, bucket) DO UPDATE SET " +
-        "samples=metric_rollups.samples + 1, cpu_sum=metric_rollups.cpu_sum + excluded.cpu_sum, " +
-        "memory_used_sum=metric_rollups.memory_used_sum + excluded.memory_used_sum, " +
-        "disk_used_sum=metric_rollups.disk_used_sum + excluded.disk_used_sum, " +
-        "inode_used_sum=metric_rollups.inode_used_sum + excluded.inode_used_sum, " +
-        "network_rx_max=MAX(metric_rollups.network_rx_max, excluded.network_rx_max), " +
-        "network_tx_max=MAX(metric_rollups.network_tx_max, excluded.network_tx_max)",
-    ).bind(
-      report.node_id,
-      rollupBucket,
-      report.system.cpu_percent,
-      memoryUsedPercent,
-      report.system.root_used_percent,
-      report.system.root_inode_used_percent,
-      report.system.network_rx_bytes,
-      report.system.network_tx_bytes,
-    ),
     metricSampleStatement(env, report, now, networkRates),
   ];
   for (const probe of report.probes) {
-    const probeBucket = Math.floor(probe.checked_at / 300) * 300;
-    statements.push(
-      env.DB.prepare(
-        "INSERT OR IGNORE INTO probe_sample_dedup(node_id, probe_name, checked_at, claim_id, ingested_at) VALUES (?, ?, ?, ?, ?)",
-      ).bind(report.node_id, probe.name, probe.checked_at, authentication.nonce, now),
-    );
-    statements.push(
-      env.DB.prepare(
-        "INSERT INTO probe_rollups(node_id, probe_name, bucket, samples, successes, duration_success_sum) " +
-          "SELECT ?, ?, ?, 1, ?, ? WHERE EXISTS (" +
-          "SELECT 1 FROM probe_sample_dedup WHERE node_id = ? AND probe_name = ? AND checked_at = ? AND claim_id = ?) " +
-          "ON CONFLICT(node_id, probe_name, bucket) DO UPDATE SET " +
-          "samples=probe_rollups.samples + 1, successes=probe_rollups.successes + excluded.successes, " +
-          "duration_success_sum=probe_rollups.duration_success_sum + excluded.duration_success_sum",
-      ).bind(
-        report.node_id,
-        probe.name,
-        probeBucket,
-        probe.success ? 1 : 0,
-        probe.success ? probe.duration_ms : 0,
-        report.node_id,
-        probe.name,
-        probe.checked_at,
-        authentication.nonce,
-      ),
-    );
     statements.push(probeSampleStatement(env, report.node_id, probe, now));
   }
   if (source.ip && (!prior || prior.source_ip !== source.ip)) {
@@ -559,98 +566,14 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
   return json({ ok: true, server_time: now, accepted_node: report.node_id }, 202);
 }
 
-function probeStatus(probe: ProbeResult): string {
-  if (!probe.complete) return `未完成 ${probe.attempted_samples}/${probe.samples}`;
-  if (!probe.success) return probe.kind === "icmp" ? `不可达 / 丢包 ${probe.sample_failure_percent.toFixed(0)}%` : "失败";
-  const quality = probe.samples > 1
-    ? probe.kind === "icmp"
-      ? `，丢包 ${probe.sample_failure_percent.toFixed(0)}%`
-      : `，连接成功 ${probe.successful_samples}/${probe.attempted_samples}`
-    : "";
-  return `${Math.round(probe.duration_ms)}ms${quality}`;
-}
-
-interface TelegramStatusNodeRow {
-  node_id: NodeId;
-  received_at: number;
-  source_ip: string | null;
-  report_json: string;
-}
-
-function compactAge(receivedAt: number, now: number): string {
-  const seconds = Math.max(0, now - receivedAt);
-  if (seconds < 60) return `${seconds}秒前`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}分${seconds % 60}秒前`;
-  return `${Math.floor(seconds / 3600)}小时${Math.floor((seconds % 3600) / 60)}分前`;
-}
-
-function serviceStatusText(report: AgentReport): string {
-  if (report.services.length === 0) return "服务监测未配置";
-  return report.services.map((service) => `${service.label} ${service.state}`).join("｜");
-}
-
-function nodeStatusIcon(
-  node: TelegramStatusNodeRow,
-  meta: NodeCatalogRow,
-  report: AgentReport,
-  now: number,
-): string {
-  if (now - node.received_at > meta.stale_seconds) return "🔴";
-  const unhealthyServices = report.services.filter((service) => service.state !== "active");
-  if (unhealthyServices.some((service) => service.severity === "P1")) return "🔴";
-  if (unhealthyServices.length > 0) return "🟡";
-  return "🟢";
-}
-
-function resourceLine(report: AgentReport): string {
-  const memoryUsed = report.system.memory_total_bytes > 0
-    ? 100 - (report.system.memory_available_bytes / report.system.memory_total_bytes) * 100
-    : 0;
-  return `CPU ${report.system.cpu_percent.toFixed(1)}%｜内存 ${memoryUsed.toFixed(1)}%｜磁盘 ${report.system.root_used_percent.toFixed(1)}%`;
-}
-
 async function telegramStatusMessage(env: Env, now: number): Promise<string> {
   const [catalog, nodes] = await Promise.all([
     loadDashboardCatalog(env),
     env.DB.prepare(
-      "SELECT node_id, received_at, source_ip, report_json FROM node_latest ORDER BY node_id",
+      "SELECT node_id, received_at, report_json FROM node_latest ORDER BY node_id",
     ).all<TelegramStatusNodeRow>(),
   ]);
-  const timestamp = new Date(now * 1000).toLocaleString("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    hour12: false,
-  });
-  const lines = ["📊 VPS 实时状态", `时间：${timestamp} CST`, "模式：持续采集 / 按需查询", ""];
-  const rows = new Map(nodes.results.map((node) => [node.node_id, node]));
-  if (catalog.nodes.length === 0) lines.push("尚无已注册节点。", "");
-  for (const meta of catalog.nodes) {
-    const node = rows.get(meta.node_id);
-    if (!node) {
-      lines.push(`🔴 ${meta.display_name}｜尚无监控数据`, "");
-      continue;
-    }
-    let report: AgentReport;
-    try {
-      report = JSON.parse(node.report_json) as AgentReport;
-    } catch {
-      lines.push(`🔴 ${meta.display_name}｜最新数据无法解析`, "");
-      continue;
-    }
-    const age = Math.max(0, now - node.received_at);
-    const online = age <= meta.stale_seconds ? "在线" : "上报中断";
-    lines.push(`${nodeStatusIcon(node, meta, report, now)} ${meta.display_name}｜${online}，${compactAge(node.received_at, now)}`);
-    lines.push(resourceLine(report));
-    lines.push(`${serviceStatusText(report)}｜上报源 ${maskIp(node.source_ip)}`);
-    const probes = [...report.probes].sort((left, right) => left.display_order - right.display_order).slice(0, 4);
-    lines.push(
-      probes.length === 0
-        ? "可选通信探针：未配置"
-        : probes.map((probe) => `${probe.label} ${probeStatus(probe)}`).join("｜"),
-    );
-    lines.push("");
-  }
-  lines.push("资源每 60 秒采集，通信探针每 5 分钟采集。", "机器人不会主动发送告警或日报，也不会修改线路或重启服务。");
-  return lines.join("\n");
+  return formatTelegramStatusMessage(catalog.nodes, nodes.results, now);
 }
 
 function telegramHelpMessage(): string {

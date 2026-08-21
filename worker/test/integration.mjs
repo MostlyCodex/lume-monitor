@@ -320,7 +320,7 @@ assert(rebuild.status === 200 && (await rebuild.json()).ok === true, "observabil
 const dashboardPage = await fetch(`${base}/dashboard/`);
 assert(dashboardPage.status === 200 && (dashboardPage.headers.get("content-type") ?? "").includes("text/html"), "dashboard asset failed");
 const dashboardHtml = await dashboardPage.text();
-assert(dashboardHtml.includes("LIVE FLEET") && dashboardHtml.includes("node-detail"), "generic dashboard interface is missing");
+assert(dashboardHtml.includes("远山Monitor") && dashboardHtml.includes("node-detail"), "generic dashboard interface is missing");
 
 const logout = await fetch(`${base}/auth/logout`, { method: "POST" });
 assert(logout.status === 204 && (logout.headers.get("set-cookie") ?? "").includes("Max-Age=0"), "dashboard logout failed");
