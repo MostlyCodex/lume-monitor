@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yuanshan-monitor",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-19",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": false
+  },
+  "vars": {
+    "APP_VERSION": "1.0.0",
+    "REPORT_MAX_AGE_SECONDS": "300",
+    "TELEGRAM_BOT_USERNAME": "your_monitor_bot",
+    "DASHBOARD_BASE_URL": "https://your-worker.your-subdomain.workers.dev"
+  },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "yuanshan-monitor",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": ["* * * * *", "0 1 * * *"]
+  }
+}

@@ -1,0 +1,45 @@
+[Unit]
+Description=VPS Monitor Agent
+Documentation=https://developers.cloudflare.com/workers/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=vpsmon
+Group=vpsmon
+ExecStart=/opt/vpsmon/vpsmon-agent --config /etc/vpsmon/config.json
+Restart=on-failure
+RestartSec=15s
+TimeoutStartSec=30s
+TimeoutStopSec=15s
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+UMask=0077
+StateDirectory=vpsmon
+StateDirectoryMode=0700
+ReadOnlyPaths=/etc/vpsmon
+MemoryMax=64M
+CPUQuota=20%
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

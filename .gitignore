@@ -1,0 +1,37 @@
+# Dependencies and build output
+worker/node_modules/
+worker/.wrangler/
+worker/.private-backups/
+worker/dist/
+worker/dist-webhook/
+agent/bin/
+agent/.gocache/
+agent/.gomodcache/
+agent/.toolchains/
+.npm-cache/
+*.exe
+*.zip
+
+# Account-specific Cloudflare configuration
+worker/wrangler.jsonc
+worker/.dev.vars
+worker/.dev.vars.*
+
+# Secrets and machine-specific agent configuration
+.env
+.env.*
+!.env.example
+**/.secrets*
+**/*.dpapi
+**/*.pem
+**/*.key
+deploy/config.json
+deploy/config-*.local.json
+
+# Local artifacts and editor files
+outputs/
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="description" content="Private, lightweight VPS observability dashboard.">
+    <meta name="theme-color" content="#080b11">
+    <meta name="robots" content="noindex, nofollow, noarchive">
+    <title>远山Monitor</title>
+    <link rel="stylesheet" href="/dashboard/vendor/uPlot.min.css">
+    <link rel="stylesheet" href="/dashboard/styles.css?v=1.0.0&amp;b=swatch-csp">
+    <script src="/dashboard/vendor/uPlot.iife.min.js" defer></script>
+    <script src="/dashboard/app.js?v=1.0.0&amp;b=swatch-csp" defer></script>
+  </head>
+  <body>
+    <div class="scene" aria-hidden="true">
+      <span class="scene-glow scene-glow-one"></span>
+      <span class="scene-glow scene-glow-two"></span>
+      <span class="scene-grid"></span>
+    </div>
+
+    <div id="loading-view" class="loading-view" role="status" aria-live="polite">
+      <div class="loader-orbit"><i></i><span>山</span></div>
+      <strong>正在连接监控网络</strong>
+      <small>验证会话并读取最新状态</small>
+    </div>
+
+    <main id="auth-view" class="auth-shell is-hidden">
+      <section class="auth-card glass-panel" aria-labelledby="auth-title">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">山</div>
+          <div><strong data-dashboard-brand>远山Monitor</strong><span>PRIVATE OBSERVABILITY</span></div>
+        </div>
+        <div class="auth-copy">
+          <span class="status-pill is-healthy"><i></i> Telegram 安全登录</span>
+          <h1 id="auth-title">线路状态，<br>一眼看清。</h1>
+          <p>请在已绑定的 Telegram 私密群或机器人私聊中发送 <code>/panel</code>，使用一次性链接登录。</p>
+        </div>
+        <ol class="login-steps">
+          <li><span>01</span><div><strong>发送命令</strong><small>在 Telegram 中发送 /panel</small></div></li>
+          <li><span>02</span><div><strong>打开链接</strong><small>链接 5 分钟有效且仅可使用一次</small></div></li>
+          <li><span>03</span><div><strong>保持登录</strong><small>安全会话在当前浏览器保留 30 天</small></div></li>
+        </ol>
+        <div id="login-message" class="login-message is-hidden" role="alert"></div>
+        <div class="auth-actions">
+          <button id="copy-panel-command" class="button button-primary" type="button">复制 /panel</button>
+          <a class="button button-ghost" href="https://web.telegram.org/" rel="noreferrer">打开 Telegram</a>
+        </div>
+      </section>
+      <aside class="auth-visual glass-panel" aria-hidden="true">
+        <div class="auth-visual-top"><span>LIVE NETWORK</span><i></i></div>
+        <div class="auth-visual-score"><strong>99.8</strong><small>% HEALTH</small></div>
+        <div class="auth-pulse-line"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="auth-node-list">
+          <div><i></i><span>Transit</span><b>ONLINE</b></div>
+          <div><i></i><span>Egress</span><b>ONLINE</b></div>
+          <div><i></i><span>Standby</span><b>READY</b></div>
+        </div>
+      </aside>
+    </main>
+
+    <div id="dashboard-view" class="app-shell is-hidden">
+      <header class="command-bar glass-panel">
+        <div class="brand-lockup app-brand">
+          <div class="brand-mark" aria-hidden="true">山</div>
+          <div><strong data-dashboard-brand>远山Monitor</strong><span>NETWORK CONTROL</span></div>
+        </div>
+        <div id="top-health" class="fleet-health"><i></i><div><strong>读取状态中</strong><span id="fleet-health-copy">正在同步节点</span></div></div>
+        <div class="command-actions">
+          <span id="last-refresh" class="last-refresh">尚未刷新</span>
+          <button id="refresh-button" class="icon-button" type="button" aria-label="立即刷新" title="立即刷新">↻</button>
+          <button id="theme-button" class="icon-button" type="button" aria-label="切换深浅色主题" title="切换主题">◐</button>
+          <button id="settings-button" class="icon-button" type="button" aria-label="编辑面板显示" title="编辑面板显示">⚙</button>
+          <button id="logout-button" class="text-button" type="button">退出</button>
+        </div>
+      </header>
+
+      <main class="page-shell">
+        <section id="fleet-view" class="fleet-view">
+
+          <header class="fleet-heading is-summary-only">
+            <div id="summary-strip" class="summary-strip" aria-label="总体状态"></div>
+          </header>
+
+          <div class="fleet-toolbar">
+            <label class="search-control">
+              <span aria-hidden="true">⌕</span>
+              <span class="sr-only">筛选节点</span>
+              <input id="node-search" type="search" placeholder="搜索节点" autocomplete="off">
+            </label>
+          </div>
+
+          <div id="node-grid" class="node-grid" aria-live="polite"></div>
+        </section>
+
+        <section id="node-detail" class="detail-view is-hidden" aria-live="polite">
+          <div class="detail-nav">
+            <button id="detail-back" class="button button-ghost" type="button">← 返回节点</button>
+            <div id="detail-range-switch" class="range-switch" aria-label="历史时间范围">
+              <button type="button" data-hours="6">6H</button>
+              <button class="is-active" type="button" data-hours="24">24H</button>
+              <button type="button" data-hours="168">7D</button>
+              <button type="button" data-hours="720">30D</button>
+              <button type="button" data-hours="2160">90D</button>
+            </div>
+          </div>
+
+          <section id="detail-hero" class="detail-hero glass-panel"></section>
+          <div id="detail-loading" class="detail-loading glass-panel is-hidden" role="status"></div>
+
+          <div id="detail-content" class="detail-content">
+            <section class="detail-section">
+              <div class="section-heading">
+                <div><p class="eyebrow">NETWORK QUALITY</p><h2>延迟与丢包</h2></div>
+              </div>
+              <div class="probe-picker">
+                <div class="probe-picker-head">
+                  <div id="detail-probe-actions" class="probe-picker-actions" aria-label="批量选择探测目标">
+                    <button type="button" data-probe-action="all">全选</button>
+                    <button type="button" data-probe-action="none">清空</button>
+                  </div>
+                </div>
+                <div id="detail-probe-summary" class="detail-probe-summary"></div>
+              </div>
+              <div class="network-chart-toolbar">
+                <div id="network-layer-switch" class="network-layer-switch" aria-label="网络图层">
+                  <button class="is-active" type="button" data-network-layer="latency" aria-pressed="true"><i class="legend-line"></i>延迟</button>
+                  <button class="is-active" type="button" data-network-layer="loss" aria-pressed="true"><i class="legend-bars"></i>丢包事件</button>
+                </div>
+                <p><i class="legend-line"></i>实线 = 延迟（ms）<i class="legend-bars"></i>竖条 = 丢包；颜色越实，比例越高</p>
+              </div>
+              <article class="chart-card network-chart-card glass-panel">
+                <div class="chart-title"><div><strong>线路质量历史</strong><span>Latency line · Packet-loss event</span></div><span id="network-chart-state">读取采样中</span></div>
+                <div id="network-plot" class="plot-host plot-host-network" role="img" aria-label="网络延迟与丢包历史图"></div>
+                <div id="network-empty" class="chart-empty is-hidden">暂无网络质量历史</div>
+              </article>
+            </section>
+
+            <section class="detail-section">
+              <div class="section-heading"><div><p class="eyebrow">HOST TELEMETRY</p><h2>主机资源</h2></div></div>
+              <div class="detail-chart-grid">
+                <article class="chart-card glass-panel">
+                  <div class="chart-title"><div><strong>资源占用</strong><div class="chart-series-key" aria-label="曲线颜色"><span class="is-cpu"><i></i>CPU</span><span class="is-memory"><i></i>内存</span><span class="is-disk"><i></i>磁盘</span></div></div></div>
+                  <div id="resource-plot" class="plot-host" role="img" aria-label="主机资源历史图"></div>
+                  <div id="resource-empty" class="chart-empty is-hidden">暂无资源历史</div>
+                </article>
+                <article class="chart-card glass-panel">
+                  <div class="chart-title"><div><strong>实时速率</strong><div class="chart-series-key" aria-label="曲线颜色"><span class="is-download"><i></i>下载</span><span class="is-upload"><i></i>上传</span></div></div></div>
+                  <div id="traffic-plot" class="plot-host" role="img" aria-label="网络速率历史图"></div>
+                  <div id="traffic-empty" class="chart-empty is-hidden">暂无速率历史</div>
+                </article>
+              </div>
+            </section>
+
+            <section class="detail-section detail-bottom-grid">
+              <article class="info-card glass-panel">
+                <div class="section-heading compact-heading"><div><p class="eyebrow">NODE FACTS</p><h2>节点信息</h2></div></div>
+                <div id="detail-facts" class="detail-facts"></div>
+              </article>
+              <article class="info-card glass-panel">
+                <div class="section-heading compact-heading"><div><p class="eyebrow">EVENTS</p><h2>事件</h2></div></div>
+                <div id="detail-events" class="timeline-list"></div>
+              </article>
+            </section>
+          </div>
+        </section>
+
+        <footer class="dashboard-footer">
+          <span class="footer-motto">远山不见我，而我见远山</span>
+        </footer>
+      </main>
+    </div>
+
+    <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+      <form id="settings-form" class="settings-shell">
+        <header class="settings-head">
+          <div>
+            <p class="eyebrow">LOCAL DISPLAY</p>
+            <h2 id="settings-title">面板显示设置</h2>
+            <p>设置仅保存在当前浏览器，不修改服务器资料或监测数据。</p>
+          </div>
+          <button id="settings-close" class="icon-button" type="button" aria-label="关闭设置">×</button>
+        </header>
+
+        <section class="settings-section">
+          <div class="settings-section-title"><strong>页面信息</strong><span>面板名称</span></div>
+          <div class="settings-global-grid">
+            <label class="settings-wide"><span>面板名称</span><input id="settings-brand" type="text" maxlength="48" autocomplete="off"></label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="settings-section-title"><strong>节点卡片</strong><span>用箭头调整首页顺序</span></div>
+          <div id="settings-node-list" class="settings-node-list"></div>
+        </section>
+
+        <footer class="settings-actions">
+          <button id="settings-reset" class="button button-ghost" type="button">恢复默认</button>
+          <span></span>
+          <button id="settings-cancel" class="button button-ghost" type="button">取消</button>
+          <button class="button button-primary" type="submit">保存并应用</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast is-hidden" role="status" aria-live="polite"></div>
+  </body>
+</html>

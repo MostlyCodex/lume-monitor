@@ -1,0 +1,22 @@
+{
+  "node": {
+    "id": "my-vps-01",
+    "display_name": "My VPS 01",
+    "short_mark": "V01",
+    "role": "VPS",
+    "group": "default",
+    "region": "Los Angeles",
+    "stale_seconds": 180,
+    "display_order": 100,
+    "color": "green",
+    "offline_severity": "P1",
+    "ip_change_severity": "P2"
+  },
+  "endpoint": "https://monitor.example.workers.dev/api/v1/report",
+  "secret": "REPLACE_WITH_A_RANDOM_SECRET_AT_LEAST_32_CHARACTERS",
+  "report_interval_seconds": 60,
+  "probe_interval_seconds": 300,
+  "services": [],
+  "probes": [],
+  "spool_path": "/var/lib/vpsmon/pending.json"
+}
