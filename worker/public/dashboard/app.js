@@ -169,6 +169,13 @@
     return `${Math.floor(value / 86400)} 天前`;
   }
 
+  function formatInterval(seconds) {
+    const value = Math.max(1, Math.round(Number(seconds) || 0));
+    if (value % 3600 === 0) return `${value / 3600} 小时`;
+    if (value % 60 === 0) return `${value / 60} 分钟`;
+    return `${value} 秒`;
+  }
+
   function formatUptime(seconds) {
     const value = Math.max(0, Math.round(Number(seconds) || 0));
     const days = Math.floor(value / 86400);
@@ -574,7 +581,7 @@
       ["在线节点", `${online}/${nodes.length}`, online < nodes.length ? "critical" : ""],
       ["线路正常", `${healthyProbes}/${allProbes.length}`, healthyProbes < allProbes.length ? "warning" : ""],
       ["需关注", `${attention}`, attention ? "warning" : ""],
-      ["探针周期", "5 分钟", ""],
+      ["探针周期", formatInterval(state.latest?.cadence?.probes_seconds ?? 60), ""],
     ].map(([label, value, tone]) => `<div class="summary-item ${tone ? `is-${tone}` : ""}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
   }
 

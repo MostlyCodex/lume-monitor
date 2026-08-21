@@ -72,6 +72,12 @@ interface ProbeTrendRow {
 
 export type HistoryHours = 6 | 24 | 168 | 720 | 2160;
 
+export function historyBucketSeconds(hours: HistoryHours, selectedNode: boolean): number {
+  if (hours <= 24) return selectedNode ? 60 : 300;
+  if (hours <= 720) return 3600;
+  return 86400;
+}
+
 function maskIp(ip: string | null): string {
   if (!ip) return "未知";
   if (ip.includes(".")) {
@@ -404,7 +410,7 @@ export async function dashboardHistoryData(
   const selectedNode = requestedPublicNodeId ? byPublic.get(requestedPublicNodeId) ?? null : null;
   if (requestedPublicNodeId && !selectedNode) throw new Error("unknown dashboard node");
   const internalNodeId = selectedNode?.node_id ?? null;
-  const outputBucket = hours <= 24 ? 300 : hours <= 720 ? 3600 : 86400;
+  const outputBucket = historyBucketSeconds(hours, internalNodeId !== null);
   const since = now - hours * 60 * 60;
   const rawEnd = rawHistoryEnd(env, now);
   const metricTrendSource = metricSamplesRangeSourceSql(internalNodeId !== null);

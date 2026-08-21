@@ -57,7 +57,7 @@ Other tables store the latest report, metric/probe samples, long-term series rol
 
 Telegram updates arrive through a Webhook protected by a secret header. Only the bound owner's private chat is accepted; no group is required. `/panel` creates a single-use short-lived login token. The dashboard exchanges it for an HttpOnly session cookie. The Bot never initiates alerts or daily summaries.
 
-The dashboard renders its fleet cards, service summaries and probe rows from the catalogs. The fleet view contains only current node status, resource gauges, network-rate/traffic counters and per-target 24-hour latency/loss cells. Clicking a card opens a separate node detail view with selectable probe series plus latency, packet-loss, resource and traffic history. The detail charts use a pinned local copy of uPlot; the dashboard never loads chart code from a CDN. It has no fixed node names or node count.
+The dashboard renders its fleet cards, service summaries and probe rows from the catalogs. The fleet view contains only current node status, resource gauges, network-rate/traffic counters and per-target 24-hour latency/loss cells. Fleet history uses five-minute display buckets to bound a multi-node response. Clicking a card opens a separate node detail view with selectable probe series plus latency, packet-loss, resource and traffic history. Node detail uses one-minute buckets for 6/24 hours, hourly buckets for 7/30 days, and daily buckets for 90 days. Display aggregation does not change the Agent cadence or raw-data retention. The detail charts use a pinned local copy of uPlot; the dashboard never loads chart code from a CDN. It has no fixed node names or node count.
 
 ## Extension model
 

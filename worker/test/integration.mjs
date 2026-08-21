@@ -289,6 +289,7 @@ assert(betaLatest.services.length === 0 && betaLatest.probes.length === 0, "host
 const history = await fetch(`${base}/api/v1/dashboard/history?hours=24`, { headers: adminHeaders });
 const historyBody = await history.json();
 assert(history.status === 200 && historyBody.metrics.length >= 1, "dashboard history failed");
+assert(historyBody.bucket_seconds === 300, `fleet history should use 5-minute buckets: ${historyBody.bucket_seconds}`);
 assert(historyBody.routes.length === 1, "generic node-link statistics are missing");
 const alphaRoute = historyBody.routes.find((route) => route.key === "alpha-vps--peer_tcp");
 assert(alphaRoute?.rounds >= 2 && alphaRoute?.latency_p50_ms === 11.5, "node-link statistics are incorrect");
@@ -300,6 +301,7 @@ assert(icmpHistory?.kind === "icmp" && icmpHistory?.packet_loss_percent === 20, 
 const detail = await fetch(`${base}/api/v1/dashboard/history?hours=24&node=alpha-vps`, { headers: adminHeaders });
 const detailBody = await detail.json();
 assert(detail.status === 200 && detailBody.selected_node === "alpha-vps", "node detail history failed");
+assert(detailBody.bucket_seconds === 60, `node detail history should use 1-minute buckets: ${detailBody.bucket_seconds}`);
 assert(detailBody.metrics.every((row) => row.node_id === "alpha-vps"), "node detail leaked another node into metric rows");
 assert(detailBody.probe_summaries.some((probe) => probe.probe_name === "peer_tcp"), "node probe summary is missing");
 

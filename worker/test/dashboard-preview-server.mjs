@@ -100,8 +100,9 @@ function latestData() {
 
 function historyData(hours, selectedNode) {
   const now = Math.floor(Date.now() / 1000);
-  const bucket = hours <= 24 ? 300 : hours <= 720 ? 3600 : 86400;
-  const steps = Math.min(360, Math.max(12, Math.floor((hours * 3600) / bucket)));
+  const bucket = hours <= 24 ? (selectedNode ? 60 : 300) : hours <= 720 ? 3600 : 86400;
+  const maximumSteps = selectedNode && hours <= 24 ? 1440 : 720;
+  const steps = Math.min(maximumSteps, Math.max(12, Math.floor((hours * 3600) / bucket)));
   const selected = selectedNode ? nodeDefinitions.filter((node) => node.id === selectedNode) : nodeDefinitions;
   const metrics = [];
   const probes = [];
