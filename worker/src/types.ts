@@ -27,7 +27,7 @@ export interface ProbeResult {
   label: string;
   category: string;
   target_node_id?: NodeId;
-  kind: "icmp" | "tcp" | "tls";
+  kind: "icmp";
   target: string;
   warning_ms: number;
   critical_ms: number;

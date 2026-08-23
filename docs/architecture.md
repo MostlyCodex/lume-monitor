@@ -10,7 +10,7 @@ Generic host core
 ├── zero or more read-only systemd service checks
 └── zero or more outbound communication probes
     ├── node-link: this VPS → another registered VPS
-    └── external: this VPS → an external service endpoint
+    └── external: this VPS → an external ICMP reference target
 ```
 
 Adding a node must not require source changes, a database migration, or a pre-allocated slot. A node becomes known after its first authenticated report. The same report synchronizes its display metadata and optional service/probe catalogs.
@@ -28,7 +28,7 @@ The required core collects:
 - hostname, operating system, kernel, architecture, boot ID and uptime;
 - Agent queue, collection errors, send errors, version and start time.
 
-Optional `services` entries read systemd state. Optional `probes` entries perform bounded outbound ICMP, TCP or TLS checks. ICMP uses `pro-bing` in unprivileged datagram-socket mode; the Agent retains an empty capability set. Failed reports are kept in a one-entry local spool and retried.
+Optional `services` entries read systemd state. Optional `probes` entries perform bounded outbound ICMP checks. ICMP uses `pro-bing` in unprivileged datagram-socket mode; the Agent retains an empty capability set. Failed reports are kept in a one-entry local spool and retried.
 
 ### Worker
 
@@ -61,14 +61,16 @@ The dashboard renders its fleet cards, service summaries and probe rows from the
 
 ## Extension model
 
-New monitoring capabilities should be added as optional probe kinds or optional collectors. They must not change the required host report or introduce role-specific Agent binaries.
+The current communication contract is deliberately ICMP-only. New monitoring targets are added as ICMP entries; a different protocol is not carried as dormant code and requires a separate, explicit design change. Optional collectors must not change the required host report or introduce role-specific Agent binaries.
+
+Already-applied migration files are an immutable upgrade ledger and may mention retired probe kinds. The terminal migrations rebuild `probe_catalog` with `CHECK (kind = 'icmp')`; historical migration text neither enables runtime code nor permits non-ICMP catalog rows.
 
 Examples:
 
-- add another external TLS endpoint by adding one probe entry;
-- add a node-to-node check with category `node-link` and `target_node_id`;
+- add another external ICMP reference target by adding one probe entry;
+- add an ICMP node-to-node check with category `node-link` and `target_node_id`;
 - add another systemd service by appending a `services` entry;
-- introduce a future DNS or HTTP semantic probe by extending the probe implementation and schema while preserving existing configurations.
+- remove an unused check from the node config so it stops executing on the next round.
 
 ## Deliberate non-goals
 

@@ -31,7 +31,7 @@ export interface ProbeCatalogRow {
   public_id: string;
   display_name: string;
   category: string;
-  kind: "icmp" | "tcp" | "tls";
+  kind: "icmp";
   target_node_id: NodeId | null;
   warning_ms: number | null;
   critical_ms: number | null;

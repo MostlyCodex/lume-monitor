@@ -282,7 +282,6 @@
 
   function displayProbes(node) {
     return (node?.probes || [])
-      .filter((probe) => probe.kind === "icmp")
       .sort((left, right) => {
         const categoryDelta = Number(left.category === "node-link") - Number(right.category === "node-link");
         return categoryDelta || Number(left.order || 999) - Number(right.order || 999);
@@ -1175,7 +1174,7 @@
     const node = getNode(state.selectedNode);
     if (!history || !node) return;
     const probes = displayProbes(node).filter((probe) => state.detailProbeSelection.has(probe.name));
-    const probeRows = (history.probes || []).filter((row) => row.node_id === node.id && row.kind === "icmp");
+    const probeRows = (history.probes || []).filter((row) => row.node_id === node.id);
     const networkSeries = probes.map((probe) => {
       const rows = probeRows.filter((row) => row.probe_name === probe.name);
       return {

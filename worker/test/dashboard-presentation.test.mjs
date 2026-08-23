@@ -9,7 +9,7 @@ describe("dashboard presentation hierarchy", () => {
   it("keeps the fleet home focused on node cards and current network quality", () => {
     expect(html).toContain('id="fleet-view"');
     expect(html).toContain('id="node-grid"');
-    expect(app).toContain('.filter((probe) => probe.kind === "icmp")');
+    expect(app).not.toContain('.filter((probe) => probe.kind === "icmp")');
     expect(app).toContain("probe.packet_loss_percent");
     expect(app).toContain('metricEnergyStrip(node.id, probe, metric');
     expect(app).toContain("const ENERGY_LOSS_WARNING_PERCENT = 2");

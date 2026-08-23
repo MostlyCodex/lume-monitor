@@ -1,11 +1,12 @@
 # Optional checks
 
-`services` and `probes` are optional layers on top of required host metrics. Empty arrays leave a fully valid pure-host monitoring node.
+`services` and `probes` are optional layers on top of required host metrics.
+Empty arrays leave a fully valid pure-host monitoring node.
 
 `/etc/vpsmon/config.json` is the complete execution list. The Agent does not
 invent targets or remotely enable checks. Every configured probe runs at
-`probe_interval_seconds`, even when a particular UI intentionally omits that
-probe kind. Removing the config entry is the only way to stop its network work.
+`probe_interval_seconds`; removing its config entry is the only way to stop its
+network work.
 
 ## systemd services
 
@@ -19,11 +20,13 @@ probe kind. Removing the config entry is the only way to stop its network work.
 ]
 ```
 
-The Agent only reads the unit state. It never starts, stops, restarts or reloads the service. Configure zero to sixteen entries.
+The Agent only reads the unit state. It never starts, stops, restarts or reloads
+the service. Configure zero to sixteen entries.
 
 ## ICMP node-to-node quality
 
-Configure the probe on the source VPS. `target_node_id` must match the destination node ID used by the Worker and destination Agent.
+Configure the probe on the source VPS. `target_node_id` must match the
+destination node ID used by the Worker and destination Agent.
 
 ```json
 "probes": [
@@ -48,89 +51,71 @@ Configure the probe on the source VPS. `target_node_id` must match the destinati
 ]
 ```
 
-The target has no port. This probe measures ICMP RTT and Echo loss. ICMP filtering or rate limiting can look like loss, so pair it with a TCP probe when service reachability matters.
+The target has no port. This probe measures ICMP round-trip time and Echo loss.
+ICMP filtering or rate limiting can look like packet loss, so results describe
+the selected target's Echo behavior rather than application availability.
 
-## TCP node-to-node reachability
+## External ICMP reference
+
+Use category `external` for an authorized reference target that is not another
+registered node:
 
 ```json
 "probes": [
   {
-    "name": "peer_tcp",
-    "label": "Source VPS → Destination Service",
-    "category": "node-link",
-    "target_node_id": "destination-vps",
-    "kind": "tcp",
-    "target": "destination.example.net:443",
+    "name": "external_icmp",
+    "label": "External Reference",
+    "category": "external",
+    "kind": "icmp",
+    "target": "reference.example.net",
     "timeout_seconds": 4,
     "samples": 5,
     "sample_interval_ms": 250,
-    "warning_ms": 30,
-    "critical_ms": 50,
+    "warning_ms": 300,
+    "critical_ms": 500,
     "warning_failure_percent": 20,
     "critical_failure_percent": 60,
-    "severity": "P1",
+    "severity": "P2",
     "display_order": 20
   }
 ]
 ```
 
-The Worker derives a dashboard relationship and historical route analysis from authenticated `node-link` metadata. This optional view does not change either node's base monitoring.
-
-## External TLS service
-
-```json
-"probes": [
-  {
-    "name": "external_tls",
-    "label": "External Service TLS",
-    "category": "external",
-    "kind": "tls",
-    "target": "service.example.com:443",
-    "timeout_seconds": 5,
-    "samples": 3,
-    "sample_interval_ms": 300,
-    "warning_ms": 500,
-    "critical_ms": 1000,
-    "warning_failure_percent": 34,
-    "critical_failure_percent": 67,
-    "severity": "P2",
-    "display_order": 30
-  }
-]
-```
-
-A TLS probe resolves DNS once per round, connects to the resolved address and completes a TLS handshake. Its duration excludes DNS lookup time. It does **not** prove login state, API authorization, application behavior, account health or content availability.
+Only use targets you are authorized to probe. The Agent and Worker both reject
+any `kind` other than `icmp`.
 
 ## Probe fields
 
 | Field | Meaning |
 | --- | --- |
-| `name` | Stable per-node slug used for history and alert identity |
+| `name` | Stable per-node slug used for history identity |
 | `label` | Human-readable dashboard and Telegram label |
 | `category` | `node-link`, `external`, or another safe descriptive category |
 | `target_node_id` | Required only for `node-link` |
-| `kind` | `icmp`, `tcp`, or `tls` |
-| `target` | ICMP: host/IP without port; TCP/TLS: `host:port` |
+| `kind` | Must be `icmp` |
+| `target` | Hostname or IP address without a port |
 | `timeout_seconds` | Whole-round bound, 1–15 seconds |
-| `samples` | 1–10 requested measurements; defaults to 5 for ICMP and 1 otherwise |
-| `sample_interval_ms` | Start interval, 100–5000 ms; defaults to 250 ms |
+| `samples` | 1–10 requested Echo measurements; defaults to 5 |
+| `sample_interval_ms` | Echo interval, 100–5000 ms; defaults to 250 ms |
 | `warning_ms` / `critical_ms` | Optional p50 latency thresholds; zero disables one |
-| `warning_failure_percent` / `critical_failure_percent` | Optional single-round ICMP loss or TCP/TLS connection-failure thresholds used by current state and route analysis |
+| `warning_failure_percent` / `critical_failure_percent` | Optional single-round packet-loss thresholds used by current state and route analysis |
 | `severity` | `P1`, `P2`, or `INFO` state classification retained for report compatibility |
 | `display_order` | Stable UI ordering |
 | `primary` | Preferred summary probe for the node |
 
-The warning threshold must not exceed its critical threshold when both are enabled. The sample schedule must fit inside the whole-round timeout. Probe targets generate outbound traffic from your VPS; review authorization, provider policy and expected request volume before enabling them.
+The warning threshold must not exceed its critical threshold when both are
+enabled. The sample schedule must fit inside the whole-round timeout.
 
-The per-probe failure thresholds describe the latest measurement round. They intentionally do not color the dashboard's 24-hour packet-loss energy cells: those long-window cells use exact sample-count weighting, fixed 2%/10% levels, and a 60% five-minute severe-loss guard. This separation prevents a threshold such as 20%—appropriate for one lost Echo out of five—from hiding sustained lower loss across an 80-minute cell. See [monitoring-methodology.md](monitoring-methodology.md#首页当前值与-24-小时能量棒) for the formulas and time scopes.
-
-Exact formulas and limitations are in [monitoring-methodology.md](monitoring-methodology.md).
+Single-round loss thresholds intentionally do not color the dashboard's 24-hour
+packet-loss energy cells. Those long-window cells use exact sample-count
+weighting, fixed 2%/10% levels, and a 60% five-minute severe-loss guard. See
+[monitoring-methodology.md](monitoring-methodology.md#首页当前值与-24-小时能量棒)
+for the formulas and time scopes.
 
 ## Removing an unused probe
 
-Do not merely hide an obsolete probe in the dashboard. Generate a separate
-candidate config, validate it, back up the live config, and restart only the
-monitoring Agent.
+Generate a separate candidate config, validate it, back up the live config, and
+restart only the monitoring Agent.
 
 1. Copy `deploy/prune-probes.py` to a private staging directory on the VPS, or
    run it on a trusted administration machine that holds a private config copy.
@@ -143,8 +128,8 @@ monitoring Agent.
      --remove OLD_PROBE_NAME
    ```
 
-   The tool refuses symlink input, duplicate/missing names, an existing output
-   path, or removal of every probe. It never edits the source file.
+   The tool refuses symlink input, duplicate or missing names, an existing
+   output path, or removal of every probe. It never edits the source file.
 3. Preflight the candidate without installing or reporting it:
 
    ```bash

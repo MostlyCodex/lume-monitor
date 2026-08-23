@@ -56,7 +56,7 @@ function report(generatedAt: number, bootId: string, rx: number, tx: number): Ag
 function probe(timestamp: number, duration: number, success = true): ProbeSampleRow {
   return {
     node_id: "test-vps",
-    probe_name: "peer_tcp",
+    probe_name: "peer_icmp",
     checked_at: timestamp,
     success: success ? 1 : 0,
     duration_ms: duration,
@@ -70,7 +70,7 @@ function probe(timestamp: number, duration: number, success = true): ProbeSample
     attempted_samples: 3,
     successful_samples: success ? 3 : 0,
     sample_failure_percent: success ? 0 : 100,
-    packet_loss_percent: null,
+    packet_loss_percent: success ? 0 : 100,
     complete: 1,
   };
 }
@@ -115,14 +115,14 @@ describe("observability statistics", () => {
       sample_failure_percent: 20,
       packet_loss_percent: 20,
     };
-    const summary = summarizeRoute([lossy], 30, 50, 10, 40, "icmp");
+    const summary = summarizeRoute([lossy], 30, 50, 10, 40);
     expect(summary.packet_loss_percent).toBe(20);
     expect(summary.sample_failure_percent).toBe(20);
     expect(summary.sample_coverage_percent).toBe(100);
     expect(summary.anomalies[0]).toMatchObject({ severity: "warning", reason: "丢包率 20.0%" });
   });
 
-  it("keeps transport failure rate distinct from packet loss", () => {
+  it("keeps ICMP packet loss distinct from collection coverage", () => {
     const partial = {
       ...probe(1, 12, false),
       samples: 5,
@@ -131,8 +131,8 @@ describe("observability statistics", () => {
       sample_failure_percent: 100 / 3,
       complete: 0,
     };
-    const summary = summarizeRoute([partial], 30, 50, 20, 50, "tcp");
-    expect(summary.packet_loss_percent).toBeNull();
+    const summary = summarizeRoute([partial], 30, 50, 20, 50);
+    expect(summary.packet_loss_percent).toBeCloseTo(100 / 3);
     expect(summary.sample_failure_percent).toBeCloseTo(100 / 3);
     expect(summary.sample_coverage_percent).toBe(60);
   });

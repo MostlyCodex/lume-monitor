@@ -48,9 +48,7 @@ function resourceLine(report: AgentReport): string {
 
 function probeLine(probe: ProbeResult): string {
   if (!probe.complete) return `${probe.label} ${probe.attempted_samples}/${probe.samples}`;
-  const failurePercent = probe.kind === "icmp"
-    ? probe.packet_loss_percent ?? probe.sample_failure_percent
-    : probe.sample_failure_percent;
+  const failurePercent = probe.packet_loss_percent ?? probe.sample_failure_percent;
   if (!probe.success) return `${probe.label} 不可达/${Math.round(failurePercent)}%`;
   return `${probe.label} ${Math.round(probe.duration_ms)}ms/${Math.round(failurePercent)}%`;
 }

@@ -431,7 +431,6 @@ export function summarizeRoute(
   criticalMs: number,
   warningFailurePercent = 0,
   criticalFailurePercent = 0,
-  probeKind: "icmp" | "tcp" | "tls" = "tcp",
 ): RouteStatistics {
   const successful = rows.filter((row) => row.success === 1);
   const latency = summarizeNumbers(successful.map((row) => row.duration_ms));
@@ -461,7 +460,7 @@ export function summarizeRoute(
           latency_ms: null,
           success: false,
           severity: "critical",
-          reason: probeKind === "icmp" ? "ICMP 不可达或严重丢包" : "连接失败",
+          reason: "ICMP 不可达或严重丢包",
         };
       }
       if (warningFailurePercent > 0 && row.sample_failure_percent >= warningFailurePercent) {
@@ -472,7 +471,7 @@ export function summarizeRoute(
           severity: criticalFailurePercent > 0 && row.sample_failure_percent >= criticalFailurePercent
             ? "critical"
             : "warning",
-          reason: `${probeKind === "icmp" ? "丢包率" : "连接失败率"} ${row.sample_failure_percent.toFixed(1)}%`,
+          reason: `丢包率 ${row.sample_failure_percent.toFixed(1)}%`,
         };
       }
       const severity = row.duration_ms >= criticalMs ? "critical" : "warning";
@@ -492,7 +491,7 @@ export function summarizeRoute(
     successful_sample_percent: totalSamples > 0 ? (100 * successfulSamples) / totalSamples : 0,
     sample_failure_percent: failurePercent,
     sample_coverage_percent: requestedSamples > 0 ? (100 * totalSamples) / requestedSamples : 0,
-    packet_loss_percent: probeKind === "icmp" ? failurePercent : null,
+    packet_loss_percent: failurePercent,
     sla_compliance_percent: rows.length > 0
       ? (100 * rows.filter((row) => row.success === 1 && row.duration_ms < criticalMs).length) / rows.length
       : 0,

@@ -54,11 +54,11 @@ function validReport(): Record<string, unknown> {
     services: [{ name: "example.service", label: "Example", severity: "P1", state: "active" }],
     probes: [
       {
-        name: "external_tls",
-        label: "External TLS",
+        name: "external_icmp",
+        label: "External ICMP",
         category: "external",
-        kind: "tcp",
-        target: "example.com:443",
+        kind: "icmp",
+        target: "example.com",
         warning_ms: 500,
         critical_ms: 1000,
         severity: "P2",
@@ -116,8 +116,8 @@ function legacyReport(): Record<string, unknown> {
     probes: [
       {
         name: "legacy_link",
-        kind: "tcp",
-        target: "example.com:443",
+        kind: "icmp",
+        target: "example.com",
         success: true,
         duration_ms: 20,
         checked_at: 1_800_000_000,
@@ -155,11 +155,13 @@ describe("report validation", () => {
     });
   });
 
-  it("does not mislabel transport failures as packet loss", () => {
-    const report = validReport();
-    const probe = (report.probes as Array<Record<string, unknown>>)[0];
-    probe.packet_loss_percent = 0;
-    expect(() => validateReport(report)).toThrow(/only for ICMP/);
+  it("rejects non-ICMP probe kinds", () => {
+    for (const kind of ["tcp", "tls"]) {
+      const report = validReport();
+      const probe = (report.probes as Array<Record<string, unknown>>)[0];
+      probe.kind = kind;
+      expect(() => validateReport(report)).toThrow(/kind must be icmp/);
+    }
   });
 
   it("rejects inconsistent probe counts and round status", () => {

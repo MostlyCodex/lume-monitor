@@ -63,12 +63,12 @@ function report(id = "alpha-vps") {
     probes: alpha
       ? [
           {
-            name: "peer_tcp",
+            name: "peer_icmp",
             label: "Alpha → Beta",
             category: "node-link",
             target_node_id: "beta-vps",
-            kind: "tcp",
-            target: "beta.example:443",
+            kind: "icmp",
+            target: "beta.example",
             warning_ms: 30,
             critical_ms: 50,
             warning_failure_percent: 20,
@@ -89,33 +89,7 @@ function report(id = "alpha-vps") {
             attempted_samples: 5,
             successful_samples: 5,
             sample_failure_percent: 0,
-            checked_at: now,
-          },
-          {
-            name: "external_tls",
-            label: "External TLS",
-            category: "external",
-            kind: "tls",
-            target: "example.com:443",
-            warning_ms: 500,
-            critical_ms: 1000,
-            warning_failure_percent: 50,
-            critical_failure_percent: 100,
-            severity: "P2",
-            display_order: 20,
-            success: true,
-            complete: true,
-            duration_ms: 25,
-            average_duration_ms: 25,
-            p95_duration_ms: 25,
-            min_duration_ms: 25,
-            max_duration_ms: 25,
-            range_ms: 0,
-            jitter_ms: 0,
-            samples: 1,
-            attempted_samples: 1,
-            successful_samples: 1,
-            sample_failure_percent: 0,
+            packet_loss_percent: 0,
             checked_at: now,
           },
           {
@@ -291,15 +265,15 @@ const historyBody = await history.json();
 assert(history.status === 200 && historyBody.metrics.length >= 1, "dashboard history failed");
 assert(historyBody.bucket_seconds === 300, `fleet history should use 5-minute buckets: ${historyBody.bucket_seconds}`);
 assert(historyBody.routes.length === 1, "generic node-link statistics are missing");
-const alphaRoute = historyBody.routes.find((route) => route.key === "alpha-vps--peer_tcp");
+const alphaRoute = historyBody.routes.find((route) => route.key === "alpha-vps--peer_icmp");
 assert(alphaRoute?.rounds >= 2 && alphaRoute?.latency_p50_ms === 11.5, "node-link statistics are incorrect");
-const alphaHistory = historyBody.probes.find((probe) => probe.node_id === "alpha-vps" && probe.probe_name === "peer_tcp");
+const alphaHistory = historyBody.probes.find((probe) => probe.node_id === "alpha-vps" && probe.probe_name === "peer_icmp");
 assert(alphaHistory?.latency_ms === 11.5, `repeated probe sample was not deduplicated: ${alphaHistory?.latency_ms}`);
 const icmpHistory = historyBody.probes.find((probe) => probe.node_id === "alpha-vps" && probe.probe_name === "external_icmp");
 assert(icmpHistory?.kind === "icmp" && icmpHistory?.packet_loss_percent === 20, "ICMP history semantics are incorrect");
 assert(
-  icmpHistory?.attempted_samples === 5 && icmpHistory?.successful_samples === 4,
-  "fleet history did not expose exact sample counts for weighted loss",
+  icmpHistory?.attempted_samples === 15 && icmpHistory?.successful_samples === 12,
+  "fleet history did not aggregate exact sample counts for weighted loss",
 );
 
 const detail = await fetch(`${base}/api/v1/dashboard/history?hours=24&node=alpha-vps`, { headers: adminHeaders });
@@ -307,7 +281,7 @@ const detailBody = await detail.json();
 assert(detail.status === 200 && detailBody.selected_node === "alpha-vps", "node detail history failed");
 assert(detailBody.bucket_seconds === 60, `node detail history should use 1-minute buckets: ${detailBody.bucket_seconds}`);
 assert(detailBody.metrics.every((row) => row.node_id === "alpha-vps"), "node detail leaked another node into metric rows");
-assert(detailBody.probe_summaries.some((probe) => probe.probe_name === "peer_tcp"), "node probe summary is missing");
+assert(detailBody.probe_summaries.some((probe) => probe.probe_name === "peer_icmp"), "node probe summary is missing");
 
 for (const hours of [720, 2160]) {
   const ranged = await fetch(`${base}/api/v1/dashboard/history?hours=${hours}`, { headers: adminHeaders });

@@ -157,7 +157,7 @@ function probes(value: unknown): ProbeResult[] {
     if (names.has(name)) throw new Error("probe names must be unique");
     names.add(name);
     const kind = stringValue(v.kind, `probes[${index}].kind`, 16);
-    if (kind !== "icmp" && kind !== "tcp" && kind !== "tls") throw new Error("probe kind is invalid");
+    if (kind !== "icmp") throw new Error("probe kind must be icmp");
     if (typeof v.success !== "boolean") throw new Error(`probes[${index}].success must be boolean`);
     if (v.primary !== undefined && typeof v.primary !== "boolean") throw new Error(`probes[${index}].primary must be boolean`);
     const warning = optionalNumber(v.warning_ms, `probes[${index}].warning_ms`, 0, 120000);
@@ -178,7 +178,7 @@ function probes(value: unknown): ProbeResult[] {
     if (warningFailure > 0 && criticalFailure > 0 && warningFailure > criticalFailure) {
       throw new Error("probe failure-rate thresholds are invalid");
     }
-    const sampleCount = v.samples === undefined ? 1 : integerValue(v.samples, `probes[${index}].samples`, 1, 10);
+    const sampleCount = v.samples === undefined ? 5 : integerValue(v.samples, `probes[${index}].samples`, 1, 10);
     const attemptedSamples = v.attempted_samples === undefined
       ? sampleCount
       : integerValue(v.attempted_samples, `probes[${index}].attempted_samples`, 0, sampleCount);
@@ -202,15 +202,10 @@ function probes(value: unknown): ProbeResult[] {
     if (Math.abs(sampleFailure - derivedFailure) > 0.011) {
       throw new Error(`probes[${index}].sample_failure_percent is inconsistent with sample counts`);
     }
-    if (kind !== "icmp" && v.packet_loss_percent !== undefined) {
-      throw new Error(`probes[${index}].packet_loss_percent is valid only for ICMP`);
-    }
-    const packetLoss = kind === "icmp"
-      ? (v.packet_loss_percent === undefined
-        ? sampleFailure
-        : numberValue(v.packet_loss_percent, `probes[${index}].packet_loss_percent`, 0, 100))
-      : undefined;
-    if (packetLoss !== undefined && Math.abs(packetLoss - sampleFailure) > 0.011) {
+    const packetLoss = v.packet_loss_percent === undefined
+      ? sampleFailure
+      : numberValue(v.packet_loss_percent, `probes[${index}].packet_loss_percent`, 0, 100);
+    if (Math.abs(packetLoss - sampleFailure) > 0.011) {
       throw new Error(`probes[${index}].packet_loss_percent is inconsistent with ICMP samples`);
     }
     const result: ProbeResult = {
@@ -235,7 +230,7 @@ function probes(value: unknown): ProbeResult[] {
       sample_failure_percent: sampleFailure,
       checked_at: integerValue(v.checked_at, `probes[${index}].checked_at`, 1),
     };
-    if (packetLoss !== undefined) result.packet_loss_percent = packetLoss;
+    result.packet_loss_percent = packetLoss;
     if (v.target_node_id !== undefined) {
       result.target_node_id = patternValue(v.target_node_id, `probes[${index}].target_node_id`, NODE_ID, 32);
     }

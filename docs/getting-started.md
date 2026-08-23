@@ -247,7 +247,7 @@ Copy-Item deploy/config.example.json "$env:USERPROFILE\vpsmon-private\my-vps-01\
 ]
 ```
 
-要监测节点间或外部通信，复制 [probes.md](probes.md) 中的 ICMP、TCP 或 TLS 示例。它们只是附加层，不会改变基础 Agent 模板，但配置中的每个探针都会按周期真实执行；前端不显示某一类结果并不等于停止采集。不再需要时，请按[删除无用探针](probes.md#removing-an-unused-probe)流程从节点配置移除。
+要监测节点间或外部参考目标，复制 [probes.md](probes.md) 中的 ICMP 示例。它们只是附加层，不会改变基础 Agent 模板，但配置中的每个探针都会按周期真实执行。不再需要时，请按[删除无用探针](probes.md#removing-an-unused-probe)流程从节点配置移除。
 
 ## 6. 安装首台 Agent
 
@@ -305,7 +305,7 @@ ssh <ssh-user>@<vps-host> "systemctl is-active vpsmon-agent.service && sudo jour
 | 配置 | 含义 | 模板默认值 |
 | --- | --- | ---: |
 | `report_interval_seconds` | 采集资源、服务状态并上报最新值 | 60 秒 |
-| `probe_interval_seconds` | 真正执行 ICMP/TCP/TLS 主动探测 | 60 秒 |
+| `probe_interval_seconds` | 真正执行 ICMP 主动探测 | 60 秒 |
 
 所以默认状态下，CPU/RAM/Disk 和网络质量都按分钟更新。ICMP 默认每个目标发送 5 个 Echo；一次探测仍只形成该节点这一轮的一条紧凑 D1 记录，不会按目标拆成多行。
 
@@ -361,9 +361,9 @@ D1 按实际读写行计量，索引更新和删除也会计入写入。公式�
 
 生产配置应为 root 所有、`vpsmon` 组可读，权限 `0640` 或更严格。使用安装脚本会自动设置。
 
-### ICMP 全部失败，但 TCP 正常
+### ICMP 全部失败
 
-目标可能屏蔽 ICMP，或 Linux 未允许 `vpsmon` 组使用无特权 ping socket。检查：
+目标可能屏蔽或限制 ICMP，或者 Linux 未允许 `vpsmon` 组使用无特权 ping socket。检查：
 
 ```bash
 id vpsmon

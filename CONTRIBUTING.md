@@ -7,6 +7,6 @@ Contributions are welcome through issues and pull requests.
 3. Add or update tests for behavior changes.
 4. Run `go test ./...` in `agent/` and `npm run check` in `worker/` before opening a pull request.
 5. Use generic node names and example domains in tests and documentation.
-6. Preserve the distinction between ICMP packet loss, transport connection failure and incomplete sample coverage; update `docs/monitoring-methodology.md` when measurement semantics change.
+6. Keep communication probes ICMP-only and preserve the distinction between packet loss and incomplete sample coverage; update `docs/monitoring-methodology.md` when measurement semantics change.
 
 Security reports belong in private vulnerability reporting, not public issues.

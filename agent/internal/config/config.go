@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -253,19 +252,11 @@ func (c *Config) Validate() error {
 		if probe.Category == "node-link" && probe.TargetNodeID == "" {
 			return fmt.Errorf("probe %q requires target_node_id for node-link category", probe.Name)
 		}
-		if probe.Kind != "icmp" && probe.Kind != "tcp" && probe.Kind != "tls" {
-			return fmt.Errorf("probe %q kind must be icmp, tcp or tls", probe.Name)
+		if probe.Kind != "icmp" {
+			return fmt.Errorf("probe %q kind must be icmp", probe.Name)
 		}
-		if probe.Kind == "icmp" {
-			if !validProbeHost(probe.Target) {
-				return fmt.Errorf("probe %q ICMP target must be a hostname or IP address without a port", probe.Name)
-			}
-		} else {
-			host, port, err := net.SplitHostPort(probe.Target)
-			portNumber, portErr := strconv.Atoi(port)
-			if err != nil || !validProbeHost(host) || portErr != nil || portNumber < 1 || portNumber > 65535 {
-				return fmt.Errorf("probe %q target must be hostname-or-IP:numeric-port", probe.Name)
-			}
+		if !validProbeHost(probe.Target) {
+			return fmt.Errorf("probe %q ICMP target must be a hostname or IP address without a port", probe.Name)
 		}
 		if probe.TimeoutSeconds == 0 {
 			probe.TimeoutSeconds = 4
@@ -274,11 +265,7 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("probe %q timeout must be between 1 and 15 seconds", probe.Name)
 		}
 		if probe.Samples == 0 {
-			if probe.Kind == "icmp" {
-				probe.Samples = 5
-			} else {
-				probe.Samples = 1
-			}
+			probe.Samples = 5
 		}
 		if probe.Samples < 1 || probe.Samples > 10 {
 			return fmt.Errorf("probe %q samples must be between 1 and 10", probe.Name)
@@ -298,7 +285,7 @@ func (c *Config) Validate() error {
 			probe.WarningFailurePercent > 100 || probe.CriticalFailurePercent > 100 ||
 			(probe.WarningFailurePercent > 0 && probe.CriticalFailurePercent > 0 &&
 				probe.WarningFailurePercent > probe.CriticalFailurePercent) {
-			return fmt.Errorf("probe %q failure-rate thresholds are invalid", probe.Name)
+			return fmt.Errorf("probe %q packet-loss thresholds are invalid", probe.Name)
 		}
 	}
 	if c.SpoolPath == "" {
