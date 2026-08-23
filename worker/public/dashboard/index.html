@@ -4,13 +4,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="description" content="Private, lightweight VPS observability dashboard.">
-    <meta name="theme-color" content="#080b11">
+    <meta name="theme-color" content="#050607">
     <meta name="robots" content="noindex, nofollow, noarchive">
     <title>远山Monitor</title>
     <link rel="stylesheet" href="/dashboard/vendor/uPlot.min.css">
-    <link rel="stylesheet" href="/dashboard/styles.css?v=1.0.0&amp;b=loss-energy-2-10">
+    <link rel="stylesheet" href="/dashboard/styles.css?v=1.0.0&amp;b=smoked-glass">
     <script src="/dashboard/vendor/uPlot.iife.min.js" defer></script>
-    <script src="/dashboard/app.js?v=1.0.0&amp;b=loss-energy-2-10" defer></script>
+    <script src="/dashboard/app.js?v=1.0.0&amp;b=smoked-glass" defer></script>
   </head>
   <body>
     <div class="scene" aria-hidden="true">
@@ -68,9 +68,9 @@
         <div id="top-health" class="fleet-health"><i></i><div><strong>读取状态中</strong><span id="fleet-health-copy">正在同步节点</span></div></div>
         <div class="command-actions">
           <span id="last-refresh" class="last-refresh">尚未刷新</span>
-          <button id="refresh-button" class="icon-button" type="button" aria-label="立即刷新" title="立即刷新">↻</button>
-          <button id="theme-button" class="icon-button" type="button" aria-label="切换深浅色主题" title="切换主题">◐</button>
-          <button id="settings-button" class="icon-button" type="button" aria-label="编辑面板显示" title="编辑面板显示">⚙</button>
+          <button id="refresh-button" class="icon-button" type="button" aria-label="立即刷新" title="立即刷新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"/></svg></button>
+          <button id="theme-button" class="icon-button" type="button" aria-label="切换深浅色主题" title="切换主题"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17z"/></svg></button>
+          <button id="settings-button" class="icon-button" type="button" aria-label="编辑面板显示" title="编辑面板显示"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z"/></svg></button>
           <button id="logout-button" class="text-button" type="button">退出</button>
         </div>
       </header>
@@ -84,7 +84,7 @@
 
           <div class="fleet-toolbar">
             <label class="search-control">
-              <span aria-hidden="true">⌕</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
               <span class="sr-only">筛选节点</span>
               <input id="node-search" type="search" placeholder="搜索节点" autocomplete="off">
             </label>

@@ -1315,7 +1315,7 @@
   function setTheme(theme) {
     document.documentElement.dataset.theme = theme;
     writePreference("vpsmon-theme", theme);
-    document.querySelector('meta[name="theme-color"]').setAttribute("content", theme === "light" ? "#edf2f8" : "#080b11");
+    document.querySelector('meta[name="theme-color"]').setAttribute("content", theme === "light" ? "#edf2f8" : "#050607");
     if (state.latest) requestAnimationFrame(() => {
       renderFleet();
       if (state.selectedNode) renderDetail();
