@@ -34,3 +34,13 @@ project-specific interpretation of the generated glassmorphism direction.
 - Mobile controls use at least 44px height where space permits; body text is 16px.
 - Validate at 375/390, 768, 1024 and 1440px without horizontal overflow.
 - Respect `prefers-reduced-motion` and do not depend on hover to expose information.
+
+## Full-bleed page chrome
+
+- The top command bar material spans the complete viewport width while its controls retain
+  bounded, responsive inner gutters. It touches the top and side edges and keeps only its
+  bottom corner radius.
+- The dashboard footer is a full-width smoked-glass closing band with a 112px desktop and
+  96px mobile minimum height. Footer content remains aligned to the main content column.
+- Full-bleed surfaces must never increase the document scroll width or introduce a horizontal
+  scrollbar at 375, 390, 768, 1024 or 1440px.

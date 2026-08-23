@@ -149,8 +149,8 @@ describe("dashboard presentation hierarchy", () => {
   });
 
   it("loads the pinned chart library locally instead of from a CDN", () => {
-    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=smoked-glass');
-    expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=smoked-glass');
+    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=full-bleed-chrome');
+    expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=full-bleed-chrome');
     expect(html).toContain('/dashboard/vendor/uPlot.iife.min.js');
     expect(html).toContain('/dashboard/vendor/uPlot.min.css');
     expect(html).not.toMatch(/https?:\/\/[^\s"']+u[Pp]lot/);
@@ -184,5 +184,18 @@ describe("dashboard presentation hierarchy", () => {
     expect(html).not.toContain("LIVE FLEET");
     expect(html).not.toContain("当前状态、线路延迟、丢包与资源占用。");
     expect(styles).toContain(".node-status .node-live-dot { flex: 0 0 6px; background-color: var(--green);");
+  });
+
+  it("uses full-bleed glass chrome while preserving the existing content", () => {
+    expect(html).toContain('class="command-bar glass-panel"');
+    expect(styles).toContain("width: calc(100% + 36px)");
+    expect(styles).toContain("margin: 0 -18px");
+    expect(styles).toContain("border-radius: 0 0 18px 18px");
+    expect(styles).toContain(".dashboard-footer { display: flex; width: calc(100% + 36px)");
+    expect(styles).toContain("margin: 56px -18px 0");
+    expect(styles).toContain("background: var(--glass-panel-bg)");
+    expect(styles).toContain("backdrop-filter: var(--glass-filter)");
+    expect(styles).toContain("min-height: 112px");
+    expect(html).toContain("远山不见我，而我见远山");
   });
 });
