@@ -4,6 +4,10 @@
 
 > This repository is a sanitized, self-hostable edition. It contains no production credentials, host addresses, account identifiers, or private deployment data.
 
+![远山Monitor PC 端节点总览与移动端节点详情](docs/assets/yuanshan-monitor-showcase.png)
+
+> PC 与移动端均为项目真实渲染截图；画面使用内置虚构演示数据，不包含生产凭据、主机地址或账号信息。
+
 ## 通用模型
 
 每台 VPS 使用**同一个 Agent、同一个配置结构和同一套安装脚本**。节点名、用途和数量都不写死在代码或数据库迁移中。
@@ -30,7 +34,7 @@
 - 节点间 `node-link` 探针自动生成通信关系和链路分析。
 - Agent 使用 HMAC-SHA256 签名上报，带时间窗、nonce 和重放保护。
 - D1 保存最新状态、原始样本、长期聚合、运行事件和 IP 历史。
-- Telegram Webhook 仅向已绑定账号提供按需的 `/status`、`/panel` 和 `/help`；不主动推送告警或日报。
+- Telegram Webhook 仅向已绑定账号提供按需的 `/status`（查看实时状态）、`/panel`（打开监控面板）和 `/help`（查看命令说明）；状态按节点分组展示，不主动推送告警或日报。
 - 一次性链接登录的自适应毛玻璃面板：首页以动态节点卡片展示 24 小时线路状态格和资源圆环，历史图表进入独立节点详情查看。
 - 顶部设置入口可在当前浏览器自定义面板名称、首页文案、节点卡片顺序、显示名、角色、国家和城市；设置不新增网络请求，也不修改监测数据。
 

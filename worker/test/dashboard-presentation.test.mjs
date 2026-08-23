@@ -155,7 +155,8 @@ describe("dashboard presentation hierarchy", () => {
     expect(styles).toContain(".detail-probe-card.probe-tone-mobile { --probe-color: var(--probe-mobile); }");
     expect(styles).toContain(".detail-probe-card.probe-tone-link { --probe-color: var(--probe-link); }");
     expect(styles).toContain(".probe-picker-actions button { min-height: 34px;");
-    expect(styles).toContain("grid-auto-columns: minmax(240px, 82%)");
+    expect(styles).toContain(".detail-probe-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible;");
+    expect(styles).toContain(".detail-probe-card > span:not(.detail-probe-label) { display: none; }");
     expect(html).toContain("<h2>延迟与丢包</h2>");
     expect(html).not.toContain("延迟与丢包趋势");
     expect(html).not.toContain("点击目标卡片显示或隐藏");
@@ -171,8 +172,8 @@ describe("dashboard presentation hierarchy", () => {
   });
 
   it("loads the pinned chart library locally instead of from a CDN", () => {
-    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=stable-background');
-    expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=stable-background');
+    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=mobile-compact');
+    expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=mobile-compact');
     expect(html).toContain('/dashboard/vendor/uPlot.iife.min.js');
     expect(html).toContain('/dashboard/vendor/uPlot.min.css');
     expect(html).not.toMatch(/https?:\/\/[^\s"']+u[Pp]lot/);

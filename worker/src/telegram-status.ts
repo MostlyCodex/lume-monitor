@@ -18,7 +18,7 @@ function compactAge(receivedAt: number, now: number): string {
 function serviceLine(report: AgentReport): string | null {
   if (report.services.length === 0) return null;
   return report.services
-    .map((service) => service.state === "active" ? `${service.label} ✓` : `${service.label} ⚠ ${service.state}`)
+    .map((service) => service.state === "active" ? `${service.label} 正常` : `${service.label} 异常（${service.state}）`)
     .join(" · ");
 }
 
@@ -42,21 +42,16 @@ function resourceLine(report: AgentReport): string {
   return [
     `CPU ${Math.round(report.system.cpu_percent)}%`,
     `RAM ${Math.round(memoryUsed)}%`,
-    `Disk ${Math.round(report.system.root_used_percent)}%`,
+    `磁盘 ${Math.round(report.system.root_used_percent)}%`,
   ].join(" · ");
 }
 
 function probeLine(probe: ProbeResult): string {
-  if (!probe.complete) return `${probe.label} ${probe.attempted_samples}/${probe.samples}`;
+  const label = probe.label.replace(/\s*·\s*ICMP\s*$/i, "").trim();
+  if (!probe.complete) return `${label} · 采样 ${probe.attempted_samples}/${probe.samples}`;
   const failurePercent = probe.packet_loss_percent ?? probe.sample_failure_percent;
-  if (!probe.success) return `${probe.label} 不可达/${Math.round(failurePercent)}%`;
-  return `${probe.label} ${Math.round(probe.duration_ms)}ms/${Math.round(failurePercent)}%`;
-}
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const result: T[][] = [];
-  for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
-  return result;
+  if (!probe.success) return `${label} · 不可达 · 丢包 ${Math.round(failurePercent)}%`;
+  return `${label} · ${Math.round(probe.duration_ms)} ms · 丢包 ${Math.round(failurePercent)}%`;
 }
 
 function updateTimestamp(now: number): string {
@@ -92,37 +87,52 @@ export function formatTelegramStatusMessage(
     }
   }
 
-  const lines = [
-    `🏔 远山Monitor · ${onlineCount}/${catalogNodes.length} 在线`,
-    `更新 ${updateTimestamp(now)}`,
-    "",
-  ];
-
-  if (catalogNodes.length === 0) lines.push("尚无已注册节点。", "");
+  const blocks: string[][] = [];
   for (const meta of catalogNodes) {
     const node = rows.get(meta.node_id);
     const report = parsed.get(meta.node_id);
     if (!node) {
-      lines.push(`🔴 ${meta.display_name} · 尚无数据`, "");
+      blocks.push([`🔴 ${meta.display_name}`, "   状态  尚无数据"]);
       continue;
     }
     if (!report) {
-      lines.push(`🔴 ${meta.display_name} · 数据异常`, "");
+      blocks.push([`🔴 ${meta.display_name}`, "   状态  数据异常"]);
       continue;
     }
 
-    lines.push(`${nodeStatusIcon(node, meta, report, now)} ${meta.display_name} · ${compactAge(node.received_at, now)}`);
-    lines.push(resourceLine(report));
+    const block = [
+      `${nodeStatusIcon(node, meta, report, now)} ${meta.display_name}`,
+      `   更新  ${compactAge(node.received_at, now)}`,
+      `   资源  ${resourceLine(report)}`,
+    ];
     const services = serviceLine(report);
-    if (services) lines.push(services);
+    if (services) block.push(`   服务  ${services}`);
     const probes = [...report.probes]
       .sort((left, right) => left.display_order - right.display_order)
       .slice(0, 4)
       .map(probeLine);
-    for (const group of chunk(probes, 2)) lines.push(group.join(" · "));
-    lines.push("");
+    if (probes.length > 0) {
+      block.push("   线路");
+      probes.forEach((probe, index) => block.push(`   ${index === probes.length - 1 ? "└" : "├"} ${probe}`));
+    }
+    blocks.push(block);
   }
 
-  lines.push("🔎 /panel 查看详细图表");
+  const lines = [
+    "🏔 远山Monitor · 最新状态",
+    `在线  ${onlineCount}/${catalogNodes.length}    更新  ${updateTimestamp(now)}`,
+    "━━━━━━━━━━━━━━━━━━",
+    "",
+  ];
+  if (catalogNodes.length === 0) lines.push("尚无已注册节点。", "");
+  let included = 0;
+  for (const block of blocks) {
+    const candidate = [...lines, ...block, "", "🔎 /panel 打开监控面板"].join("\n");
+    if (candidate.length > 3900) break;
+    lines.push(...block, "");
+    included += 1;
+  }
+  if (included < blocks.length) lines.push(`… 另有 ${blocks.length - included} 个节点，请在面板查看`, "");
+  lines.push("🔎 /panel 打开监控面板");
   return lines.join("\n");
 }

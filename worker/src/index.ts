@@ -616,9 +616,9 @@ function telegramHelpMessage(): string {
   return [
     "🤖 VPS 监控机器人命令",
     "",
-    "/status — 查询所有已注册 VPS 的最新状态",
-    "/panel — 获取网页监控面板的一次性登录链接",
-    "/help — 查看本说明",
+    "/status — 查看实时状态",
+    "/panel — 打开监控面板",
+    "/help — 查看命令说明",
     "",
     "仅响应已绑定账号的私聊；命令通过 Webhook 实时处理，通常数秒内返回。",
     "面板登录链接 5 分钟内有效且只能使用一次，登录状态保持 30 天。",

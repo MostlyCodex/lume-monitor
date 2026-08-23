@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { parseTelegramBindCode, parseTelegramCommand } from "../src/telegram";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ensureTelegramCommandMenu, parseTelegramBindCode, parseTelegramCommand } from "../src/telegram";
+import type { Env } from "../src/types";
 
 const bot = "@example_vps_monitor_bot";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("Telegram command parsing", () => {
   it("accepts status in the bound group", () => {
@@ -37,5 +40,36 @@ describe("Telegram command parsing", () => {
     );
     expect(parseTelegramBindCode("/bind@another_monitor_bot code-1234567890123456", bot)).toBeNull();
     expect(parseTelegramBindCode("/bind short", bot)).toBeNull();
+  });
+
+  it("publishes concise Chinese command descriptions for the bound private chat", async () => {
+    const prepare = vi.fn((sql: string) => ({
+      bind: (...args: unknown[]) => ({
+        first: async () => {
+          if (!sql.startsWith("SELECT value FROM settings")) return null;
+          return args[0] === "telegram_owner_user_id" ? { value: "12345" } : null;
+        },
+        run: async () => ({ meta: { changes: 1 } }),
+      }),
+    }));
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({ ok: true, result: true }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const env = {
+      DB: { prepare },
+      TELEGRAM_BOT_TOKEN: "bot-token",
+    } as unknown as Env;
+
+    expect(await ensureTelegramCommandMenu(env, 1000)).toBe(true);
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(JSON.parse(String(request?.body))).toMatchObject({
+      commands: [
+        { command: "status", description: "查看实时状态" },
+        { command: "panel", description: "打开监控面板" },
+        { command: "help", description: "查看命令说明" },
+      ],
+      scope: { type: "chat", chat_id: "12345" },
+    });
   });
 });

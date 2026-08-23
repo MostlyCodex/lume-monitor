@@ -115,12 +115,14 @@ describe("Telegram status formatting", () => {
   it("renders a compact node summary without exposing an IP field", () => {
     const message = formatTelegramStatusMessage([catalog()], [row(report())], now);
 
-    expect(message).toContain("🏔 远山Monitor · 1/1 在线");
-    expect(message).toContain("🟢 示例节点 · 20秒前");
-    expect(message).toContain("CPU 3% · RAM 14% · Disk 11%");
-    expect(message).toContain("nftables ✓");
-    expect(message).toContain("北京电信 152ms/0%");
-    expect(message).toContain("/panel 查看详细图表");
+    expect(message).toContain("🏔 远山Monitor · 最新状态");
+    expect(message).toContain("在线  1/1");
+    expect(message).toContain("🟢 示例节点");
+    expect(message).toContain("更新  20秒前");
+    expect(message).toContain("资源  CPU 3% · RAM 14% · 磁盘 11%");
+    expect(message).toContain("服务  nftables 正常");
+    expect(message).toContain("└ 北京电信 · 152 ms · 丢包 0%");
+    expect(message).toContain("/panel 打开监控面板");
     expect(message).not.toContain("上报源");
     expect(message).not.toMatch(/(?:\d{1,3}\.){3}\d{1,3}/);
     expect(message).not.toContain("2001:db8");
@@ -134,8 +136,9 @@ describe("Telegram status formatting", () => {
       now,
     );
 
-    expect(message).toContain("🏔 远山Monitor · 0/1 在线");
-    expect(message).toContain("🔴 示例节点 · 10分前");
+    expect(message).toContain("在线  0/1");
+    expect(message).toContain("🔴 示例节点");
+    expect(message).toContain("更新  10分前");
     expect(message).not.toContain("未配置");
   });
 
@@ -147,8 +150,25 @@ describe("Telegram status formatting", () => {
     const message = formatTelegramStatusMessage([catalog()], [row(unhealthy)], now);
 
     expect(message).toContain("🟡 示例节点");
-    expect(message).toContain("Xray ⚠ inactive");
-    expect(message).toContain("北京电信 170ms/20%");
+    expect(message).toContain("Xray 异常（inactive）");
+    expect(message).toContain("北京电信 · 170 ms · 丢包 20%");
     expect(message).not.toContain("40%");
+  });
+
+  it("keeps large fleets within Telegram's message limit and directs overflow to the panel", () => {
+    const catalogs = Array.from({ length: 80 }, (_, index) => catalog({
+      node_id: `node-${index}`,
+      display_name: `示例节点-${String(index).padStart(2, "0")}`,
+      display_order: index,
+    }));
+    const rows = catalogs.map((meta) => {
+      const value = report({ node_id: meta.node_id, node: { ...report().node, id: meta.node_id } });
+      return row(value);
+    });
+    const message = formatTelegramStatusMessage(catalogs, rows, now);
+
+    expect(message.length).toBeLessThanOrEqual(4000);
+    expect(message).toContain("个节点，请在面板查看");
+    expect(message).toContain("/panel 打开监控面板");
   });
 });

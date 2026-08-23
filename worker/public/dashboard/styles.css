@@ -868,9 +868,9 @@ html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-
   .section-heading > p { text-align: left; }
   .probe-picker { padding: 0; }
   .probe-picker-head { align-items: center; }
-  .detail-probe-summary { grid-auto-columns: minmax(240px, 82%); grid-auto-flow: column; grid-template-columns: none; overflow-x: auto; padding: 0 1px 5px; scroll-snap-type: x proximity; scrollbar-width: none; }
-  .detail-probe-summary::-webkit-scrollbar { display: none; }
-  .detail-probe-card { min-height: 44px; scroll-snap-align: start; }
+  .detail-probe-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; padding: 0 1px 3px; }
+  .detail-probe-card { min-height: 44px; grid-template-columns: 8px minmax(0, 1fr); gap: 8px; padding: 8px 10px; }
+  .detail-probe-card > span:not(.detail-probe-label) { display: none; }
   .network-chart-toolbar { align-items: flex-start; flex-direction: column; gap: 8px; margin-bottom: 9px; }
   .network-chart-toolbar > p { justify-content: flex-start; flex-wrap: wrap; font-size: 10px; }
   .network-layer-switch { width: 100%; }

@@ -22,7 +22,7 @@ export interface TelegramUpdate {
 
 export type TelegramCommand = "status" | "panel" | "help";
 
-const COMMAND_MENU_VERSION = "6";
+const COMMAND_MENU_VERSION = "7";
 const WEBHOOK_CONFIG_VERSION = "1";
 const TELEGRAM_OWNER_SETTING = "telegram_owner_user_id";
 
@@ -122,9 +122,9 @@ export async function ensureTelegramCommandMenu(env: Env, now: number): Promise<
   const configuredVersion = await getSetting(env, "telegram_command_menu_version");
   if (configuredVersion === expectedConfiguration) return true;
   const commands = [
-    { command: "status", description: "查看所有 VPS 实时状态" },
-    { command: "panel", description: "登录网页监控面板" },
-    { command: "help", description: "查看机器人命令说明" },
+    { command: "status", description: "查看实时状态" },
+    { command: "panel", description: "打开监控面板" },
+    { command: "help", description: "查看命令说明" },
   ];
   const privateConfigured = await telegramCall<boolean>(env, "setMyCommands", {
     commands,
