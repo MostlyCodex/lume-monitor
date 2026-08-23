@@ -6,6 +6,11 @@ const secrets = {
   "beta-vps": "b".repeat(32),
 };
 
+// Keep the synthetic report sequence inside one five-minute dashboard bucket.
+// Using wall-clock now, now+60 and now+120 made this assertion depend on the
+// minute at which CI happened to start.
+const reportEpoch = Math.floor(Date.now() / 300_000) * 300 + 60;
+
 function nodeMetadata(id, name, order, color) {
   return {
     id,
@@ -23,7 +28,7 @@ function nodeMetadata(id, name, order, color) {
 }
 
 function report(id = "alpha-vps") {
-  const now = Math.floor(Date.now() / 1000);
+  const now = reportEpoch;
   const alpha = id === "alpha-vps";
   return {
     schema_version: 2,
@@ -273,7 +278,7 @@ const icmpHistory = historyBody.probes.find((probe) => probe.node_id === "alpha-
 assert(icmpHistory?.kind === "icmp" && icmpHistory?.packet_loss_percent === 20, "ICMP history semantics are incorrect");
 assert(
   icmpHistory?.attempted_samples === 15 && icmpHistory?.successful_samples === 12,
-  "fleet history did not aggregate exact sample counts for weighted loss",
+  `fleet history did not aggregate exact sample counts for weighted loss: ${JSON.stringify(icmpHistory)}`,
 );
 
 const detail = await fetch(`${base}/api/v1/dashboard/history?hours=24&node=alpha-vps`, { headers: adminHeaders });
