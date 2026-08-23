@@ -2,6 +2,11 @@
 
 `services` and `probes` are optional layers on top of required host metrics. Empty arrays leave a fully valid pure-host monitoring node.
 
+`/etc/vpsmon/config.json` is the complete execution list. The Agent does not
+invent targets or remotely enable checks. Every configured probe runs at
+`probe_interval_seconds`, even when a particular UI intentionally omits that
+probe kind. Removing the config entry is the only way to stop its network work.
+
 ## systemd services
 
 ```json
@@ -120,3 +125,43 @@ The warning threshold must not exceed its critical threshold when both are enabl
 The per-probe failure thresholds describe the latest measurement round. They intentionally do not color the dashboard's 24-hour packet-loss energy cells: those long-window cells use exact sample-count weighting, fixed 2%/10% levels, and a 60% five-minute severe-loss guard. This separation prevents a threshold such as 20%—appropriate for one lost Echo out of five—from hiding sustained lower loss across an 80-minute cell. See [monitoring-methodology.md](monitoring-methodology.md#首页当前值与-24-小时能量棒) for the formulas and time scopes.
 
 Exact formulas and limitations are in [monitoring-methodology.md](monitoring-methodology.md).
+
+## Removing an unused probe
+
+Do not merely hide an obsolete probe in the dashboard. Generate a separate
+candidate config, validate it, back up the live config, and restart only the
+monitoring Agent.
+
+1. Copy `deploy/prune-probes.py` to a private staging directory on the VPS, or
+   run it on a trusted administration machine that holds a private config copy.
+2. Generate a new file. Repeat `--remove` for multiple exact names:
+
+   ```bash
+   python3 prune-probes.py \
+     --input /etc/vpsmon/config.json \
+     --output /tmp/vpsmon-stage.ID/config.next.json \
+     --remove OLD_PROBE_NAME
+   ```
+
+   The tool refuses symlink input, duplicate/missing names, an existing output
+   path, or removal of every probe. It never edits the source file.
+3. Preflight the candidate without installing or reporting it:
+
+   ```bash
+   sudo /opt/vpsmon/vpsmon-agent \
+     --config /tmp/vpsmon-stage.ID/config.next.json \
+     --dry-run >/dev/null
+   ```
+
+4. Back up the live file with restrictive permissions, install the candidate,
+   and restart only `vpsmon-agent.service`. Restore the backup immediately if
+   the unit is not active afterward. Do not restart any monitored business
+   service.
+5. After the next accepted report, verify that the Worker catalog marks the
+   removed name `enabled=0` and that the latest report contains only the intended
+   probe count.
+
+Disabled catalog rows and retained historical samples are passive data. They do
+not cause Agent traffic, Worker polling, or scheduled re-probing. Raw samples
+expire under the normal retention job; deleting packed history is neither
+required to stop collection nor recommended as part of routine config cleanup.

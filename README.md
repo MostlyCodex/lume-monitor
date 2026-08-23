@@ -27,7 +27,7 @@
 - 任意数量和任意角色的 VPS 动态注册与展示。
 - ICMP、TCP、TLS 多样本探测，记录 p50/p95、RTT 标准差和采样覆盖率。
 - 严格区分 ICMP 丢包率与 TCP/TLS 连接失败率，避免错误解释网络质量。
-- 默认业务视图每个 ICMP 目标只显示当前延迟与丢包率，完整技术指标留在后台用于历史诊断。
+- 默认网页只展示 ICMP 延迟与丢包；仅当配置了 TCP/TLS 时，其连接耗时与失败率才会被执行、上报并进入按需状态与历史数据。
 - 节点间 `node-link` 探针自动生成通信关系和链路分析。
 - Agent 使用 HMAC-SHA256 签名上报，带时间窗、nonce 和重放保护。
 - D1 保存最新状态、原始样本、长期聚合、运行事件和 IP 历史。
@@ -38,6 +38,7 @@
 ## 安全边界
 
 - Agent 不监听端口，只发起配置中明确声明的出站连接。
+- `/etc/vpsmon/config.json` 是唯一执行清单：Agent 不生成隐藏探针，也不会探测未写入 `probes` 的目标；网页隐藏某类结果不等于停止该探针。
 - Agent 以无特权用户运行；systemd 服务状态检查是只读的。
 - 安装脚本只管理 `/opt/vpsmon`、`/etc/vpsmon`、`/var/lib/vpsmon` 和独立的 `vpsmon-agent.service`。
 - 系统不会自动切换线路，也不会修改 nftables、Xray 或其他业务配置。
@@ -150,6 +151,25 @@
 首页用 5 分钟数据桶控制多节点载荷，再将其合并成 18 个可见色块；进入节点详情后，6/24 小时曲线会保留每次 60 秒上报的分辨率。这里的显示聚合不会减少 Agent 探测次数，也不会改变 D1 原始数据保留期。
 
 频率约束、流量公式和容量建议见[完整教程第 8 节](docs/getting-started.md#8-采集与探测频率)。
+
+### 可选探针的可见性与清理
+
+- ICMP 结果显示在首页、节点详情和 Telegram `/status`；
+- 已配置的 TCP/TLS 结果会进入 Worker 最新报告与 D1 原始历史，并可能占用 Telegram `/status` 最多四条探针摘要中的位置；默认网页不会把“连接失败率”混入 ICMP“丢包率”；
+- Agent 会按 `probe_interval_seconds` 执行配置中的**每一项**。如果某项已经没有使用场景，必须从节点配置删除，而不是只在前端隐藏。
+
+仓库提供 `deploy/prune-probes.py` 生成不含指定探针的全新配置；它不覆盖源文件，可先校验再替换：
+
+```bash
+python3 prune-probes.py \
+  --input /etc/vpsmon/config.json \
+  --output /tmp/config.next.json \
+  --remove OLD_PROBE_NAME
+
+sudo /opt/vpsmon/vpsmon-agent --config /tmp/config.next.json --dry-run
+```
+
+可重复 `--remove` 一次删除多项。完成备份并安装新配置、仅重启 `vpsmon-agent` 后，下一份认证报告会自动把缺失探针和对应链路标为禁用。已有历史样本是静态记录，会按 30 天保留策略自然过期；它们不会继续发包或触发额外采集。完整的备份、替换、回滚和核验步骤见[可选检查文档](docs/probes.md#removing-an-unused-probe)。
 
 ## 手动下线节点
 

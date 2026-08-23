@@ -247,7 +247,7 @@ Copy-Item deploy/config.example.json "$env:USERPROFILE\vpsmon-private\my-vps-01\
 ]
 ```
 
-要监测节点间或外部通信，复制 [probes.md](probes.md) 中的 ICMP、TCP 或 TLS 示例。它们只是附加层，不会改变基础 Agent 模板。
+要监测节点间或外部通信，复制 [probes.md](probes.md) 中的 ICMP、TCP 或 TLS 示例。它们只是附加层，不会改变基础 Agent 模板，但配置中的每个探针都会按周期真实执行；前端不显示某一类结果并不等于停止采集。不再需要时，请按[删除无用探针](probes.md#removing-an-unused-probe)流程从节点配置移除。
 
 ## 6. 安装首台 Agent
 
