@@ -55,7 +55,11 @@ describe("dashboard presentation hierarchy", () => {
     expect(nodeCardRule).not.toContain("grayscale(");
     expect(nodeCardRule).not.toContain("rgba(10, 18, 29");
     expect(styles).toContain('html[data-theme="light"] .node-card');
-    expect(styles).toContain("backdrop-filter: blur(18px) saturate(120%)");
+    expect(styles).toContain('html[data-theme="light"] .scene::after { background: rgba(239, 245, 251, 0.12); }');
+    expect(styles).toContain('html[data-theme="light"] .glass-panel { border-color: rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.07);');
+    expect(styles).toContain('html[data-theme="light"] .node-card { border-color: rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.06);');
+    expect(styles).toContain("backdrop-filter: blur(14px) saturate(106%) brightness(112%)");
+    expect(styles).not.toContain("rgba(244, 248, 252, 0.46)");
     expect(styles).toContain("Desktop readability: keep display headings unchanged");
     expect(app).toContain("const FLAG_ART");
     expect(app).toContain('class="node-uptime"');
