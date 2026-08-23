@@ -1,0 +1,23 @@
+{
+  "node": {
+    "id": "benchmark-node",
+    "display_name": "Benchmark Node",
+    "short_mark": "BEN",
+    "role": "VPS",
+    "group": "benchmark",
+    "region": "Test Region",
+    "stale_seconds": 180,
+    "display_order": 100,
+    "color": "green",
+    "offline_severity": "P1",
+    "ip_change_severity": "P2"
+  },
+  "endpoint": "http://127.0.0.1:8787/api/v1/report",
+  "secret": "benchmark-secret-with-32-characters",
+  "report_interval_seconds": 60,
+  "probe_interval_seconds": 60,
+  "services": [],
+  "probes": [],
+  "spool_path": "/var/lib/vpsmon/benchmark-pending.json",
+  "allow_http_for_tests": true
+}

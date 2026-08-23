@@ -1,0 +1,116 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - name: Validate semantic version tag
+        run: |
+          printf '%s' "$GITHUB_REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'
+      - name: Verify Agent
+        working-directory: agent
+        run: |
+          go test ./...
+          go vet ./...
+      - name: Verify Worker, fresh D1 and production upgrade path
+        working-directory: worker
+        run: |
+          npm ci
+          npm run test:ci
+
+  build-agent:
+    name: Agent linux/${{ matrix.arch }}
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: Build reproducible Agent binary
+        working-directory: agent
+        env:
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          set -eu
+          version=${GITHUB_REF_NAME#v}
+          mkdir -p ../dist
+          CGO_ENABLED=0 GOOS=linux go build -trimpath \
+            -ldflags="-s -w -X main.version=${version}" \
+            -o "../dist/vpsmon-agent-linux-${GOARCH}" ./cmd/vpsmon-agent
+          go version -m "../dist/vpsmon-agent-linux-${GOARCH}" \
+            > "../dist/vpsmon-agent-linux-${GOARCH}.buildinfo.txt"
+          if [ "$GOARCH" = "amd64" ]; then
+            "../dist/vpsmon-agent-linux-${GOARCH}" --version | grep -Fx "${version}"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-linux-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Checksums, provenance and GitHub Release
+    needs: build-agent
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: agent-linux-*
+          path: dist
+          merge-multiple: true
+      - name: Generate SHA-256 manifest
+        run: |
+          set -eu
+          cp LICENSE THIRD_PARTY_NOTICES.md dist/
+          cd dist
+          sha256sum vpsmon-agent-linux-amd64 vpsmon-agent-linux-arm64 > SHA256SUMS
+      - name: Attest Agent build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: "dist/vpsmon-agent-linux-*"
+      - name: Publish immutable release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release already exists; refusing to replace immutable assets" >&2
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes \
+            --title "远山 Monitor ${GITHUB_REF_NAME}"

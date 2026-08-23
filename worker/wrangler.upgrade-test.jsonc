@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yuanshan-monitor-upgrade-test",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-19",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": false },
+  "vars": {
+    "APP_VERSION": "upgrade-test",
+    "REPORT_MAX_AGE_SECONDS": "300",
+    "TELEGRAM_BOT_USERNAME": "integration_test_bot",
+    "DASHBOARD_BASE_URL": "http://127.0.0.1:8787",
+    "ADMIN_TOKEN": "local-admin-token-with-32-characters",
+    "NODE_KEYS": "{\"alpha-vps\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"beta-vps\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}"
+  },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "yuanshan-monitor-upgrade-test",
+    "database_id": "00000000-0000-0000-0000-000000000002",
+    "migrations_dir": "migrations-v3"
+  }],
+  "triggers": { "crons": ["* * * * *", "0 1 * * *"] }
+}

@@ -55,7 +55,7 @@
       └── 可选节点/外部通信探针
 ```
 
-设计说明见 [docs/architecture.md](docs/architecture.md)，测量口径见 [docs/monitoring-methodology.md](docs/monitoring-methodology.md)，探针示例见 [docs/probes.md](docs/probes.md)。
+设计说明见 [docs/architecture.md](docs/architecture.md)，测量口径见 [docs/monitoring-methodology.md](docs/monitoring-methodology.md)，探针示例见 [docs/probes.md](docs/probes.md)，测试与可信发布流程见 [docs/testing-and-releases.md](docs/testing-and-releases.md)。
 
 ## 开始使用
 
@@ -248,6 +248,7 @@ sudo sh uninstall-agent.sh --confirm
 | `worker/` | Cloudflare Worker、通用 D1 schema、动态面板和测试 |
 | `deploy/` | 单一配置模板、安装/卸载脚本和 systemd unit |
 | `docs/` | 架构、探针和部署文档 |
+| `scripts/` | 可重复的开发与性能验证脚本 |
 
 ## 开发
 
@@ -257,11 +258,13 @@ go test ./...
 
 cd ../worker
 npm ci
-npm run check
+npm run test:ci
 
 # 使用完全虚构的数据预览面板，不需要 D1 或生产密钥
 npm run preview:dashboard
 ```
+
+`npm run test:ci` 会在临时目录中同时验证全新 D1 迁移、历史生产结构升级和真实本地 Worker HTTP 合约，不会连接线上 Worker 或 D1。Linux Agent 性能基准及 GitHub Release 规则见[测试与发布文档](docs/testing-and-releases.md)。
 
 ## 发布策略
 

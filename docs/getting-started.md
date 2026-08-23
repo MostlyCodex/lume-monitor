@@ -182,6 +182,15 @@ unset ADMIN_TOKEN
 
 ## 4. 编译通用 Agent
 
+正式标签版本也可以直接下载并验证对应架构的发布二进制，不需要在本机安装 Go：
+
+```bash
+sh deploy/fetch-release-agent.sh v1.0.1 /tmp/vpsmon-agent
+/tmp/vpsmon-agent --version
+```
+
+下载器只获取指定版本并核验 SHA-256，不会安装、覆盖或重启任何 VPS。发布来源证明及完整规则见 [testing-and-releases.md](testing-and-releases.md)。如果使用当前源码自行构建，再继续下面的步骤。
+
 先在 VPS 上运行 `uname -m`：
 
 - `x86_64` 对应 `GOARCH=amd64`；

@@ -83,6 +83,18 @@ To authorize private Bot commands, send `/bind <one-time-code>` in the intended 
 
 ## 4. Build the single Agent binary
 
+For a tagged release, the preferred path is to download an explicit version and
+verify its published SHA-256 before staging it:
+
+```bash
+sh deploy/fetch-release-agent.sh v1.0.1 /tmp/vpsmon-agent
+/tmp/vpsmon-agent --version
+```
+
+This helper only downloads and verifies a file. It does not install, restart or
+modify a VPS. The complete release and provenance process is documented in
+[testing-and-releases.md](testing-and-releases.md). To build from source instead:
+
 ```bash
 cd ../agent
 go test ./...

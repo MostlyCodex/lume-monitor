@@ -8,6 +8,7 @@ agent/bin/
 agent/.gocache/
 agent/.gomodcache/
 agent/.toolchains/
+benchmark-results/
 .npm-cache/
 *.exe
 *.zip

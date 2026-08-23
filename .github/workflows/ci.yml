@@ -36,4 +36,21 @@ jobs:
           cache: npm
           cache-dependency-path: worker/package-lock.json
       - run: npm ci
-      - run: npm run check
+      - run: npm run test:ci
+
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: Run repeatable Agent benchmark
+        run: bash scripts/benchmark-agent.sh "$RUNNER_TEMP/yuanshan-benchmark"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-benchmark-${{ github.sha }}
+          path: ${{ runner.temp }}/yuanshan-benchmark
+          if-no-files-found: error
+          retention-days: 30
