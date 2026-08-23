@@ -92,14 +92,6 @@ function testProductionUpgrade(root) {
     "d1", "migrations", "apply", "DB", "--local", "--config", config,
     "--persist-to", persistence,
   ], true);
-  runWrangler([
-    "d1", "execute", "DB", "--local", "--config", config, "--persist-to", persistence,
-    "--command",
-    "INSERT INTO metric_samples_v3 VALUES (1,'expired-fixture',1,'expired-boot',0,0,0,0,0,0,0,0,0,0,NULL,NULL,0,0,0,0); " +
-      "INSERT INTO probe_rounds_v3 VALUES (1,'expired-fixture',1,'[]');",
-    "--yes",
-  ], true);
-
   const preserved = query(
     config,
     persistence,
@@ -137,6 +129,13 @@ async function testFreshDatabase(root) {
   runWrangler([
     "d1", "migrations", "apply", "DB", "--local", "--config", config,
     "--persist-to", persistence,
+  ], true);
+  runWrangler([
+    "d1", "execute", "DB", "--local", "--config", config, "--persist-to", persistence,
+    "--command",
+    "INSERT INTO metric_samples_v3 VALUES (1,'expired-fixture',1,'expired-boot',0,0,0,0,0,0,0,0,0,0,NULL,NULL,0,0,0,0); " +
+      "INSERT INTO probe_rounds_v3 VALUES (1,'expired-fixture',1,'[]');",
+    "--yes",
   ], true);
 
   const port = await unusedPort();
@@ -189,9 +188,26 @@ async function testFreshDatabase(root) {
   console.log("retention_and_rollups_ok=true");
 }
 
+function workflowEscape(value) {
+  return value.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
+}
+
+async function main() {
+  try {
+    testProductionUpgrade(temporaryRoot);
+    await testFreshDatabase(temporaryRoot);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 });
+  }
+}
+
 try {
-  testProductionUpgrade(temporaryRoot);
-  await testFreshDatabase(temporaryRoot);
-} finally {
-  await rm(temporaryRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 });
+  await main();
+} catch (error) {
+  const detail = error instanceof Error ? error.stack ?? error.message : String(error);
+  console.error(detail);
+  if (process.env.GITHUB_ACTIONS === "true") {
+    console.error(`::error title=Local Wrangler integration failed::${workflowEscape(detail)}`);
+  }
+  process.exitCode = 1;
 }
