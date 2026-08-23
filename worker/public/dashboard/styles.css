@@ -2,8 +2,8 @@
   color-scheme: dark;
   --bg: #080b11;
   --bg-elevated: #0d121b;
-  --surface: rgba(24, 24, 27, 0.3);
-  --surface-strong: rgba(27, 27, 30, 0.62);
+  --surface: rgba(255, 255, 255, 0.035);
+  --surface-strong: rgba(12, 14, 18, 0.38);
   --surface-soft: rgba(255, 255, 255, 0.05);
   --line: rgba(255, 255, 255, 0.06);
   --line-strong: rgba(255, 255, 255, 0.105);
@@ -148,10 +148,10 @@ html[data-theme="light"] .scene::after { background: rgba(239, 245, 251, 0.3); }
   position: relative;
   border: 1px solid rgba(255, 255, 255, 0.05);
   outline: 0;
-  background: rgba(18, 18, 20, 0.06);
-  box-shadow: 0 24px 66px rgba(0, 0, 0, 0.16), 0 7px 20px rgba(0, 0, 0, 0.06), inset 0 1px rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(18px) grayscale(100%) brightness(102%);
-  -webkit-backdrop-filter: blur(18px) grayscale(100%) brightness(102%);
+  background: rgba(255, 255, 255, 0.025);
+  box-shadow: 0 24px 66px rgba(0, 0, 0, 0.14), 0 7px 20px rgba(0, 0, 0, 0.05), inset 0 1px rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(14px) saturate(108%);
+  -webkit-backdrop-filter: blur(14px) saturate(108%);
 }
 .glass-panel::before {
   content: "";
@@ -351,7 +351,7 @@ html[data-theme="light"] .button-primary { color: #fff; }
 .range-switch button { min-height: 38px; padding: 0 14px; border-radius: 10px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 700; }
 .range-switch button:hover { color: var(--text); }
 .range-switch button.is-active { background: rgba(var(--primary-rgb), 0.13); color: var(--primary); box-shadow: inset 0 0 0 1px rgba(var(--primary-rgb), 0.18); }
-.search-control { display: flex; width: min(320px, 100%); min-height: 40px; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; background: rgba(14, 14, 16, 0.045); color: var(--muted); backdrop-filter: blur(14px) grayscale(100%) brightness(104%); -webkit-backdrop-filter: blur(14px) grayscale(100%) brightness(104%); }
+.search-control { display: flex; width: min(320px, 100%); min-height: 40px; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; background: rgba(255, 255, 255, 0.025); color: var(--muted); backdrop-filter: blur(10px) saturate(105%); -webkit-backdrop-filter: blur(10px) saturate(105%); }
 .search-control input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 13px; }
 .search-control input::placeholder { color: var(--muted); }
 html[data-theme="light"] .search-control { border-color: rgba(35, 54, 80, 0.07); background: rgba(244, 248, 252, 0.46); box-shadow: 0 9px 24px rgba(34, 52, 78, 0.1), inset 0 1px rgba(255, 255, 255, 0.72); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
@@ -366,11 +366,11 @@ html[data-theme="light"] .search-control { border-color: rgba(35, 54, 80, 0.07);
   background: var(--surface-strong);
   box-shadow: 0 32px 110px rgba(0, 0, 0, 0.55);
   color: var(--text);
-  backdrop-filter: blur(24px) grayscale(100%) brightness(102%);
-  -webkit-backdrop-filter: blur(24px) grayscale(100%) brightness(102%);
+  backdrop-filter: blur(20px) saturate(108%);
+  -webkit-backdrop-filter: blur(20px) saturate(108%);
 }
 html[data-theme="light"] .settings-dialog { backdrop-filter: blur(24px) saturate(138%); -webkit-backdrop-filter: blur(24px) saturate(138%); }
-.settings-dialog::backdrop { background: rgba(4, 4, 5, 0.55); backdrop-filter: blur(7px) grayscale(100%); }
+.settings-dialog::backdrop { background: rgba(4, 4, 5, 0.46); backdrop-filter: blur(7px); }
 .settings-shell { display: grid; max-height: calc(100vh - 42px); overflow: auto; }
 .settings-head {
   position: sticky;
@@ -443,10 +443,10 @@ html[data-theme="light"] .settings-dialog { backdrop-filter: blur(24px) saturate
   border: 1px solid rgba(255, 255, 255, 0.05);
   outline: 0;
   border-radius: 22px;
-  background: rgba(16, 16, 18, 0.06);
-  box-shadow: 0 28px 74px rgba(0, 0, 0, 0.17), 0 9px 25px rgba(0, 0, 0, 0.07), inset 0 1px rgba(255, 255, 255, 0.11);
-  backdrop-filter: blur(18px) grayscale(100%) brightness(102%);
-  -webkit-backdrop-filter: blur(18px) grayscale(100%) brightness(102%);
+  background: rgba(255, 255, 255, 0.02);
+  box-shadow: 0 28px 74px rgba(0, 0, 0, 0.14), 0 9px 25px rgba(0, 0, 0, 0.05), inset 0 1px rgba(255, 255, 255, 0.11);
+  backdrop-filter: blur(14px) saturate(108%);
+  -webkit-backdrop-filter: blur(14px) saturate(108%);
   cursor: pointer;
   isolation: isolate;
   transition: border-color 180ms ease;
@@ -498,7 +498,7 @@ html[data-theme="light"] .settings-dialog { backdrop-filter: blur(24px) saturate
 .resource-ring span { position: relative; z-index: 2; color: var(--text); font-family: var(--mono); font-size: 16px; font-weight: 800; letter-spacing: -0.04em; }
 .resource-gauge strong { font-size: 14px; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
 
-.node-telemetry-panel { display: grid; gap: 0; margin: 0 20px 16px; padding: 8px 14px 14px; border: 1px solid rgba(255, 255, 255, 0.045); border-radius: 16px; background: rgba(8, 8, 10, 0.025); box-shadow: inset 0 1px rgba(255, 255, 255, 0.035); }
+.node-telemetry-panel { display: grid; gap: 0; margin: 0 20px 16px; padding: 8px 14px 14px; border: 1px solid rgba(255, 255, 255, 0.045); border-radius: 16px; background: rgba(255, 255, 255, 0.018); box-shadow: inset 0 1px rgba(255, 255, 255, 0.035); }
 .node-network-row { display: flex; min-height: 45px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
 .node-network-row > span { color: var(--muted); font-size: 12px; }
 .node-network-row > strong { display: flex; min-width: 0; gap: 15px; color: var(--text-soft); font-family: var(--mono); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.025em; }
@@ -516,7 +516,7 @@ html[data-theme="light"] .settings-dialog { backdrop-filter: blur(24px) saturate
 .probe-row.is-critical .probe-target i { background: var(--quality-bad); box-shadow: 0 0 8px color-mix(in srgb, var(--quality-bad) 32%, transparent); }
 .probe-target span { overflow: hidden; color: var(--text-soft); font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .probe-metrics { display: grid; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.probe-metric { --metric-color: var(--quality-good); display: grid; min-width: 0; gap: 7px; padding: 8px 9px 9px; border: 1px solid rgba(255, 255, 255, 0.04); border-radius: 10px; background: rgba(7, 7, 9, 0.03); }
+.probe-metric { --metric-color: var(--quality-good); display: grid; min-width: 0; gap: 7px; padding: 8px 9px 9px; border: 1px solid rgba(255, 255, 255, 0.04); border-radius: 10px; background: rgba(255, 255, 255, 0.018); }
 .probe-metric.is-latency, .probe-metric.is-loss { --metric-color: var(--quality-good); }
 .probe-metric.is-warning { --metric-color: var(--quality-warn); }
 .probe-metric.is-critical { --metric-color: var(--quality-bad); }
@@ -550,7 +550,7 @@ html[data-theme="light"] .resource-track { stroke: rgba(57, 75, 103, 0.13); }
 
 .detail-view { max-width: 1480px; margin: 0 auto; }
 .detail-nav { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
-.range-switch { padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: rgba(18, 18, 20, 0.06); box-shadow: inset 0 1px rgba(255, 255, 255, 0.04); backdrop-filter: blur(18px) grayscale(100%) brightness(102%); -webkit-backdrop-filter: blur(18px) grayscale(100%) brightness(102%); }
+.range-switch { padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255, 255, 255, 0.025); box-shadow: inset 0 1px rgba(255, 255, 255, 0.04); backdrop-filter: blur(12px) saturate(108%); -webkit-backdrop-filter: blur(12px) saturate(108%); }
 html[data-theme="light"] .range-switch { background: rgba(244, 248, 252, 0.46); box-shadow: 0 9px 24px rgba(34, 52, 78, 0.1), inset 0 1px rgba(255, 255, 255, 0.72); backdrop-filter: blur(18px) saturate(122%); -webkit-backdrop-filter: blur(18px) saturate(122%); }
 .range-switch button { min-width: 44px; min-height: 34px; padding: 0 10px; }
 .detail-hero { display: grid; overflow: hidden; padding: 25px 26px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; border-radius: var(--radius-xl); }
@@ -585,14 +585,14 @@ html[data-theme="light"] .range-switch { background: rgba(244, 248, 252, 0.46); 
 .probe-picker { margin-bottom: 10px; }
 .probe-picker-head { display: flex; min-height: 28px; align-items: center; justify-content: flex-end; padding: 0 2px 7px; }
 .probe-picker-actions { display: flex; flex: 0 0 auto; gap: 5px; }
-.probe-picker-actions button { min-height: 34px; padding: 0 13px; border: 0; border-radius: 8px; background: rgba(16, 16, 18, 0.1); color: var(--text-soft); cursor: pointer; font-size: 14px; font-weight: 750; }
+.probe-picker-actions button { min-height: 34px; padding: 0 13px; border: 0; border-radius: 8px; background: rgba(255, 255, 255, 0.03); color: var(--text-soft); cursor: pointer; font-size: 14px; font-weight: 750; }
 .probe-picker-actions button:hover, .probe-picker-actions button.is-active { background: rgba(var(--primary-rgb), 0.12); color: var(--primary); }
 html[data-theme="light"] .probe-picker-actions button { background: rgba(244, 248, 252, 0.46); box-shadow: 0 6px 18px rgba(34, 52, 78, 0.08); }
 .detail-probe-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.detail-probe-card { --probe-color: var(--probe-link); display: grid; min-width: 0; grid-template-columns: 8px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 9px 11px; border: 0; border-radius: 10px; outline: 0; background: rgba(19, 19, 21, 0.08); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05); color: var(--text); text-align: left; cursor: pointer; opacity: 1; backdrop-filter: blur(14px) grayscale(100%) brightness(104%); -webkit-backdrop-filter: blur(14px) grayscale(100%) brightness(104%); transition: background 150ms ease, box-shadow 150ms ease; }
+.detail-probe-card { --probe-color: var(--probe-link); display: grid; min-width: 0; grid-template-columns: 8px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 9px 11px; border: 0; border-radius: 10px; outline: 0; background: rgba(255, 255, 255, 0.025); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05); color: var(--text); text-align: left; cursor: pointer; opacity: 1; backdrop-filter: blur(10px) saturate(108%); -webkit-backdrop-filter: blur(10px) saturate(108%); transition: background 150ms ease, box-shadow 150ms ease; }
 .detail-probe-card::before { content: none; }
-.detail-probe-card:hover { transform: none; background: rgba(24, 24, 27, 0.11); }
-.detail-probe-card.is-active { background: rgba(27, 27, 30, 0.14); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06); }
+.detail-probe-card:hover { transform: none; background: rgba(255, 255, 255, 0.05); }
+.detail-probe-card.is-active { background: rgba(255, 255, 255, 0.075); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06); }
 .detail-probe-card:not(.is-active) .detail-probe-label strong, .detail-probe-card:not(.is-active) > span:not(.detail-probe-label) { opacity: 0.48; }
 .detail-probe-card:focus-visible { outline: 2px solid rgba(var(--primary-rgb), 0.8); outline-offset: 2px; }
 .detail-probe-card.probe-tone-telecom { --probe-color: var(--probe-telecom); }
@@ -682,12 +682,12 @@ html[data-theme="light"] .network-layer-switch button { background: rgba(244, 24
   border: 1px solid rgba(255, 255, 255, 0.075);
   border-radius: 11px;
   outline: 0;
-  background: rgba(20, 20, 23, 0.12);
+  background: rgba(255, 255, 255, 0.06);
   box-shadow: 0 18px 46px rgba(0, 0, 0, 0.2), inset 0 1px rgba(255, 255, 255, 0.14);
   color: var(--text);
   pointer-events: none;
-  backdrop-filter: blur(30px) grayscale(100%) brightness(104%);
-  -webkit-backdrop-filter: blur(30px) grayscale(100%) brightness(104%);
+  backdrop-filter: blur(20px) saturate(110%);
+  -webkit-backdrop-filter: blur(20px) saturate(110%);
   will-change: transform;
 }
 .plot-tooltip[hidden] { display: none; }
@@ -710,7 +710,7 @@ html[data-theme="light"] .plot-tooltip { border-color: rgba(30, 52, 83, 0.08); b
 
 .dashboard-footer { display: flex; align-items: center; justify-content: flex-start; gap: 18px; margin-top: 48px; padding: 24px 2px; border-top: 1px solid var(--line); color: var(--muted); }
 .footer-motto { font-family: "STKaiti", "KaiTi", "Kaiti SC", "Noto Serif SC", "Songti SC", serif; font-size: 18px; font-weight: 600; letter-spacing: 0.08em; }
-.toast { position: fixed; z-index: 200; right: 24px; bottom: 24px; max-width: min(380px, calc(100% - 32px)); padding: 12px 15px; border: 1px solid color-mix(in srgb, var(--green) 30%, var(--line)); border-radius: 12px; background: var(--surface-strong); box-shadow: var(--shadow); color: var(--text); backdrop-filter: blur(18px) grayscale(100%) brightness(102%); -webkit-backdrop-filter: blur(18px) grayscale(100%) brightness(102%); font-size: 12px; }
+.toast { position: fixed; z-index: 200; right: 24px; bottom: 24px; max-width: min(380px, calc(100% - 32px)); padding: 12px 15px; border: 1px solid color-mix(in srgb, var(--green) 30%, var(--line)); border-radius: 12px; background: var(--surface-strong); box-shadow: var(--shadow); color: var(--text); backdrop-filter: blur(14px) saturate(108%); -webkit-backdrop-filter: blur(14px) saturate(108%); font-size: 12px; }
 html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
 .toast.is-error { border-color: color-mix(in srgb, var(--red) 38%, var(--line)); }
 
