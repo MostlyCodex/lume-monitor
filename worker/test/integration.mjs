@@ -6,10 +6,10 @@ const secrets = {
   "beta-vps": "b".repeat(32),
 };
 
-// Keep the synthetic report sequence inside one five-minute dashboard bucket.
-// Using wall-clock now, now+60 and now+120 made this assertion depend on the
-// minute at which CI happened to start.
-const reportEpoch = Math.floor(Date.now() / 300_000) * 300 + 60;
+// Keep the complete synthetic sequence at or before wall-clock now. History
+// assertions aggregate across output buckets, so CI start time cannot create
+// future samples or make the result depend on a five-minute boundary.
+const reportEpoch = Math.floor(Date.now() / 1000) - 120;
 
 function nodeMetadata(id, name, order, color) {
   return {
@@ -274,11 +274,18 @@ const alphaRoute = historyBody.routes.find((route) => route.key === "alpha-vps--
 assert(alphaRoute?.rounds >= 2 && alphaRoute?.latency_p50_ms === 11.5, "node-link statistics are incorrect");
 const alphaHistory = historyBody.probes.find((probe) => probe.node_id === "alpha-vps" && probe.probe_name === "peer_icmp");
 assert(alphaHistory?.latency_ms === 11.5, `repeated probe sample was not deduplicated: ${alphaHistory?.latency_ms}`);
-const icmpHistory = historyBody.probes.find((probe) => probe.node_id === "alpha-vps" && probe.probe_name === "external_icmp");
-assert(icmpHistory?.kind === "icmp" && icmpHistory?.packet_loss_percent === 20, "ICMP history semantics are incorrect");
+const icmpHistoryRows = historyBody.probes.filter(
+  (probe) => probe.node_id === "alpha-vps" && probe.probe_name === "external_icmp",
+);
 assert(
-  icmpHistory?.attempted_samples === 15 && icmpHistory?.successful_samples === 12,
-  `fleet history did not aggregate exact sample counts for weighted loss: ${JSON.stringify(icmpHistory)}`,
+  icmpHistoryRows.length >= 1 && icmpHistoryRows.every((probe) => probe.kind === "icmp" && probe.packet_loss_percent === 20),
+  "ICMP history semantics are incorrect",
+);
+const icmpAttemptedSamples = icmpHistoryRows.reduce((sum, probe) => sum + Number(probe.attempted_samples ?? 0), 0);
+const icmpSuccessfulSamples = icmpHistoryRows.reduce((sum, probe) => sum + Number(probe.successful_samples ?? 0), 0);
+assert(
+  icmpAttemptedSamples === 15 && icmpSuccessfulSamples === 12,
+  `fleet history did not preserve exact sample counts for weighted loss: ${JSON.stringify(icmpHistoryRows)}`,
 );
 
 const detail = await fetch(`${base}/api/v1/dashboard/history?hours=24&node=alpha-vps`, { headers: adminHeaders });
@@ -296,11 +303,13 @@ for (const hours of [720, 2160]) {
 
 const rebuildUnauthorized = await fetch(`${base}/api/v1/admin/rebuild-observability?offset_days=0`, { method: "POST" });
 assert(rebuildUnauthorized.status === 401, "observability rebuild accepted an unauthenticated request");
-const rebuild = await fetch(`${base}/api/v1/admin/rebuild-observability?offset_days=0`, {
-  method: "POST",
-  headers: adminHeaders,
-});
-assert(rebuild.status === 200 && (await rebuild.json()).ok === true, "observability rebuild failed");
+for (const offsetDays of [0, 1]) {
+  const rebuild = await fetch(`${base}/api/v1/admin/rebuild-observability?offset_days=${offsetDays}`, {
+    method: "POST",
+    headers: adminHeaders,
+  });
+  assert(rebuild.status === 200 && (await rebuild.json()).ok === true, `observability rebuild failed for day offset ${offsetDays}`);
+}
 
 const dashboardPage = await fetch(`${base}/dashboard/`);
 assert(dashboardPage.status === 200 && (dashboardPage.headers.get("content-type") ?? "").includes("text/html"), "dashboard asset failed");
