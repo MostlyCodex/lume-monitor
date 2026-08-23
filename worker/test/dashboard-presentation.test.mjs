@@ -1,9 +1,10 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const html = readFileSync(new URL("../public/dashboard/index.html", import.meta.url), "utf8");
 const app = readFileSync(new URL("../public/dashboard/app.js", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../public/dashboard/styles.css", import.meta.url), "utf8");
+const background = new URL("../public/dashboard/background-yuanshan.webp", import.meta.url);
 
 describe("dashboard presentation hierarchy", () => {
   it("keeps the fleet home focused on node cards and current network quality", () => {
@@ -23,13 +24,16 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).toContain('probeMetricCard(node, probe, "loss"');
     expect(app).toContain('resourceGauge("CPU"');
     expect(app).toContain('resourceGauge("RAM"');
-    expect(app).toContain('resourceGauge("SSD"');
+    expect(app).toContain('resourceGauge("Disk"');
     expect(app).toContain('class="node-telemetry-panel"');
     expect(app).toContain('class="node-network-row"');
     expect(app).toContain('网络质量（24H）');
     const cardTemplate = app.slice(app.indexOf("function renderNodeCard"), app.indexOf("function filteredNodes"));
     expect(cardTemplate.indexOf('class="resource-gauges"')).toBeLessThan(cardTemplate.indexOf('class="probe-block"'));
-    expect(styles).toContain('background-image: url("/dashboard/background-alpine.webp")');
+    expect(styles).toContain('background-image: url("/dashboard/background-yuanshan.webp")');
+    expect(styles).toContain("transform: scale(1.22)");
+    expect(statSync(background).size).toBeLessThan(500_000);
+    expect(existsSync(new URL("../public/dashboard/background-alpine.webp", import.meta.url))).toBe(false);
     expect(styles).toContain(".node-card:hover { transform: none;");
     expect(styles).toContain("--scene-filter: brightness(68%) contrast(106%) saturate(78%)");
     expect(styles).toContain("--scene-scrim: rgba(0, 0, 0, 0.18)");
@@ -93,8 +97,11 @@ describe("dashboard presentation hierarchy", () => {
     expect(html).toContain('id="detail-probe-actions"');
     expect(html).toContain('data-network-layer="latency"');
     expect(html).toContain('data-network-layer="loss"');
-    expect(html).toContain('id="resource-plot"');
+    expect(html).not.toContain('id="resource-plot"');
     expect(html).toContain('id="traffic-plot"');
+    expect(html).toContain('<p class="eyebrow">NETWORK ACTIVITY</p><h2>网络速率</h2>');
+    expect(html).not.toContain('HOST TELEMETRY');
+    expect(app).not.toContain('class="detail-mini-gauges"');
     expect(app).toContain('$("fleet-view").classList.add("is-hidden")');
     expect(app).toContain('new window.uPlot');
     expect(app).toContain('data-detail-probe=');
@@ -112,6 +119,10 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).toContain("focus: { prox: 6 }");
     expect(app).not.toContain("focus: { prox: 36 }");
     expect(app).toContain('legend: { show: false }');
+    expect(app).toContain('function fleetHistoryPreview(nodeId, hours)');
+    expect(app).toContain('state.detailHistoryCache.get(detailHistoryKey(nodeId, hours))');
+    expect(app).toContain('void loadDetailHistory({ background: Boolean(state.detailHistory) })');
+    expect(app).toContain('state.detailHistoryRequests.set(key, request)');
     expect(app).toContain('replace(/\\s*状态\\s*$/u');
     expect(app).not.toContain("node.source_ip");
     expect(app).not.toContain("node.source_asn");
@@ -149,8 +160,8 @@ describe("dashboard presentation hierarchy", () => {
   });
 
   it("loads the pinned chart library locally instead of from a CDN", () => {
-    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=full-bleed-chrome');
-    expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=full-bleed-chrome');
+    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=instant-detail');
+    expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=instant-detail');
     expect(html).toContain('/dashboard/vendor/uPlot.iife.min.js');
     expect(html).toContain('/dashboard/vendor/uPlot.min.css');
     expect(html).not.toMatch(/https?:\/\/[^\s"']+u[Pp]lot/);
@@ -190,11 +201,16 @@ describe("dashboard presentation hierarchy", () => {
     expect(html).toContain('class="command-bar glass-panel"');
     expect(styles).toContain("width: calc(100% + 36px)");
     expect(styles).toContain("margin: 0 -18px");
-    expect(styles).toContain("border-radius: 0 0 18px 18px");
-    expect(styles).toContain(".dashboard-footer { display: flex; width: calc(100% + 36px)");
+    const commandRule = styles.slice(styles.indexOf(".command-bar {"), styles.indexOf(".app-brand .brand-mark"));
+    expect(commandRule).toContain("border: 0");
+    expect(commandRule).toContain("border-radius: 0");
+    expect(commandRule).toContain("background: var(--glass-chrome-bg)");
+    expect(styles).toContain(".dashboard-footer { position: relative; isolation: isolate; display: flex; width: calc(100% + 36px)");
     expect(styles).toContain("margin: 56px -18px 0");
-    expect(styles).toContain("background: var(--glass-panel-bg)");
-    expect(styles).toContain("backdrop-filter: var(--glass-filter)");
+    expect(styles).toContain("border: 0; background: transparent; box-shadow: none");
+    expect(styles).toContain(".dashboard-footer::before { content: \"\";");
+    expect(styles).toContain("background: var(--glass-footer-bg)");
+    expect(styles).toContain("mask-image: linear-gradient(to bottom, transparent, #000 38px)");
     expect(styles).toContain("min-height: 112px");
     expect(html).toContain("远山不见我，而我见远山");
   });

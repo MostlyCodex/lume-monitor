@@ -294,6 +294,7 @@ assert(detail.status === 200 && detailBody.selected_node === "alpha-vps", "node 
 assert(detailBody.bucket_seconds === 60, `node detail history should use 1-minute buckets: ${detailBody.bucket_seconds}`);
 assert(detailBody.metrics.every((row) => row.node_id === "alpha-vps"), "node detail leaked another node into metric rows");
 assert(detailBody.probe_summaries.some((probe) => probe.probe_name === "peer_icmp"), "node probe summary is missing");
+assert(detailBody.routes.length === 0, "node detail performed unused fleet route aggregation");
 
 for (const hours of [720, 2160]) {
   const ranged = await fetch(`${base}/api/v1/dashboard/history?hours=${hours}`, { headers: adminHeaders });

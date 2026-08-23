@@ -31,6 +31,8 @@
     latest: null,
     fleetHistory: null,
     detailHistory: null,
+    detailHistoryCache: new Map(),
+    detailHistoryRequests: new Map(),
     selectedNode: null,
     detailProbeSelection: new Set(),
     detailNetworkLayers: new Set(["latency", "loss"]),
@@ -116,6 +118,29 @@
     if (response.status === 401) throw new AuthError("authentication required");
     if (!response.ok) throw new Error(`request failed: ${response.status}`);
     return response.json();
+  }
+
+  function detailHistoryKey(nodeId, hours) {
+    return `${nodeId}:${hours}`;
+  }
+
+  function fleetHistoryPreview(nodeId, hours) {
+    const history = state.fleetHistory;
+    if (!history || hours > 24) return null;
+    const since = Number(history.server_time || 0) - hours * 3600;
+    return {
+      ...history,
+      hours,
+      selected_node: nodeId,
+      metrics: (history.metrics || []).filter((row) => row.node_id === nodeId && Number(row.timestamp) >= since),
+      probes: (history.probes || []).filter((row) => row.node_id === nodeId && Number(row.timestamp) >= since),
+      probe_summaries: [],
+      annotations: (history.annotations || []).filter((event) => event.node_id === nodeId && Number(event.timestamp) >= since),
+    };
+  }
+
+  function availableDetailHistory(nodeId, hours) {
+    return state.detailHistoryCache.get(detailHistoryKey(nodeId, hours)) || fleetHistoryPreview(nodeId, hours);
   }
 
   function setView(name) {
@@ -751,7 +776,7 @@
     const severity = nodeSeverity(node);
     const metrics = node.metrics || {};
     $("detail-hero").innerHTML = `<div class="detail-identity"><div class="detail-mark">${escapeHtml(node.mark || flagEmoji(node.country))}</div><div><p class="eyebrow">${escapeHtml(node.role || "VPS NODE")}</p><h1>${escapeHtml(node.label)}</h1><p>${escapeHtml([node.region, node.country, `更新于 ${formatTime(node.received_at)}`].filter(Boolean).join(" · "))}</p></div></div>
-      <div class="detail-status-side"><div class="detail-status-copy"><span class="node-status is-${severity}"><i class="node-live-dot"></i>${escapeHtml(severityLabel(severity))}</span>${detailServiceList(node)}<span class="detail-uptime">持续运行 ${escapeHtml(formatUptime(metrics.uptime_seconds))}</span></div><div class="detail-mini-gauges">${resourceGauge("CPU", "处理器", metrics.cpu_percent, 70, 85)}${resourceGauge("RAM", "内存", metrics.memory_used_percent, 70, 85)}${resourceGauge("SSD", "磁盘", metrics.disk_used_percent, 75, 85)}</div></div>`;
+      <div class="detail-status-side"><div class="detail-status-copy"><span class="node-status is-${severity}"><i class="node-live-dot"></i>${escapeHtml(severityLabel(severity))}</span>${detailServiceList(node)}<span class="detail-uptime">持续运行 ${escapeHtml(formatUptime(metrics.uptime_seconds))}</span></div></div>`;
   }
 
   function renderDetailFacts() {
@@ -1190,11 +1215,6 @@
     renderNetworkPlot("network-plot", "network-empty", networkSeries);
 
     const metrics = history.metrics || [];
-    renderPlot("resource-plot", "resource-empty", [
-      { label: "CPU", color: cssColor("--primary"), points: metrics.map((row) => ({ x: Number(row.timestamp), y: Number(row.cpu_percent) })) },
-      { label: "内存", color: cssColor("--violet"), points: metrics.map((row) => ({ x: Number(row.timestamp), y: Number(row.memory_used_percent) })) },
-      { label: "磁盘", color: cssColor("--amber"), points: metrics.map((row) => ({ x: Number(row.timestamp), y: Number(row.disk_used_percent) })) },
-    ], { kind: "percent" });
     renderPlot("traffic-plot", "traffic-empty", [
       { label: "下载", color: cssColor("--cyan"), points: metrics.map((row) => ({ x: Number(row.timestamp), y: row.network_rx_rate_bps === null ? null : Number(row.network_rx_rate_bps) })) },
       { label: "上传", color: cssColor("--amber"), points: metrics.map((row) => ({ x: Number(row.timestamp), y: row.network_tx_rate_bps === null ? null : Number(row.network_tx_rate_bps) })) },
@@ -1206,6 +1226,7 @@
     $("detail-loading").textContent = message;
     $("detail-loading").classList.toggle("is-hidden", !visible);
     $("detail-content").classList.toggle("is-hidden", visible);
+    $("node-detail").setAttribute("aria-busy", String(visible));
   }
 
   function renderDetail() {
@@ -1218,14 +1239,14 @@
     }
   }
 
-  async function openNode(id, updateUrl = true) {
+  function openNode(id, updateUrl = true) {
     if (!getNode(id)) { showToast("未找到该节点", true); return; }
     state.selectedNode = id;
     state.detailProbeSelection = new Set(displayProbes(getNode(id)).map((probe) => probe.name));
-    state.detailHistory = null;
+    state.detailHistory = availableDetailHistory(id, state.detailHours);
     $("fleet-view").classList.add("is-hidden");
     $("node-detail").classList.remove("is-hidden");
-    setDetailLoading(`正在加载 ${getNode(id).label} 的历史数据…`);
+    setDetailLoading(state.detailHistory ? "" : `正在加载 ${getNode(id).label} 的历史数据…`);
     renderDetail();
     if (updateUrl) {
       const url = new URL(location.href);
@@ -1233,8 +1254,8 @@
       url.searchParams.set("node", id);
       history.pushState({ node: id }, "", url);
     }
-    scrollTo({ top: 0, behavior: "smooth" });
-    await loadDetailHistory();
+    scrollTo({ top: 0, behavior: "auto" });
+    void loadDetailHistory({ background: Boolean(state.detailHistory) });
   }
 
   function closeDetail(updateUrl = true) {
@@ -1279,20 +1300,33 @@
     }
   }
 
-  async function loadDetailHistory() {
+  async function loadDetailHistory({ background = false } = {}) {
     if (!state.selectedNode) return;
     const requestedNode = state.selectedNode;
+    const requestedHours = state.detailHours;
+    const key = detailHistoryKey(requestedNode, requestedHours);
     try {
-      const historyData = await fetchJson(`/api/v1/dashboard/history?hours=${state.detailHours}&node=${encodeURIComponent(requestedNode)}`);
-      if (state.selectedNode !== requestedNode) return;
+      let request = state.detailHistoryRequests.get(key);
+      if (!request) {
+        request = fetchJson(`/api/v1/dashboard/history?hours=${requestedHours}&node=${encodeURIComponent(requestedNode)}`)
+          .finally(() => state.detailHistoryRequests.delete(key));
+        state.detailHistoryRequests.set(key, request);
+      }
+      const historyData = await request;
+      state.detailHistoryCache.set(key, historyData);
+      if (state.selectedNode !== requestedNode || state.detailHours !== requestedHours) return;
       state.detailHistory = historyData;
       setDetailLoading("");
       renderDetail();
     } catch (error) {
       if (error instanceof AuthError) showAuth();
-      else if (state.selectedNode === requestedNode) {
-        setDetailLoading("节点历史暂时不可用，请稍后重试");
-        showToast("节点详情加载失败", true);
+      else if (state.selectedNode === requestedNode && state.detailHours === requestedHours) {
+        if (background && state.detailHistory) {
+          showToast("精细历史暂时不可用，已保留当前数据", true);
+        } else {
+          setDetailLoading("节点历史暂时不可用，请稍后重试");
+          showToast("节点详情加载失败", true);
+        }
       }
     }
   }
@@ -1359,6 +1393,8 @@
         state.latest = null;
         state.fleetHistory = null;
         state.detailHistory = null;
+        state.detailHistoryCache.clear();
+        state.detailHistoryRequests.clear();
         state.selectedNode = null;
         history.replaceState(null, "", "/dashboard/");
         showAuth();
@@ -1414,9 +1450,11 @@
       if (!button) return;
       state.detailHours = Number(button.dataset.hours);
       document.querySelectorAll("#detail-range-switch button").forEach((item) => item.classList.toggle("is-active", item === button));
-      setDetailLoading(`正在读取 ${button.textContent} 历史…`);
       destroyPlots();
-      loadDetailHistory();
+      state.detailHistory = availableDetailHistory(state.selectedNode, state.detailHours);
+      setDetailLoading(state.detailHistory ? "" : `正在读取 ${button.textContent} 历史…`);
+      renderDetail();
+      void loadDetailHistory({ background: Boolean(state.detailHistory) });
     });
     window.addEventListener("popstate", () => {
       const id = new URLSearchParams(location.search).get("node");

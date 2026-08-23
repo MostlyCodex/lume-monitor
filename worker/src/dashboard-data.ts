@@ -497,60 +497,63 @@ export async function dashboardHistoryData(
   // not linger in fleet trends or node details.
   probeRows = probeRows.filter((row) => probesByKey.has(`${row.node_id}:${row.probe_name}`));
 
-  const routeSince = Math.max(since, now - 30 * 86400);
-  const routeProbeSource = probeSamplesRangeSourceSql();
-  const routeSamples = await env.DB.prepare(
-    "SELECT samples.node_id, samples.probe_name, samples.checked_at, samples.success, samples.duration_ms, " +
-      "samples.average_duration_ms, samples.p95_duration_ms, samples.min_duration_ms, samples.max_duration_ms, " +
-      "samples.range_ms, samples.jitter_ms, samples.samples, samples.attempted_samples, samples.successful_samples, " +
-      "samples.sample_failure_percent, samples.packet_loss_percent, samples.complete " +
-      "FROM " + routeProbeSource + " AS samples INNER JOIN business_routes AS routes " +
-      "ON routes.source_node_id = samples.node_id AND routes.probe_name = samples.probe_name " +
-      "WHERE routes.enabled = 1 ORDER BY samples.node_id, samples.probe_name, samples.checked_at",
-  )
-    .bind(...probeSamplesRangeBindings(routeSince, rawEnd))
-    .all<ProbeSampleRow>();
-  const routeData = catalog.routes.map((route) => {
-    const rows = routeSamples.results.filter(
-      (sample) => sample.node_id === route.source_node_id && sample.probe_name === route.probe_name,
-    );
-    const probeMeta = probesByKey.get(`${route.source_node_id}:${route.probe_name}`);
-    const stats = summarizeRoute(
-      rows,
-      route.warning_ms,
-      route.critical_ms,
-      probeMeta?.warning_failure_percent ?? 0,
-      probeMeta?.critical_failure_percent ?? 0,
-    );
-    const source = byInternal.get(route.source_node_id);
-    const target = route.target_node_id ? byInternal.get(route.target_node_id) : null;
-    const failureCritical = (probeMeta?.critical_failure_percent ?? 0) > 0 &&
-      stats.sample_failure_percent >= Number(probeMeta?.critical_failure_percent);
-    const failureWarning = (probeMeta?.warning_failure_percent ?? 0) > 0 &&
-      stats.sample_failure_percent >= Number(probeMeta?.warning_failure_percent);
-    const state = stats.rounds === 0
-      ? "unknown"
-      : stats.availability_percent < 95 || failureCritical || (stats.latency_p95_ms ?? 0) >= route.critical_ms
-        ? "critical"
-        : stats.availability_percent < 99.9 || failureWarning || (stats.latency_p95_ms ?? 0) >= route.warning_ms
-          ? "warning"
-          : "healthy";
-    return {
-      key: route.route_key,
-      label: route.display_name,
-      source_node_id: source?.public_id ?? route.source_node_id,
-      target_node_id: target?.public_id ?? route.target_node_id,
-      probe_name: probesByKey.get(`${route.source_node_id}:${route.probe_name}`)?.public_id ?? route.probe_name,
-      kind: probeMeta?.kind ?? "icmp",
-      warning_failure_percent: probeMeta?.warning_failure_percent ?? 0,
-      critical_failure_percent: probeMeta?.critical_failure_percent ?? 0,
-      warning_ms: route.warning_ms,
-      critical_ms: route.critical_ms,
-      coverage_hours: Math.min(hours, 720),
-      state,
-      ...stats,
-    };
-  });
+  let routeData: Array<Record<string, unknown>> = [];
+  if (!selectedNode) {
+    const routeSince = Math.max(since, now - 30 * 86400);
+    const routeProbeSource = probeSamplesRangeSourceSql();
+    const routeSamples = await env.DB.prepare(
+      "SELECT samples.node_id, samples.probe_name, samples.checked_at, samples.success, samples.duration_ms, " +
+        "samples.average_duration_ms, samples.p95_duration_ms, samples.min_duration_ms, samples.max_duration_ms, " +
+        "samples.range_ms, samples.jitter_ms, samples.samples, samples.attempted_samples, samples.successful_samples, " +
+        "samples.sample_failure_percent, samples.packet_loss_percent, samples.complete " +
+        "FROM " + routeProbeSource + " AS samples INNER JOIN business_routes AS routes " +
+        "ON routes.source_node_id = samples.node_id AND routes.probe_name = samples.probe_name " +
+        "WHERE routes.enabled = 1 ORDER BY samples.node_id, samples.probe_name, samples.checked_at",
+    )
+      .bind(...probeSamplesRangeBindings(routeSince, rawEnd))
+      .all<ProbeSampleRow>();
+    routeData = catalog.routes.map((route) => {
+      const rows = routeSamples.results.filter(
+        (sample) => sample.node_id === route.source_node_id && sample.probe_name === route.probe_name,
+      );
+      const probeMeta = probesByKey.get(`${route.source_node_id}:${route.probe_name}`);
+      const stats = summarizeRoute(
+        rows,
+        route.warning_ms,
+        route.critical_ms,
+        probeMeta?.warning_failure_percent ?? 0,
+        probeMeta?.critical_failure_percent ?? 0,
+      );
+      const source = byInternal.get(route.source_node_id);
+      const target = route.target_node_id ? byInternal.get(route.target_node_id) : null;
+      const failureCritical = (probeMeta?.critical_failure_percent ?? 0) > 0 &&
+        stats.sample_failure_percent >= Number(probeMeta?.critical_failure_percent);
+      const failureWarning = (probeMeta?.warning_failure_percent ?? 0) > 0 &&
+        stats.sample_failure_percent >= Number(probeMeta?.warning_failure_percent);
+      const state = stats.rounds === 0
+        ? "unknown"
+        : stats.availability_percent < 95 || failureCritical || (stats.latency_p95_ms ?? 0) >= route.critical_ms
+          ? "critical"
+          : stats.availability_percent < 99.9 || failureWarning || (stats.latency_p95_ms ?? 0) >= route.warning_ms
+            ? "warning"
+            : "healthy";
+      return {
+        key: route.route_key,
+        label: route.display_name,
+        source_node_id: source?.public_id ?? route.source_node_id,
+        target_node_id: target?.public_id ?? route.target_node_id,
+        probe_name: probesByKey.get(`${route.source_node_id}:${route.probe_name}`)?.public_id ?? route.probe_name,
+        kind: probeMeta?.kind ?? "icmp",
+        warning_failure_percent: probeMeta?.warning_failure_percent ?? 0,
+        critical_failure_percent: probeMeta?.critical_failure_percent ?? 0,
+        warning_ms: route.warning_ms,
+        critical_ms: route.critical_ms,
+        coverage_hours: Math.min(hours, 720),
+        state,
+        ...stats,
+      };
+    });
+  }
 
   let probeSummaries: Array<Record<string, unknown>> = [];
   if (selectedNode) {

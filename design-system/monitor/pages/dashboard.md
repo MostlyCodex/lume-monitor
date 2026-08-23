@@ -38,9 +38,18 @@ project-specific interpretation of the generated glassmorphism direction.
 ## Full-bleed page chrome
 
 - The top command bar material spans the complete viewport width while its controls retain
-  bounded, responsive inner gutters. It touches the top and side edges and keeps only its
-  bottom corner radius.
+  bounded, responsive inner gutters. It touches every top and side edge with square corners.
 - The dashboard footer is a full-width smoked-glass closing band with a 112px desktop and
   96px mobile minimum height. Footer content remains aligned to the main content column.
+- Top and bottom chrome have no border lines or inset highlights. The footer is more
+  transparent than the top bar and fades its blur in over 38px for a soft content transition.
 - Full-bleed surfaces must never increase the document scroll width or introduce a horizontal
   scrollbar at 375, 390, 768, 1024 or 1440px.
+
+## Detail performance and hierarchy
+
+- CPU, RAM and disk stay on the fleet cards and are not duplicated in node details.
+- A node detail opens immediately from already-loaded fleet history for 6-hour and 24-hour
+  views. The 1-minute
+  detail series replaces that preview in the background and remains cached for the session.
+- Do not prefetch every node: perceived speed must not increase D1 reads or transfer volume.
