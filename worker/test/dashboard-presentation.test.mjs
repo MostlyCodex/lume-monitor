@@ -27,11 +27,14 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).toContain('resourceGauge("Disk"');
     expect(app).toContain('class="node-telemetry-panel"');
     expect(app).toContain('class="node-network-row"');
+    expect(app).toContain('<span>↯ 网络速率</span>');
+    expect(app).not.toContain("实时速率");
     expect(app).toContain('网络质量（24H）');
     const cardTemplate = app.slice(app.indexOf("function renderNodeCard"), app.indexOf("function filteredNodes"));
     expect(cardTemplate.indexOf('class="resource-gauges"')).toBeLessThan(cardTemplate.indexOf('class="probe-block"'));
     expect(styles).toContain('background-image: url("/dashboard/background-yuanshan.webp")');
-    expect(styles).toContain("transform: scale(1.22)");
+    expect(styles).toContain("height: 100lvh");
+    expect(styles).not.toContain("transform: scale(1.22)");
     expect(statSync(background).size).toBeLessThan(500_000);
     expect(existsSync(new URL("../public/dashboard/background-alpine.webp", import.meta.url))).toBe(false);
     expect(styles).toContain(".node-card:hover { transform: none;");
@@ -102,6 +105,14 @@ describe("dashboard presentation hierarchy", () => {
     expect(html).toContain('<p class="eyebrow">NETWORK ACTIVITY</p><h2>网络速率</h2>');
     expect(html).not.toContain('HOST TELEMETRY');
     expect(app).not.toContain('class="detail-mini-gauges"');
+    expect(app).toContain('class="detail-flag" role="img"');
+    expect(app).toContain("${flagIcon(node.country)}");
+    expect(app).not.toContain("node.mark || flagEmoji");
+    expect(app).not.toContain('detailFact("实时下载"');
+    expect(app).not.toContain('detailFact("实时上传"');
+    expect(app).toContain('detailFact("下载速率"');
+    expect(app).toContain('detailFact("上传速率"');
+    expect(html).toContain("<strong>速率历史</strong>");
     expect(app).toContain('$("fleet-view").classList.add("is-hidden")');
     expect(app).toContain('new window.uPlot');
     expect(app).toContain('data-detail-probe=');
@@ -160,8 +171,8 @@ describe("dashboard presentation hierarchy", () => {
   });
 
   it("loads the pinned chart library locally instead of from a CDN", () => {
-    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=instant-detail');
-    expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=instant-detail');
+    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=stable-background');
+    expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=stable-background');
     expect(html).toContain('/dashboard/vendor/uPlot.iife.min.js');
     expect(html).toContain('/dashboard/vendor/uPlot.min.css');
     expect(html).not.toMatch(/https?:\/\/[^\s"']+u[Pp]lot/);
@@ -194,6 +205,8 @@ describe("dashboard presentation hierarchy", () => {
     expect(html).not.toContain("节点总览");
     expect(html).not.toContain("LIVE FLEET");
     expect(html).not.toContain("当前状态、线路延迟、丢包与资源占用。");
+    const dashboardHeader = html.slice(html.indexOf('<header class="command-bar glass-panel">'), html.indexOf('<main class="page-shell">'));
+    expect(dashboardHeader).not.toContain('class="brand-mark"');
     expect(styles).toContain(".node-status .node-live-dot { flex: 0 0 6px; background-color: var(--green);");
   });
 
@@ -201,7 +214,7 @@ describe("dashboard presentation hierarchy", () => {
     expect(html).toContain('class="command-bar glass-panel"');
     expect(styles).toContain("width: calc(100% + 36px)");
     expect(styles).toContain("margin: 0 -18px");
-    const commandRule = styles.slice(styles.indexOf(".command-bar {"), styles.indexOf(".app-brand .brand-mark"));
+    const commandRule = styles.slice(styles.indexOf(".command-bar {"), styles.indexOf(".fleet-health {"));
     expect(commandRule).toContain("border: 0");
     expect(commandRule).toContain("border-radius: 0");
     expect(commandRule).toContain("background: var(--glass-chrome-bg)");
@@ -212,6 +225,8 @@ describe("dashboard presentation hierarchy", () => {
     expect(styles).toContain("background: var(--glass-footer-bg)");
     expect(styles).toContain("mask-image: linear-gradient(to bottom, transparent, #000 38px)");
     expect(styles).toContain("min-height: 112px");
+    expect(styles).toContain("justify-content: flex-end");
+    expect(styles).toContain("text-align: right");
     expect(html).toContain("远山不见我，而我见远山");
   });
 });

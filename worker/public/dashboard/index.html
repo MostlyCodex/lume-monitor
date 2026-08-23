@@ -8,9 +8,9 @@
     <meta name="robots" content="noindex, nofollow, noarchive">
     <title>远山Monitor</title>
     <link rel="stylesheet" href="/dashboard/vendor/uPlot.min.css">
-    <link rel="stylesheet" href="/dashboard/styles.css?v=1.0.0&amp;b=instant-detail">
+    <link rel="stylesheet" href="/dashboard/styles.css?v=1.0.0&amp;b=stable-background">
     <script src="/dashboard/vendor/uPlot.iife.min.js" defer></script>
-    <script src="/dashboard/app.js?v=1.0.0&amp;b=instant-detail" defer></script>
+    <script src="/dashboard/app.js?v=1.0.0&amp;b=stable-background" defer></script>
   </head>
   <body>
     <div class="scene" aria-hidden="true">
@@ -62,7 +62,6 @@
     <div id="dashboard-view" class="app-shell is-hidden">
       <header class="command-bar glass-panel">
         <div class="brand-lockup app-brand">
-          <div class="brand-mark" aria-hidden="true">山</div>
           <div><strong data-dashboard-brand>远山Monitor</strong><span>NETWORK CONTROL</span></div>
         </div>
         <div id="top-health" class="fleet-health"><i></i><div><strong>读取状态中</strong><span id="fleet-health-copy">正在同步节点</span></div></div>
@@ -140,7 +139,7 @@
               <div class="section-heading"><div><p class="eyebrow">NETWORK ACTIVITY</p><h2>网络速率</h2></div></div>
               <div class="detail-chart-grid is-single">
                 <article class="chart-card glass-panel">
-                  <div class="chart-title"><div><strong>实时速率</strong><div class="chart-series-key" aria-label="曲线颜色"><span class="is-download"><i></i>下载</span><span class="is-upload"><i></i>上传</span></div></div></div>
+                  <div class="chart-title"><div><strong>速率历史</strong><div class="chart-series-key" aria-label="曲线颜色"><span class="is-download"><i></i>下载</span><span class="is-upload"><i></i>上传</span></div></div></div>
                   <div id="traffic-plot" class="plot-host" role="img" aria-label="网络速率历史图"></div>
                   <div id="traffic-empty" class="chart-empty is-hidden">暂无速率历史</div>
                 </article>

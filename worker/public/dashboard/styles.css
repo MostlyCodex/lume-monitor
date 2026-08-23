@@ -129,7 +129,12 @@ code { font-family: var(--mono); }
 
 .scene {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100lvh;
   z-index: 0;
   overflow: hidden;
   background-color: #07101b;
@@ -137,8 +142,6 @@ code { font-family: var(--mono); }
   background-position: center;
   background-size: cover;
   filter: var(--scene-filter);
-  transform: scale(1.22);
-  transform-origin: center top;
   pointer-events: none;
 }
 .scene::before {
@@ -359,7 +362,6 @@ html[data-theme="light"] .button-primary { color: #fff; }
   background: var(--glass-chrome-bg);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.1);
 }
-.app-brand .brand-mark { width: 40px; height: 40px; }
 .fleet-health { display: flex; align-items: center; gap: 12px; padding: 7px 14px; border: 1px solid color-mix(in srgb, var(--green) 25%, transparent); border-radius: 999px; color: var(--green); }
 .fleet-health > div { display: grid; }
 .fleet-health strong { color: var(--text); font-size: 13px; line-height: 1.25; }
@@ -592,7 +594,8 @@ html[data-theme="light"] .range-switch { box-shadow: 0 9px 24px rgba(34, 52, 78,
 .range-switch button { min-width: 44px; min-height: 34px; padding: 0 10px; }
 .detail-hero { display: grid; overflow: hidden; padding: 25px 26px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; border-radius: var(--radius-xl); }
 .detail-identity { display: flex; align-items: center; gap: 16px; min-width: 0; }
-.detail-mark { display: grid; width: 60px; height: 60px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(var(--primary-rgb), 0.34); border-radius: 17px; background: rgba(var(--primary-rgb), 0.11); color: var(--primary); font-family: var(--mono); font-weight: 800; }
+.detail-flag { display: grid; width: 60px; height: 40px; flex: 0 0 auto; place-items: center; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 10px; background: rgba(255, 255, 255, 0.06); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2), inset 0 1px rgba(255, 255, 255, 0.11); }
+.detail-flag svg { display: block; width: 100%; height: 100%; }
 .detail-identity h1 { overflow: hidden; margin: 0; font-size: clamp(27px, 4vw, 40px); letter-spacing: -0.045em; text-overflow: ellipsis; white-space: nowrap; }
 .detail-identity p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
 .detail-status-side { display: flex; align-items: center; gap: 18px; }
@@ -739,9 +742,9 @@ html[data-theme="light"] .probe-picker-actions button { box-shadow: 0 6px 18px r
 html[data-theme="light"] .detail-probe-card { box-shadow: 0 8px 20px rgba(34, 52, 78, 0.0385), inset 0 1px rgba(255, 255, 255, 0.13); }
 html[data-theme="light"] .plot-tooltip { box-shadow: 0 18px 42px rgba(40, 61, 91, 0.084), inset 0 1px rgba(255, 255, 255, 0.16); }
 
-.dashboard-footer { position: relative; isolation: isolate; display: flex; width: calc(100% + 36px); min-height: 112px; align-items: center; justify-content: flex-start; gap: 18px; margin: 56px -18px 0; overflow: hidden; padding: 30px max(26px, calc((100vw - 1600px) / 2)) calc(34px + env(safe-area-inset-bottom)); border: 0; background: transparent; box-shadow: none; color: var(--muted); }
+.dashboard-footer { position: relative; isolation: isolate; display: flex; width: calc(100% + 36px); min-height: 112px; align-items: center; justify-content: flex-end; gap: 18px; margin: 56px -18px 0; overflow: hidden; padding: 30px max(26px, calc((100vw - 1600px) / 2)) calc(34px + env(safe-area-inset-bottom)); border: 0; background: transparent; box-shadow: none; color: var(--muted); }
 .dashboard-footer::before { content: ""; position: absolute; inset: 0; z-index: 0; background: var(--glass-footer-bg); pointer-events: none; backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter); mask-image: linear-gradient(to bottom, transparent, #000 38px); -webkit-mask-image: linear-gradient(to bottom, transparent, #000 38px); }
-.footer-motto { position: relative; z-index: 1; font-family: "STKaiti", "KaiTi", "Kaiti SC", "Noto Serif SC", "Songti SC", serif; font-size: 18px; font-weight: 600; letter-spacing: 0.08em; }
+.footer-motto { position: relative; z-index: 1; font-family: "STKaiti", "KaiTi", "Kaiti SC", "Noto Serif SC", "Songti SC", serif; font-size: 18px; font-weight: 600; letter-spacing: 0.08em; text-align: right; }
 .toast { position: fixed; z-index: 200; right: 24px; bottom: 24px; max-width: min(380px, calc(100% - 32px)); padding: 12px 15px; border: 1px solid color-mix(in srgb, var(--green) 30%, var(--line)); border-radius: 12px; background: var(--surface-strong); box-shadow: var(--shadow); color: var(--text); backdrop-filter: blur(14px) saturate(108%); -webkit-backdrop-filter: blur(14px) saturate(108%); font-size: 12px; }
 html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
 .toast.is-error { border-color: color-mix(in srgb, var(--red) 38%, var(--line)); }
@@ -824,7 +827,6 @@ html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-
   body { font-size: 16px; }
   .app-shell { padding: 0 8px; }
   .command-bar { top: 0; width: calc(100% + 16px); min-height: 58px; margin: 0 -8px; padding: 8px max(9px, env(safe-area-inset-right)) 8px max(9px, env(safe-area-inset-left)); border-radius: 0; }
-  .app-brand .brand-mark { width: 36px; height: 36px; border-radius: 11px; }
   .app-brand > div:last-child span { display: none; }
   .app-brand strong { max-width: 128px; font-size: 12px; }
   .last-refresh, .text-button { display: none; }
@@ -857,7 +859,7 @@ html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-
   .range-switch button { min-height: 44px; flex: 1; }
   .detail-hero { padding: 18px; }
   .detail-identity { align-items: flex-start; }
-  .detail-mark { width: 50px; height: 50px; }
+  .detail-flag { width: 50px; height: 34px; border-radius: 8px; }
   .detail-identity h1 { font-size: 27px; white-space: normal; }
   .detail-status-side { align-items: flex-start; flex-direction: column; }
   .detail-service-list { justify-content: flex-start; }
@@ -885,7 +887,7 @@ html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-
   .uplot .u-legend { position: static; min-height: 24px; margin-bottom: 4px; }
   .uplot .u-legend tbody { justify-content: flex-start; }
   .detail-facts { grid-template-columns: 1fr; }
-  .dashboard-footer { width: calc(100% + 16px); min-height: 96px; align-items: flex-start; flex-direction: column; margin: 44px -8px 0; padding: 26px max(12px, env(safe-area-inset-right)) calc(30px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+  .dashboard-footer { width: calc(100% + 16px); min-height: 96px; align-items: center; justify-content: flex-end; margin: 44px -8px 0; padding: 26px max(12px, env(safe-area-inset-right)) calc(30px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
   .footer-motto { font-size: 16px; }
   .toast { right: 16px; bottom: 16px; }
   .auth-shell { width: min(100% - 24px, 620px); padding: 18px 0; }

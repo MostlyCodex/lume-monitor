@@ -431,12 +431,6 @@
     return { transit, egress };
   }
 
-  function flagEmoji(country) {
-    const code = String(country || "").trim().toUpperCase();
-    if (!/^[A-Z]{2}$/.test(code)) return "◆";
-    return String.fromCodePoint(...[...code].map((letter) => 127397 + letter.charCodeAt(0)));
-  }
-
   function flagIcon(country) {
     const code = String(country || "").trim().toUpperCase();
     const art = FLAG_ART[code];
@@ -613,7 +607,7 @@
           ${resourceGauge("Disk", "磁盘", metrics.disk_used_percent, 75, 85)}
         </div>
         <div class="node-telemetry-panel">
-          <div class="node-network-row"><span>↯ 实时速率</span><strong><b class="is-up">↑ ${escapeHtml(formatRate(metrics.network_tx_rate_bps))}</b><b class="is-down">↓ ${escapeHtml(formatRate(metrics.network_rx_rate_bps))}</b></strong></div>
+          <div class="node-network-row"><span>↯ 网络速率</span><strong><b class="is-up">↑ ${escapeHtml(formatRate(metrics.network_tx_rate_bps))}</b><b class="is-down">↓ ${escapeHtml(formatRate(metrics.network_rx_rate_bps))}</b></strong></div>
           <div class="node-network-row"><span>累计流量</span><strong><b>↑ ${escapeHtml(formatBytes(metrics.network_tx_bytes))}</b><b>↓ ${escapeHtml(formatBytes(metrics.network_rx_bytes))}</b></strong></div>
           ${probes.length ? `<div class="probe-block"><div class="probe-block-head"><span>网络质量（24H）</span><small>${probes.length} 个目标</small></div>${probes.map((probe) => probeRow(node, probe)).join("")}</div>` : '<div class="probe-empty">此节点仅监测服务与基础资源</div>'}
         </div>
@@ -775,7 +769,7 @@
     if (!node) return;
     const severity = nodeSeverity(node);
     const metrics = node.metrics || {};
-    $("detail-hero").innerHTML = `<div class="detail-identity"><div class="detail-mark">${escapeHtml(node.mark || flagEmoji(node.country))}</div><div><p class="eyebrow">${escapeHtml(node.role || "VPS NODE")}</p><h1>${escapeHtml(node.label)}</h1><p>${escapeHtml([node.region, node.country, `更新于 ${formatTime(node.received_at)}`].filter(Boolean).join(" · "))}</p></div></div>
+    $("detail-hero").innerHTML = `<div class="detail-identity"><div class="detail-flag" role="img" aria-label="${escapeHtml(node.country || "未知国家")}">${flagIcon(node.country)}</div><div><p class="eyebrow">${escapeHtml(node.role || "VPS NODE")}</p><h1>${escapeHtml(node.label)}</h1><p>${escapeHtml([node.region, node.country, `更新于 ${formatTime(node.received_at)}`].filter(Boolean).join(" · "))}</p></div></div>
       <div class="detail-status-side"><div class="detail-status-copy"><span class="node-status is-${severity}"><i class="node-live-dot"></i>${escapeHtml(severityLabel(severity))}</span>${detailServiceList(node)}<span class="detail-uptime">持续运行 ${escapeHtml(formatUptime(metrics.uptime_seconds))}</span></div></div>`;
   }
 
@@ -789,8 +783,8 @@
       detailFact("系统", node.system?.os || "—"),
       detailFact("内核", node.system?.kernel || "—"),
       detailFact("架构", node.system?.arch || "—"),
-      detailFact("实时下载", formatRate(metrics.network_rx_rate_bps)),
-      detailFact("实时上传", formatRate(metrics.network_tx_rate_bps)),
+      detailFact("下载速率", formatRate(metrics.network_rx_rate_bps)),
+      detailFact("上传速率", formatRate(metrics.network_tx_rate_bps)),
       detailFact("累计下载", formatBytes(metrics.network_rx_bytes)),
       detailFact("累计上传", formatBytes(metrics.network_tx_bytes)),
       detailFact("Agent", `${node.agent?.version || "—"} · 队列 ${Number(node.agent?.queue_depth || 0)}`),
