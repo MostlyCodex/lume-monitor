@@ -31,7 +31,7 @@ describe("dashboard presentation hierarchy", () => {
     expect(cardTemplate.indexOf('class="resource-gauges"')).toBeLessThan(cardTemplate.indexOf('class="probe-block"'));
     expect(styles).toContain('background-image: url("/dashboard/background-alpine.webp")');
     expect(styles).toContain(".node-card:hover { transform: none;");
-    expect(styles).toContain("background: rgba(16, 16, 18, 0.16)");
+    expect(styles).toContain("background: rgba(16, 16, 18, 0.06)");
     expect(styles).toContain("z-index: 0;");
     expect(styles).toContain("--quality-good: #5bdda9");
     expect(styles).toContain(".probe-metric.is-latency, .probe-metric.is-loss { --metric-color: var(--quality-good); }");
@@ -48,9 +48,9 @@ describe("dashboard presentation hierarchy", () => {
     const nodeCardRule = styles.slice(styles.indexOf(".node-card {"), styles.indexOf(".node-card.is-warning"));
     expect(glassRule).not.toContain("gradient");
     expect(nodeCardRule).not.toContain("gradient");
-    expect(glassRule).toContain("background: rgba(18, 18, 20, 0.18)");
-    expect(glassRule).toContain("backdrop-filter: blur(18px) grayscale(100%) brightness(82%)");
-    expect(nodeCardRule).toContain("backdrop-filter: blur(18px) grayscale(100%) brightness(82%)");
+    expect(glassRule).toContain("background: rgba(18, 18, 20, 0.06)");
+    expect(glassRule).toContain("backdrop-filter: blur(18px) grayscale(100%) brightness(102%)");
+    expect(nodeCardRule).toContain("backdrop-filter: blur(18px) grayscale(100%) brightness(102%)");
     expect(nodeCardRule).not.toContain("rgba(10, 18, 29");
     expect(styles).toContain('html[data-theme="light"] .node-card');
     expect(styles).toContain("backdrop-filter: blur(18px) saturate(120%)");
