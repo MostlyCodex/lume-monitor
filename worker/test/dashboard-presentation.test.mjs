@@ -32,13 +32,14 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).toContain('网络质量（24H）');
     const cardTemplate = app.slice(app.indexOf("function renderNodeCard"), app.indexOf("function filteredNodes"));
     expect(cardTemplate.indexOf('class="resource-gauges"')).toBeLessThan(cardTemplate.indexOf('class="probe-block"'));
-    expect(styles).toContain('background-image: url("/dashboard/background-yuanshan.webp")');
+    expect(styles).toContain('background-image: url("/dashboard/background-yuanshan.webp?v=vestrahorn")');
     expect(styles).toContain("height: 100lvh");
     expect(styles).not.toContain("transform: scale(1.22)");
     expect(statSync(background).size).toBeLessThan(500_000);
     expect(existsSync(new URL("../public/dashboard/background-alpine.webp", import.meta.url))).toBe(false);
     expect(styles).toContain(".node-card:hover { transform: none;");
     expect(styles).toContain("--scene-filter: brightness(68%) contrast(106%) saturate(78%)");
+    expect(styles).toContain("--scene-filter: brightness(128%) contrast(80%) saturate(78%)");
     expect(styles).toContain("--scene-scrim: rgba(0, 0, 0, 0.18)");
     expect(styles).toContain("--glass-panel-bg: rgba(7, 8, 10, 0.22)");
     expect(styles).toContain("--glass-card-bg: rgba(5, 6, 8, 0.18)");
@@ -177,7 +178,7 @@ describe("dashboard presentation hierarchy", () => {
   });
 
   it("loads the pinned chart library locally instead of from a CDN", () => {
-    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=yuanshan-scale-csp');
+    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=vestrahorn-bg');
     expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=yuanshan-scale-csp');
     expect(html).toContain('/dashboard/vendor/uPlot.iife.min.js');
     expect(html).toContain('/dashboard/vendor/uPlot.min.css');
