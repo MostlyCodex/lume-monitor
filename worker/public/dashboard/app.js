@@ -448,15 +448,17 @@
   function resourceGauge(shortLabel, label, value, warning = 70, critical = 85) {
     const numeric = clamp(value, 0, 100);
     const severity = resourceSeverity(numeric, warning, critical);
-    return `<div class="resource-gauge is-${severity}" role="progressbar" aria-label="${escapeHtml(label)} ${numeric.toFixed(1)}%" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${numeric.toFixed(1)}">
-      <div class="resource-ring">
-        <svg class="resource-progress" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
-          <circle class="resource-track" cx="50" cy="50" r="42" pathLength="100"></circle>
-          <circle class="resource-value" cx="50" cy="50" r="42" pathLength="100" stroke-dasharray="${numeric.toFixed(1)} ${(100 - numeric).toFixed(1)}"></circle>
-        </svg>
+    const zeroClass = numeric <= 0.05 ? " is-zero" : "";
+    return `<div class="resource-gauge is-${severity}${zeroClass}" style="--resource-value:${numeric.toFixed(1)}" role="progressbar" aria-label="${escapeHtml(label)} ${numeric.toFixed(1)}%" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${numeric.toFixed(1)}">
+      <div class="resource-gauge-head">
+        <strong>${escapeHtml(shortLabel)}</strong>
         <span>${numeric.toFixed(0)}%</span>
       </div>
-      <strong>${escapeHtml(shortLabel)}</strong>
+      <div class="resource-gauge-track" aria-hidden="true">
+        <i class="resource-threshold resource-threshold-warning"></i>
+        <i class="resource-threshold resource-threshold-critical"></i>
+        <span class="resource-gauge-fill"></span>
+      </div>
     </div>`;
   }
 

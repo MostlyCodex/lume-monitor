@@ -79,15 +79,17 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).toContain("const FLAG_ART");
     expect(app).toContain('class="node-uptime"');
     expect(app).toContain('class="detail-service-list"');
-    expect(app).toContain('class="resource-track"');
-    expect(app).toContain('class="resource-value"');
-    expect(app).toContain('stroke-dasharray="${numeric.toFixed(1)} ${(100 - numeric).toFixed(1)}"');
+    expect(app).toContain('style="--resource-value:${numeric.toFixed(1)}"');
+    expect(app).toContain('class="resource-gauge-track"');
+    expect(app).toContain('class="resource-gauge-fill"');
+    expect(app).toContain('class="resource-threshold resource-threshold-warning"');
+    expect(app).toContain('class="resource-threshold resource-threshold-critical"');
     expect(styles).toContain("--gauge-color: var(--green)");
-    expect(styles).toContain("stroke-linecap: round");
-    expect(styles).not.toContain("@keyframes gauge-progress");
-    expect(styles).not.toContain(".resource-ring::before");
-    expect(styles).not.toContain("stroke-dasharray: calc(var(--value)");
-    expect(styles).not.toContain("background: conic-gradient(from -90deg");
+    expect(styles).toContain("width: calc(var(--resource-value) * 1%)");
+    expect(styles).toContain(".resource-threshold-warning { left: 70%; }");
+    expect(styles).toContain(".resource-threshold-critical { left: 85%; }");
+    expect(styles).not.toContain(".resource-ring");
+    expect(styles).not.toContain(".resource-progress");
     const healthyCard = app.slice(app.indexOf('const probes = displayProbes(node);'), app.indexOf("function filteredNodes"));
     expect(healthyCard).not.toContain("service.label");
     expect(healthyCard).not.toContain("service.text");
@@ -172,8 +174,8 @@ describe("dashboard presentation hierarchy", () => {
   });
 
   it("loads the pinned chart library locally instead of from a CDN", () => {
-    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=mobile-compact');
-    expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=mobile-compact');
+    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=yuanshan-scale');
+    expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=yuanshan-scale');
     expect(html).toContain('/dashboard/vendor/uPlot.iife.min.js');
     expect(html).toContain('/dashboard/vendor/uPlot.min.css');
     expect(html).not.toMatch(/https?:\/\/[^\s"']+u[Pp]lot/);
