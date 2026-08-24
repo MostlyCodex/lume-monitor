@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const port = Number(process.env.PORT || 4173);
 const publicRoot = resolve(fileURLToPath(new URL("../public/", import.meta.url)));
+const dashboardCsp = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 const mimeTypes = new Map([
   [".html", "text/html; charset=utf-8"],
   [".css", "text/css; charset=utf-8"],
@@ -164,7 +165,7 @@ async function handle(request) {
   const absolute = resolve(publicRoot, relative);
   if (absolute !== publicRoot && !absolute.startsWith(`${publicRoot}${sep}`)) return { status: 403, headers: {}, body: "Forbidden" };
   try {
-    return { status: 200, headers: { "content-type": mimeTypes.get(extname(absolute)) || "application/octet-stream", "cache-control": "no-store" }, body: await readFile(absolute) };
+    return { status: 200, headers: { "content-type": mimeTypes.get(extname(absolute)) || "application/octet-stream", "cache-control": "no-store", "content-security-policy": dashboardCsp }, body: await readFile(absolute) };
   } catch {
     return { status: 404, headers: { "content-type": "text/plain; charset=utf-8" }, body: "Not found" };
   }
