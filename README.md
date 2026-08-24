@@ -4,7 +4,7 @@
 
 > This repository is a sanitized, self-hostable edition. It contains no production credentials, host addresses, account identifiers, or private deployment data.
 
-![远山Monitor PC 端节点总览与移动端节点详情](docs/assets/yuanshan-monitor-showcase.png)
+![远山Monitor PC 端节点总览与移动端节点详情](docs/assets/yuanshan-monitor-showcase.webp)
 
 > PC 与移动端均为项目真实渲染截图；画面使用内置虚构演示数据，不包含生产凭据、主机地址或账号信息。
 
