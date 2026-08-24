@@ -43,6 +43,12 @@ describe("dashboard presentation hierarchy", () => {
     expect(styles).toContain("--scene-scrim: rgba(0, 0, 0, 0.18)");
     expect(styles).toContain("--glass-panel-bg: rgba(7, 8, 10, 0.22)");
     expect(styles).toContain("--glass-card-bg: rgba(5, 6, 8, 0.18)");
+    expect(html).toContain('class="loading-ridge"');
+    expect(html).toContain('class="loading-progress"');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).not.toContain('class="loader-orbit"');
+    expect(styles).toContain("@keyframes ridge-reveal");
+    expect(styles).toContain("@keyframes horizon-travel");
     expect(styles).toContain("z-index: 0;");
     expect(styles).toContain("--quality-good: #5bdda9");
     expect(styles).toContain(".probe-metric.is-latency, .probe-metric.is-loss { --metric-color: var(--quality-good); }");
@@ -178,7 +184,7 @@ describe("dashboard presentation hierarchy", () => {
   });
 
   it("loads the pinned chart library locally instead of from a CDN", () => {
-    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=vestrahorn-bg');
+    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=loading-ridge');
     expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=yuanshan-scale-csp');
     expect(html).toContain('/dashboard/vendor/uPlot.iife.min.js');
     expect(html).toContain('/dashboard/vendor/uPlot.min.css');

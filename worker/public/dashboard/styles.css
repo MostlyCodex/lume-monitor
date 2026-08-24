@@ -263,26 +263,75 @@ html[data-theme="light"] .button-primary { color: #fff; }
   z-index: 1;
   display: grid;
   min-height: 100vh;
+  min-height: 100svh;
   align-content: center;
   justify-items: center;
-  gap: 8px;
-  padding: 28px;
+  padding: 32px 24px;
+  text-align: center;
 }
-.loading-view strong { margin-top: 12px; font-size: 16px; }
-.loading-view small { color: var(--muted); }
-.loader-orbit {
-  position: relative;
-  display: grid;
-  width: 68px;
-  height: 68px;
-  place-items: center;
-  border-radius: 22px;
-  background: rgba(var(--primary-rgb), 0.08);
-  color: var(--primary);
-  font-family: var(--mono);
-  font-weight: 800;
+.loading-view::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: min(420px, calc(100% - 40px));
+  height: 230px;
+  border-radius: 50%;
+  background: rgba(3, 4, 6, 0.18);
+  filter: blur(64px);
+  pointer-events: none;
 }
-.loader-orbit i { position: absolute; inset: -1px; border: 1px solid transparent; border-top-color: var(--primary); border-radius: 22px; animation: spin 1s linear infinite; }
+html[data-theme="light"] .loading-view::before { background: rgba(255, 255, 255, 0.14); }
+.loading-ridge { width: min(180px, 54vw); margin-bottom: 28px; }
+.loading-ridge svg { display: block; width: 100%; overflow: visible; fill: none; }
+.loading-ridge path { stroke-linecap: round; stroke-linejoin: round; }
+.loading-ridge-shadow { stroke: rgba(255, 255, 255, 0.15); stroke-width: 1.15; }
+html[data-theme="light"] .loading-ridge-shadow { stroke: rgba(17, 24, 39, 0.14); }
+.loading-ridge-line {
+  stroke: var(--primary);
+  stroke-width: 1.8;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  filter: drop-shadow(0 0 7px rgba(var(--primary-rgb), 0.42));
+  animation: ridge-reveal 900ms cubic-bezier(0.22, 0.7, 0.28, 1) 120ms forwards;
+}
+.loading-copy { display: grid; justify-items: center; }
+.loading-brand {
+  color: var(--text);
+  font-family: "STKaiti", "KaiTi", "Kaiti SC", "Noto Serif SC", "Songti SC", serif;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+}
+.loading-brand b {
+  margin-left: 4px;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.loading-copy strong { margin-top: 15px; font-size: 17px; font-weight: 650; letter-spacing: 0.02em; }
+.loading-copy small { margin-top: 6px; color: var(--muted); font-size: 13px; letter-spacing: 0.04em; }
+html[data-theme="light"] .loading-copy small { color: #273548; text-shadow: 0 1px 12px rgba(255, 255, 255, 0.68); }
+.loading-progress {
+  width: 112px;
+  height: 2px;
+  margin-top: 24px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+html[data-theme="light"] .loading-progress { background: rgba(17, 24, 39, 0.13); }
+.loading-progress i {
+  display: block;
+  width: 32px;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  box-shadow: 0 0 10px rgba(var(--primary-rgb), 0.44);
+  animation: horizon-travel 1.45s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
 
 .auth-shell {
   position: relative;
@@ -753,6 +802,8 @@ html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-
 .toast.is-error { border-color: color-mix(in srgb, var(--red) 38%, var(--line)); }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes ridge-reveal { to { stroke-dashoffset: 0; } }
+@keyframes horizon-travel { 0% { transform: translateX(-34px); opacity: 0; } 18%, 82% { opacity: 1; } 100% { transform: translateX(114px); opacity: 0; } }
 @keyframes energy-scan { 0%, 58% { transform: translateX(-130%); } 82%, 100% { transform: translateX(130%); } }
 
 /* Desktop readability: keep display headings unchanged while lifting supporting text. */
@@ -918,4 +969,6 @@ html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  .loading-ridge-line { stroke-dashoffset: 0; }
+  .loading-progress i { width: 100%; opacity: 0.56; transform: none; }
 }
