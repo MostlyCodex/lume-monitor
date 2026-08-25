@@ -119,6 +119,7 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).not.toContain('class="detail-mini-gauges"');
     expect(app).toContain('class="detail-flag" role="img"');
     expect(app).toContain("${flagIcon(node.country)}");
+    expect(app).toContain('JP: `<svg viewBox="0 0 36 24"');
     expect(app).not.toContain("node.mark || flagEmoji");
     expect(app).not.toContain('detailFact("实时下载"');
     expect(app).not.toContain('detailFact("实时上传"');
