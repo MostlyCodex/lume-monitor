@@ -19,8 +19,9 @@ project-specific interpretation of the generated glassmorphism direction.
 3. Node glass is slightly clearer (`rgba(5, 6, 8, .18)`) so the background remains perceptible.
 4. Backdrop blur is 16px with reduced saturation and 84% brightness. The material must
    look like smoked glass, not a gray rectangle or a white haze.
-5. Borders are only a 5.5% white edge cue. Depth comes primarily from blur, absorption,
-   a one-pixel top highlight and neutral shadow—not a bright outline.
+5. Large glass surfaces use one low-opacity edge cue only: 3.5% white in dark mode and
+   5.5% white in light mode. Do not combine that edge with an inset highlight; depth comes
+   from blur, absorption and a soft external shadow.
 
 ## Light material model
 
@@ -30,10 +31,13 @@ project-specific interpretation of the generated glassmorphism direction.
 ## Accessibility and responsive rules
 
 - Normal text must retain at least 4.5:1 contrast against its composed surface.
-- Every interactive control has a visible 2px focus indicator.
+- Every interactive control has a visible focus indicator. Node cards use a title underline
+  instead of an outer focus ring so mouse selection never resembles a persistent card border.
 - Mobile controls use at least 44px height where space permits; body text is 16px.
 - Validate at 375/390, 768, 1024 and 1440px without horizontal overflow.
 - Respect `prefers-reduced-motion` and do not depend on hover to expose information.
+- Node-card hover, click and restored focus never recolor the card edge; operational severity
+  remains visible through the status pill and telemetry colors.
 
 ## Full-bleed page chrome
 

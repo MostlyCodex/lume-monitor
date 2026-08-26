@@ -37,11 +37,14 @@ describe("dashboard presentation hierarchy", () => {
     expect(styles).not.toContain("transform: scale(1.22)");
     expect(statSync(background).size).toBeLessThan(500_000);
     expect(existsSync(new URL("../public/dashboard/background-alpine.webp", import.meta.url))).toBe(false);
-    expect(styles).toContain(".node-card:hover { transform: none;");
+    expect(styles).toContain(".node-card:hover { transform: none; }");
+    expect(styles).not.toContain(".node-card:hover { transform: none; border-color:");
     expect(styles).toContain("--scene-filter: brightness(68%) contrast(106%) saturate(78%)");
     expect(styles).toContain("--scene-filter: brightness(128%) contrast(80%) saturate(78%)");
     expect(styles).toContain("--scene-scrim: rgba(0, 0, 0, 0.18)");
     expect(styles).toContain("--glass-panel-bg: rgba(7, 8, 10, 0.22)");
+    expect(styles).toContain("--glass-border: rgba(255, 255, 255, 0.035)");
+    expect(styles).toContain("--glass-shadow: 0 24px 66px rgba(0, 0, 0, 0.22), 0 6px 18px rgba(0, 0, 0, 0.1)");
     expect(styles).toContain("--glass-card-bg: rgba(5, 6, 8, 0.18)");
     expect(html).toContain('class="loading-ridge"');
     expect(html).toContain('class="loading-progress"');
@@ -75,6 +78,7 @@ describe("dashboard presentation hierarchy", () => {
     expect(styles).toContain('html[data-theme="light"]');
     expect(styles).toContain("--scene-scrim: rgba(239, 245, 251, 0.06)");
     expect(styles).toContain("--glass-panel-bg: rgba(255, 255, 255, 0.035)");
+    expect(styles).toContain("--glass-border: rgba(255, 255, 255, 0.055)");
     expect(styles).toContain("--glass-card-bg: rgba(255, 255, 255, 0.03)");
     expect(styles).toContain("--glass-filter: blur(16px) saturate(106%) brightness(112%)");
     expect(styles).not.toContain("rgba(244, 248, 252, 0.46)");
@@ -185,7 +189,7 @@ describe("dashboard presentation hierarchy", () => {
   });
 
   it("loads the pinned chart library locally instead of from a CDN", () => {
-    expect(html).toContain('/dashboard/styles.css?v=1.1.0&amp;b=kalen-background');
+    expect(html).toContain('/dashboard/styles.css?v=1.1.0&amp;b=single-edge-glass');
     expect(html).toContain('/dashboard/app.js?v=1.1.0&amp;b=yuanshan-scale-csp');
     expect(html).toContain('/dashboard/vendor/uPlot.iife.min.js');
     expect(html).toContain('/dashboard/vendor/uPlot.min.css');

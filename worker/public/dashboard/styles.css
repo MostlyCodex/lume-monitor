@@ -34,13 +34,13 @@
   --glass-tooltip-bg: rgba(5, 6, 8, 0.42);
   --glass-chrome-bg: rgba(7, 8, 10, 0.15);
   --glass-footer-bg: rgba(7, 8, 10, 0.07);
-  --glass-border: rgba(255, 255, 255, 0.055);
-  --glass-highlight: rgba(255, 255, 255, 0.085);
+  --glass-border: rgba(255, 255, 255, 0.035);
+  --glass-highlight: rgba(255, 255, 255, 0.055);
   --glass-filter: blur(16px) saturate(94%) brightness(84%);
   --glass-filter-compact: blur(12px) saturate(96%) brightness(88%);
   --glass-filter-tooltip: blur(20px) saturate(96%) brightness(82%);
-  --glass-shadow: 0 26px 72px rgba(0, 0, 0, 0.28), 0 7px 24px rgba(0, 0, 0, 0.14), inset 0 1px var(--glass-highlight);
-  --glass-card-shadow: 0 28px 76px rgba(0, 0, 0, 0.24), 0 8px 28px rgba(0, 0, 0, 0.13), inset 0 1px var(--glass-highlight);
+  --glass-shadow: 0 24px 66px rgba(0, 0, 0, 0.22), 0 6px 18px rgba(0, 0, 0, 0.1);
+  --glass-card-shadow: 0 24px 68px rgba(0, 0, 0, 0.2), 0 6px 20px rgba(0, 0, 0, 0.1);
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
   --shadow-soft: 0 14px 40px rgba(0, 0, 0, 0.24);
   --radius-xl: 24px;
@@ -83,13 +83,13 @@ html[data-theme="light"] {
   --glass-tooltip-bg: rgba(255, 255, 255, 0.09);
   --glass-chrome-bg: rgba(255, 255, 255, 0.02);
   --glass-footer-bg: rgba(255, 255, 255, 0.01);
-  --glass-border: rgba(255, 255, 255, 0.09);
-  --glass-highlight: rgba(255, 255, 255, 0.15);
+  --glass-border: rgba(255, 255, 255, 0.055);
+  --glass-highlight: rgba(255, 255, 255, 0.08);
   --glass-filter: blur(16px) saturate(106%) brightness(112%);
   --glass-filter-compact: blur(12px) saturate(108%) brightness(112%);
   --glass-filter-tooltip: blur(20px) saturate(112%) brightness(112%);
-  --glass-shadow: 0 22px 58px rgba(34, 52, 78, 0.077), inset 0 1px var(--glass-highlight);
-  --glass-card-shadow: 0 20px 58px rgba(34, 52, 78, 0.077), inset 0 1px var(--glass-highlight);
+  --glass-shadow: 0 18px 50px rgba(34, 52, 78, 0.06);
+  --glass-card-shadow: 0 18px 52px rgba(34, 52, 78, 0.06);
   --shadow: 0 24px 70px rgba(34, 52, 78, 0.12);
   --shadow-soft: 0 12px 34px rgba(34, 52, 78, 0.08);
 }
@@ -230,7 +230,7 @@ html[data-theme="light"] .scene { background-color: #dfe8f2; background-image: u
   transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 .button:focus-visible, .icon-button:focus-visible, .text-button:focus-visible,
-.range-switch button:focus-visible, .node-card:focus-visible, input:focus-visible,
+.range-switch button:focus-visible, input:focus-visible,
 .probe-picker-actions button:focus-visible, .network-layer-switch button:focus-visible {
   outline: 2px solid rgba(var(--primary-rgb), 0.9);
   outline-offset: 3px;
@@ -539,7 +539,6 @@ html[data-theme="light"] .settings-dialog { backdrop-filter: blur(20px) saturate
   -webkit-backdrop-filter: var(--glass-filter);
   cursor: pointer;
   isolation: isolate;
-  transition: border-color 180ms ease;
 }
 .node-card::before {
   content: "";
@@ -550,7 +549,14 @@ html[data-theme="light"] .settings-dialog { backdrop-filter: blur(20px) saturate
   pointer-events: none;
 }
 .node-card::after { display: none; }
-.node-card:hover { transform: none; border-color: color-mix(in srgb, var(--node-accent) 16%, var(--glass-border)); }
+.node-card:hover { transform: none; }
+.node-card:focus-visible { outline: 0; }
+.node-card:focus-visible .node-title strong {
+  text-decoration: underline;
+  text-decoration-color: rgba(var(--primary-rgb), 0.82);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
 .node-card.is-warning { --node-accent: var(--amber); }
 .node-card.is-critical, .node-card.is-offline { --node-accent: var(--red); }
 .node-card-inner { display: flex; min-height: 0; height: 100%; flex-direction: column; padding: 0; }

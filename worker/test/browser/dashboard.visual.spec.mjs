@@ -76,9 +76,17 @@ test("fleet page keeps its visual and responsive contract", async ({ page }, tes
   expect(new Set(markers).size).toBe(3);
 
   const firstCard = page.locator(".node-card").first();
+  const restingBorderColor = await firstCard.evaluate((element) => getComputedStyle(element).borderColor);
+  await firstCard.hover();
+  const hoverBorderColor = await firstCard.evaluate((element) => getComputedStyle(element).borderColor);
+  expect(hoverBorderColor).toBe(restingBorderColor);
   await firstCard.focus();
-  const outlineWidth = await firstCard.evaluate((element) => parseFloat(getComputedStyle(element).outlineWidth));
-  expect(outlineWidth).toBeGreaterThanOrEqual(2);
+  const focusStyle = await firstCard.evaluate((element) => ({
+    outlineWidth: parseFloat(getComputedStyle(element).outlineWidth),
+    titleDecoration: getComputedStyle(element.querySelector(".node-title strong")).textDecorationLine,
+  }));
+  expect(focusStyle.outlineWidth).toBe(0);
+  expect(focusStyle.titleDecoration).toContain("underline");
 
   if (testInfo.project.name === "mobile-390" || testInfo.project.name === "tablet-768") {
     const controls = page.locator("#refresh-button, #theme-button, #settings-button");
