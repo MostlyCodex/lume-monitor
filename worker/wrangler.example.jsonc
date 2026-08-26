@@ -9,7 +9,7 @@
     "enabled": false
   },
   "vars": {
-    "APP_VERSION": "1.0.0",
+    "APP_VERSION": "1.1.0",
     "REPORT_MAX_AGE_SECONDS": "300",
     "TELEGRAM_BOT_USERNAME": "your_monitor_bot",
     "DASHBOARD_BASE_URL": "https://your-worker.your-subdomain.workers.dev"

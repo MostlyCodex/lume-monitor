@@ -1,20 +1,28 @@
 {
   "name": "yuanshan-monitor-worker",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "tsc --noEmit && node --check public/dashboard/app.js && node --check test/integration.mjs && node --check test/run-local-integration.mjs && vitest run",
+    "check": "tsc --noEmit && node --check public/dashboard/app.js && node --check test/integration.mjs && node --check test/run-local-integration.mjs && node --test ../tools/test/yuanshanctl.test.mjs && vitest run",
     "test": "vitest run",
     "test:integration": "node test/run-local-integration.mjs",
-    "test:ci": "npm run check && npm run test:integration",
+    "test:browser": "playwright test",
+    "test:ci": "npm run check && npm run test:integration && npm run test:browser",
     "preview:dashboard": "node test/dashboard-preview-server.mjs",
+    "doctor": "node ../tools/yuanshanctl.mjs doctor",
+    "setup": "node ../tools/yuanshanctl.mjs setup",
+    "node:add": "node ../tools/yuanshanctl.mjs node add",
+    "node:install": "node ../tools/yuanshanctl.mjs node install",
+    "node:sync": "node ../tools/yuanshanctl.mjs node sync-keys",
+    "monitor:status": "node ../tools/yuanshanctl.mjs status",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "db:local": "wrangler d1 migrations apply yuanshan-monitor --local"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260819.1",
+    "@playwright/test": "1.62.1",
     "typescript": "7.0.2",
     "vitest": "4.1.11",
     "wrangler": "4.124.0"

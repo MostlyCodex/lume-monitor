@@ -1,5 +1,12 @@
 # Deployment
 
+For a new installation, start with the interactive, resumable
+[`yuanshanctl` quickstart](quickstart.md). It creates the Cloudflare resources,
+keeps the complete `NODE_KEYS` mapping in a Git-ignored private state directory,
+and can install a checksum-verified release Agent over an SSH alias. The manual
+steps below remain the auditable fallback and the reference for existing
+deployments.
+
 This guide describes a fresh generic installation. Replace every example value with your own and never commit the resulting secret-bearing files.
 
 For a PowerShell-friendly, end-to-end first installation including Telegram binding and exact add-node steps, start with [getting-started.md](getting-started.md). This document is the concise operator reference for installation, upgrades and rollback.
@@ -98,7 +105,7 @@ modify a VPS. The complete release and provenance process is documented in
 ```bash
 cd ../agent
 go test ./...
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=1.0.0" -o vpsmon-agent ./cmd/vpsmon-agent
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=1.1.0" -o vpsmon-agent ./cmd/vpsmon-agent
 ```
 
 The same binary is used on every VPS.
@@ -194,7 +201,14 @@ Build and stage the new binary, configuration, unit and checksum file exactly as
 sudo sh upgrade-agent.sh /tmp/vpsmon-stage.<random>
 ```
 
-The upgrade script validates the staged release before stopping the monitor, records a checksummed backup under `/var/lib/vpsmon/upgrade-backup.<UTC timestamp>`, and preserves the prior enabled/running state. It fingerprints every service named by either the old or new configuration and automatically restores only the monitor files if the Agent fails to start or a protected service changes state. Remove the retained backup only after operational acceptance.
+The upgrade script validates the staged release before stopping the monitor, records a checksummed backup under `/var/lib/vpsmon/upgrade-backup.<UTC timestamp>`, and preserves the prior enabled/running state. It fingerprints every service named by either the old or new configuration and automatically restores only the monitor files if the Agent fails to start or a protected service changes state.
+
+After a successful upgrade it keeps the newest three strictly named upgrade
+backups and removes older matching directories. Unrelated files, symlinks and
+lookalike names are never selected. Set `VPSMON_KEEP_UPGRADE_BACKUPS` to an
+integer from 1 through 20 before invoking the script to change the retention;
+cleanup failure is reported as a warning and never turns a successful upgrade
+into a rollback.
 
 ## 10. Compatible rollout for probe-quality upgrades
 

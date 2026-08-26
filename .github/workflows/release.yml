@@ -33,12 +33,14 @@ jobs:
       - name: Verify Agent
         working-directory: agent
         run: |
+          sh ../deploy/test-upgrade-retention.sh
           go test ./...
           go vet ./...
       - name: Verify Worker, fresh D1 and production upgrade path
         working-directory: worker
         run: |
           npm ci
+          npx playwright install --with-deps chromium
           npm run test:ci
 
   build-agent:

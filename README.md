@@ -8,6 +8,26 @@
 
 > PC 与移动端均为项目真实渲染截图；画面使用内置虚构演示数据，不包含生产凭据、主机地址或账号信息。
 
+## 10–15 分钟快速上线
+
+准备一个 Cloudflare 账号、一个 Telegram Bot 和一台可用 SSH + sudo 登录的 systemd Linux VPS。VPS 无需安装 Node.js、Go、Docker 或数据库。
+
+```bash
+git clone https://github.com/MostlyCodex/yuanshan-monitor.git
+cd yuanshan-monitor/worker
+npm ci
+npm run doctor
+npm run setup
+```
+
+`setup` 会按顺序完成 D1、migrations、Worker、Secrets、Telegram Webhook 和健康检查，并可继续安装首台 Agent。它会自动生成每个节点的独立密钥，始终向 Cloudflare 提交完整 `NODE_KEYS`，避免新增节点时误覆盖旧密钥。一般只需准备：
+
+- Cloudflare 登录授权；
+- Telegram Bot 用户名和 BotFather 给出的 Token；
+- 首台节点的名称、用途、地区及 SSH 别名。
+
+完成后私聊 Bot 执行工具给出的 `/bind ...`，再发送 `/panel` 即可进入面板。图文式流程、每一步会改什么和故障恢复方法见[快速部署指南](docs/quickstart.md)；需要完全手工控制时使用[从零搭建教程](docs/getting-started.md)。
+
 ## 通用模型
 
 每台 VPS 使用**同一个 Agent、同一个配置结构和同一套安装脚本**。节点名、用途和数量都不写死在代码或数据库迁移中。
@@ -61,6 +81,7 @@
 - `/etc/vpsmon/config.json` 是唯一执行清单：Agent 不生成隐藏探针，也不会探测未写入 `probes` 的目标；每个通信探针都必须明确写为 `kind: "icmp"`。
 - Agent 以无特权用户运行；systemd 服务状态检查是只读的。
 - 安装脚本只管理 `/opt/vpsmon`、`/etc/vpsmon`、`/var/lib/vpsmon` 和独立的 `vpsmon-agent.service`。
+- Agent 成功升级后只保留最新 3 份校验过的回滚备份；清理器只匹配严格时间戳目录，不触碰其他状态文件。
 - 系统不会自动切换线路，也不会修改 nftables、Xray 或其他业务配置。
 - 密钥通过 Cloudflare Worker Secrets 和权限为 `0640` 或更严格的 VPS 配置文件保存。
 
@@ -80,9 +101,9 @@
 
 ## 开始使用
 
-如果这是第一次接触本项目，请直接打开 **[从零搭建远山Monitor](docs/getting-started.md)**。它包含 Windows/Linux 命令、Cloudflare、Telegram、Agent 安装、验收和常见问题。下面是同一流程的最短检查表。
+首次部署优先使用上面的 `npm run setup`。管理工具保存可恢复的部署进度，并把私密状态放在被 Git 忽略的 `.yuanshan/`；它不把 Bot Token 保存到本机，也不会在终端打印节点密钥。完整命令见[快速部署指南](docs/quickstart.md)。下面保留手工部署流程，供已有部署或需要逐步审计的人使用。
 
-### 第一次部署：从零到面板
+### 手工部署：从零到面板
 
 1. 准备 Git、Node.js 22+、Go 1.26+、Cloudflare 账号、Telegram Bot 和至少一台 systemd Linux VPS。
 2. 创建后端：
@@ -122,7 +143,7 @@
    mkdir -p bin
    go test ./...
    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-     -ldflags="-s -w -X main.version=1.0.0" \
+     -ldflags="-s -w -X main.version=1.1.0" \
      -o bin/vpsmon-agent-linux-amd64 ./cmd/vpsmon-agent
    cd ..
    ```
@@ -141,6 +162,13 @@
 ### 以后增加一台 VPS
 
 不需要改 Agent/Worker 源码，也不需要写 D1 migration：
+
+```bash
+cd worker
+npm run node:add
+```
+
+管理工具会维护并同步完整 `NODE_KEYS`、生成私密节点配置，并可通过 SSH 安装已校验的 GitHub Release。手工流程如下：
 
 1. 选一个新的唯一节点 ID；
 2. 生成新的独立密钥；
@@ -268,6 +296,7 @@ sudo sh uninstall-agent.sh --confirm
 | `agent/` | 通用 Linux Go Agent 与测试 |
 | `worker/` | Cloudflare Worker、通用 D1 schema、动态面板和测试 |
 | `deploy/` | 单一配置模板、安装/卸载脚本和 systemd unit |
+| `tools/` | `yuanshanctl` 首次部署、节点密钥与 Agent 安装管理 |
 | `docs/` | 架构、探针和部署文档 |
 | `scripts/` | 可重复的开发与性能验证脚本 |
 
@@ -285,7 +314,7 @@ npm run test:ci
 npm run preview:dashboard
 ```
 
-`npm run test:ci` 会在临时目录中同时验证全新 D1 迁移、历史生产结构升级和真实本地 Worker HTTP 合约，不会连接线上 Worker 或 D1。Linux Agent 性能基准及 GitHub Release 规则见[测试与发布文档](docs/testing-and-releases.md)。
+`npm run test:ci` 会在临时目录中验证全新 D1、历史结构升级、真实本地 Worker HTTP 合约，并用 Playwright/Chromium 在 1440、1024、768 和 390 四种视口检查实际面板。全部使用虚构数据，不连接线上 Worker 或 D1。Linux Agent 性能基准及 GitHub Release 规则见[测试与发布文档](docs/testing-and-releases.md)。
 
 ## 发布策略
 

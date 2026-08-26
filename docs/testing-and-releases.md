@@ -52,7 +52,24 @@ The runner creates isolated temporary local D1 databases and then:
    legacy-envelope compatibility, catalogs, current state, history, rollups,
    scheduled handlers, dashboard assets and authentication boundaries.
 
-`npm run test:ci` runs both the static/unit suite and this integration suite.
+### Real-browser visual contract
+
+From `worker/`, install the pinned Chromium build once and run Playwright:
+
+```bash
+npx playwright install chromium
+npm run test:browser
+```
+
+The browser suite serves deterministic fictional data and renders the actual
+dashboard HTML, CSS, JavaScript and uPlot bundle. It checks dark/light glass
+materials, charts, color keys, keyboard focus, touch targets, Japanese flag
+rendering and horizontal overflow at 1440, 1024, 768 and 390 pixel viewports.
+It never opens the production Worker or D1. Screenshots, traces and the HTML
+report are ignored locally; CI uploads them for 14 days on every run.
+
+`npm run test:ci` runs the static/unit suite, local D1/HTTP integration suite
+and this real-browser suite.
 The test Wrangler files contain only obvious dummy values and must remain
 separate from the ignored production `wrangler.jsonc` and `.dev.vars` files.
 

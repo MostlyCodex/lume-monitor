@@ -16,6 +16,8 @@ jobs:
         working-directory: agent
     steps:
       - uses: actions/checkout@v6
+      - name: Verify upgrade backup retention
+        run: sh ../deploy/test-upgrade-retention.sh
       - uses: actions/setup-go@v7
         with:
           go-version-file: agent/go.mod
@@ -36,7 +38,18 @@ jobs:
           cache: npm
           cache-dependency-path: worker/package-lock.json
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - run: npm run test:ci
+      - name: Upload browser visual report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-browser-${{ github.sha }}
+          path: |
+            worker/playwright-report
+            worker/test-results/playwright
+          if-no-files-found: warn
+          retention-days: 14
 
   benchmark:
     runs-on: ubuntu-latest

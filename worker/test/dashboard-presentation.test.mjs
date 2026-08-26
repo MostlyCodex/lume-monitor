@@ -185,8 +185,8 @@ describe("dashboard presentation hierarchy", () => {
   });
 
   it("loads the pinned chart library locally instead of from a CDN", () => {
-    expect(html).toContain('/dashboard/styles.css?v=1.0.0&amp;b=loading-ridge');
-    expect(html).toContain('/dashboard/app.js?v=1.0.0&amp;b=yuanshan-scale-csp');
+    expect(html).toContain('/dashboard/styles.css?v=1.1.0&amp;b=loading-ridge');
+    expect(html).toContain('/dashboard/app.js?v=1.1.0&amp;b=yuanshan-scale-csp');
     expect(html).toContain('/dashboard/vendor/uPlot.iife.min.js');
     expect(html).toContain('/dashboard/vendor/uPlot.min.css');
     expect(html).not.toMatch(/https?:\/\/[^\s"']+u[Pp]lot/);

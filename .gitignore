@@ -4,6 +4,9 @@ worker/.wrangler/
 worker/.private-backups/
 worker/dist/
 worker/dist-webhook/
+worker/playwright-report/
+worker/test-results/
+worker/blob-report/
 agent/bin/
 agent/.gocache/
 agent/.gomodcache/
@@ -19,6 +22,7 @@ worker/.dev.vars
 worker/.dev.vars.*
 
 # Secrets and machine-specific agent configuration
+.yuanshan/
 .env
 .env.*
 !.env.example

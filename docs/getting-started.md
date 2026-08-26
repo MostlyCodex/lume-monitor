@@ -2,6 +2,8 @@
 
 这是一份面向首次使用者的完整部署指南。完成后，你将拥有一个 Cloudflare Worker + D1 后端、一个 Telegram 私聊入口和至少一台持续上报的 Linux VPS。
 
+> 新部署推荐先使用 [`npm run setup`](quickstart.md)：它会自动完成本页容易出错的 D1、完整 `NODE_KEYS`、Worker、Telegram 和 Agent 安装步骤。本页保留为手工部署、原理核对和故障恢复参考。
+
 > 所有示例 ID、域名和密钥都是占位符。生产密钥只应保存在密码管理器、Cloudflare Secrets 和 VPS 的 `/etc/vpsmon/config.json` 中，不要写入 Git、Issue、聊天记录或构建日志。
 
 ## 0. 准备清单
@@ -205,7 +207,7 @@ $env:CGO_ENABLED = "0"
 $env:GOOS = "linux"
 $env:GOARCH = "amd64"
 go test ./...
-go build -trimpath -ldflags="-s -w -X main.version=1.0.0" -o bin/vpsmon-agent-linux-amd64 ./cmd/vpsmon-agent
+go build -trimpath -ldflags="-s -w -X main.version=1.1.0" -o bin/vpsmon-agent-linux-amd64 ./cmd/vpsmon-agent
 Remove-Item Env:CGO_ENABLED, Env:GOOS, Env:GOARCH
 Set-Location ..
 ```
@@ -217,7 +219,7 @@ cd agent
 mkdir -p bin
 go test ./...
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-  go build -trimpath -ldflags="-s -w -X main.version=1.0.0" \
+  go build -trimpath -ldflags="-s -w -X main.version=1.1.0" \
   -o bin/vpsmon-agent-linux-amd64 ./cmd/vpsmon-agent
 cd ..
 ```

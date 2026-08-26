@@ -4,12 +4,14 @@ import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const port = Number(process.env.PORT || 4173);
+const previewNow = Number(process.env.PREVIEW_NOW || Math.floor(Date.now() / 1000));
 const publicRoot = resolve(fileURLToPath(new URL("../public/", import.meta.url)));
 const dashboardCsp = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 const mimeTypes = new Map([
   [".html", "text/html; charset=utf-8"],
   [".css", "text/css; charset=utf-8"],
   [".js", "text/javascript; charset=utf-8"],
+  [".webp", "image/webp"],
   [".txt", "text/plain; charset=utf-8"],
 ]);
 
@@ -18,7 +20,7 @@ const nodeDefinitions = [
   { id: "transit-eb", label: "Transit-Edge-Bridge", mark: "EB", role: "线路中转机", region: "Los Angeles", country: "US", service: ["nftables", "nftables"], bases: [155, 164, 188, 9], resources: [11.6, 27.8, 41.3] },
   { id: "egress-lv", label: "Egress-Las-Vegas", mark: "LV", role: "住宅出口落地机", region: "Las Vegas", country: "US", service: ["xray", "Xray"], bases: [42], resources: [22.7, 43.6, 67.4] },
   { id: "hybrid-la", label: "Hybrid-LAX-Tri", mark: "LX", role: "线路 + 落地机", region: "Los Angeles", country: "US", service: ["xray", "Xray"], bases: [149, 157, 179], resources: [9.8, 31.4, 23.6] },
-  { id: "transit-pro", label: "Transit-Pro", mark: "PR", role: "线路中转机", region: "Los Angeles", country: "US", service: ["nftables", "nftables"], bases: [153, 161, 184, 7], resources: [14.1, 76.8, 35.2] },
+  { id: "transit-tokyo", label: "Transit-Tokyo", mark: "TY", role: "线路中转机", region: "Tokyo", country: "JP", service: ["nftables", "nftables"], bases: [63, 69, 78, 7], resources: [14.1, 76.8, 35.2] },
   { id: "hybrid-sg", label: "Hybrid-Singapore", mark: "SG", role: "线路 + 落地机", region: "Singapore", country: "SG", service: ["xray", "Xray"], bases: [72, 78, 91], resources: [31.5, 52.7, 87.2] },
 ];
 
@@ -58,7 +60,7 @@ function currentProbe(node, probe, index) {
 }
 
 function latestData() {
-  const now = Math.floor(Date.now() / 1000);
+  const now = previewNow;
   const nodes = nodeDefinitions.map((definition, nodeIndex) => ({
     ...definition,
     order: nodeIndex + 1,
@@ -100,7 +102,7 @@ function latestData() {
 }
 
 function historyData(hours, selectedNode) {
-  const now = Math.floor(Date.now() / 1000);
+  const now = previewNow;
   const bucket = hours <= 24 ? (selectedNode ? 60 : 300) : hours <= 720 ? 3600 : 86400;
   const maximumSteps = selectedNode && hours <= 24 ? 1440 : 720;
   const steps = Math.min(maximumSteps, Math.max(12, Math.floor((hours * 3600) / bucket)));
@@ -171,12 +173,30 @@ async function handle(request) {
   }
 }
 
-const server = createServer(async (request, response) => {
-  const result = await handle(request);
-  response.writeHead(result.status, result.headers);
-  response.end(result.body);
-});
+export function createPreviewServer() {
+  return createServer(async (request, response) => {
+    const result = await handle(request);
+    response.writeHead(result.status, result.headers);
+    response.end(result.body);
+  });
+}
 
-server.listen(port, "127.0.0.1", () => {
+export function startPreviewServer(listenPort = port) {
+  const server = createPreviewServer();
+  return new Promise((resolvePromise, rejectPromise) => {
+    server.once("error", rejectPromise);
+    server.listen(listenPort, "127.0.0.1", () => resolvePromise(server));
+  });
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
+  const server = await startPreviewServer();
   process.stdout.write(`Dashboard preview ready at http://127.0.0.1:${port}/dashboard/\n`);
-});
+  const closePreviewServer = () => {
+    server.closeAllConnections?.();
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 1000).unref();
+  };
+  process.once("SIGINT", closePreviewServer);
+  process.once("SIGTERM", closePreviewServer);
+}

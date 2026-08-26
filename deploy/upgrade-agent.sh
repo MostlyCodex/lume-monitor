@@ -3,6 +3,50 @@ set -eu
 
 umask 077
 
+is_upgrade_backup_name() {
+  printf '%s\n' "$1" | grep -Eq '^upgrade-backup\.[0-9]{8}T[0-9]{6}Z$'
+}
+
+prune_upgrade_backups() {
+  state_dir=$1
+  keep=$2
+  case "$keep" in
+    ''|*[!0-9]*|0) return 2 ;;
+  esac
+  [ "$keep" -le 20 ] || return 2
+
+  resolved_state=$(readlink -f -- "$state_dir") || return 1
+  [ "$resolved_state" = "$state_dir" ] || return 1
+  [ -d "$resolved_state" ] || return 1
+
+  candidates=$(find -P "$resolved_state" -mindepth 1 -maxdepth 1 -type d -name 'upgrade-backup.*' -print | LC_ALL=C sort -r)
+  seen=0
+  deleted=0
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    base=${candidate##*/}
+    is_upgrade_backup_name "$base" || continue
+    resolved_candidate=$(readlink -f -- "$candidate") || return 1
+    [ "$resolved_candidate" = "$candidate" ] || return 1
+    case "$resolved_candidate" in
+      "$resolved_state"/upgrade-backup.*) ;;
+      *) return 1 ;;
+    esac
+    seen=$((seen + 1))
+    if [ "$seen" -gt "$keep" ]; then
+      rm -rf -- "$resolved_candidate" || return 1
+      deleted=$((deleted + 1))
+    fi
+  done <<EOF
+$candidates
+EOF
+  printf '%s\n' "$deleted"
+}
+
+if [ "${VPSMON_UPGRADE_LIBRARY_ONLY:-0}" = "1" ]; then
+  return 0 2>/dev/null || exit 0
+fi
+
 if [ "$(id -u)" -ne 0 ]; then
   echo "upgrade-agent.sh must run as root" >&2
   exit 1
@@ -10,6 +54,18 @@ fi
 
 if [ "$#" -ne 1 ]; then
   echo "usage: upgrade-agent.sh /tmp/vpsmon-stage.ID" >&2
+  exit 2
+fi
+
+keep_upgrade_backups=${VPSMON_KEEP_UPGRADE_BACKUPS:-3}
+case "$keep_upgrade_backups" in
+  ''|*[!0-9]*|0)
+    echo "VPSMON_KEEP_UPGRADE_BACKUPS must be an integer from 1 to 20" >&2
+    exit 2
+    ;;
+esac
+if [ "$keep_upgrade_backups" -gt 20 ]; then
+  echo "VPSMON_KEEP_UPGRADE_BACKUPS must be an integer from 1 to 20" >&2
   exit 2
 fi
 
@@ -158,9 +214,17 @@ if [ "$before_services" != "$after_services" ]; then
   exit 6
 fi
 
+if pruned_backups=$(prune_upgrade_backups /var/lib/vpsmon "$keep_upgrade_backups"); then
+  :
+else
+  pruned_backups="warning: automatic backup pruning failed"
+fi
+
 echo "vpsmon-agent upgraded successfully"
 echo "protected service fingerprints unchanged"
 echo "previous_version=$($backup/vpsmon-agent --version 2>/dev/null || echo unknown)"
 echo "current_version=$(/opt/vpsmon/vpsmon-agent --version 2>/dev/null || echo unknown)"
 echo "rollback_backup=$backup"
+echo "retained_upgrade_backups=$keep_upgrade_backups"
+echo "pruned_upgrade_backups=$pruned_backups"
 echo "agent_state=$(systemctl is-active vpsmon-agent.service 2>/dev/null || true)"
