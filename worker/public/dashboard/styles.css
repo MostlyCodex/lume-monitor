@@ -128,19 +128,30 @@ code { font-family: var(--mono); }
 .scene {
   position: fixed;
   top: 0;
-  right: 0;
   left: 0;
-  width: 100vw;
-  height: 100vh;
-  height: 100lvh;
+  width: var(--scene-lock-width, 100vw);
+  height: var(--scene-lock-height, 100lvh);
   z-index: 0;
   overflow: hidden;
   background-color: #07101b;
-  background-image: url("/dashboard/background-lume.webp?v=orange-halo");
-  background-position: center;
-  background-size: cover;
-  filter: var(--scene-filter);
+  contain: strict;
+  isolation: isolate;
+  transform: translateZ(0);
+  backface-visibility: hidden;
   pointer-events: none;
+}
+.scene-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: center;
+  filter: var(--scene-filter);
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  user-select: none;
 }
 .scene::before {
   content: "";
@@ -152,6 +163,7 @@ code { font-family: var(--mono); }
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 1;
   background: var(--scene-scrim);
 }
 .scene-glow { display: none; }
@@ -177,7 +189,7 @@ code { font-family: var(--mono); }
 html[data-theme="light"] .scene-glow-one { background: radial-gradient(circle, rgba(67, 126, 225, 0.2), transparent 68%); }
 html[data-theme="light"] .scene-glow-two { background: radial-gradient(circle, rgba(133, 95, 220, 0.14), transparent 70%); }
 html[data-theme="light"] .scene-grid { opacity: 0.12; }
-html[data-theme="light"] .scene { background-color: #dfe8f2; background-image: url("/dashboard/background-lume.webp?v=orange-halo"); }
+html[data-theme="light"] .scene { background-color: #dfe8f2; }
 
 .glass-panel {
   position: relative;

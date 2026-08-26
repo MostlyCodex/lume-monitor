@@ -51,6 +51,7 @@
   };
 
   const $ = (id) => document.getElementById(id);
+  let sceneViewportTimer = null;
   const escapeHtml = (value) => String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -59,6 +60,37 @@
     .replace(/'/g, "&#039;");
 
   class AuthError extends Error {}
+
+  function usesStableTouchViewport() {
+    const coarsePointer = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+    const screenWidth = Number(globalThis.screen?.width) || innerWidth;
+    const screenHeight = Number(globalThis.screen?.height) || innerHeight;
+    return coarsePointer && Math.min(screenWidth, screenHeight) <= 1024;
+  }
+
+  function lockSceneViewport() {
+    const scene = document.querySelector(".scene");
+    if (!scene) return;
+    const stableTouchViewport = usesStableTouchViewport();
+    const screenWidth = Number(globalThis.screen?.width) || innerWidth;
+    const screenHeight = Number(globalThis.screen?.height) || innerHeight;
+    const screenLongEdge = Math.max(screenWidth, screenHeight);
+    const screenShortEdge = Math.min(screenWidth, screenHeight);
+    const landscape = innerWidth > innerHeight;
+    const width = stableTouchViewport
+      ? Math.max(innerWidth, landscape ? screenLongEdge : screenShortEdge)
+      : innerWidth;
+    const height = stableTouchViewport
+      ? Math.max(innerHeight, landscape ? screenShortEdge : screenLongEdge)
+      : innerHeight;
+    scene.style.setProperty("--scene-lock-width", `${Math.ceil(width)}px`);
+    scene.style.setProperty("--scene-lock-height", `${Math.ceil(height)}px`);
+  }
+
+  function scheduleSceneViewportLock(delay = 0) {
+    clearTimeout(sceneViewportTimer);
+    sceneViewportTimer = setTimeout(lockSceneViewport, delay);
+  }
 
   function readPreference(key, fallback = null) {
     try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
@@ -1463,10 +1495,19 @@
       if (id && id !== state.selectedNode) openNode(id, false);
       else if (!id && state.selectedNode) closeDetail(false);
     });
+    window.addEventListener("resize", () => {
+      // Mobile browser chrome changes the visual viewport while scrolling. Keeping the
+      // original canvas prevents object-fit from recalculating and visually zooming.
+      if (!usesStableTouchViewport()) scheduleSceneViewportLock();
+    }, { passive: true });
+    window.addEventListener("orientationchange", () => scheduleSceneViewportLock(240), { passive: true });
+    globalThis.screen?.orientation?.addEventListener?.("change", () => scheduleSceneViewportLock(240));
+    window.addEventListener("pageshow", () => scheduleSceneViewportLock());
     document.addEventListener("visibilitychange", () => { if (!document.hidden && state.latest) loadLatest(false); });
   }
 
   async function init() {
+    lockSceneViewport();
     state.layout = readDashboardLayout();
     applyGlobalLayout();
     setTheme(readPreference("vpsmon-theme", "dark"));

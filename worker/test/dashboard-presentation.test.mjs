@@ -32,15 +32,19 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).toContain('网络质量（24H）');
     const cardTemplate = app.slice(app.indexOf("function renderNodeCard"), app.indexOf("function filteredNodes"));
     expect(cardTemplate.indexOf('class="resource-gauges"')).toBeLessThan(cardTemplate.indexOf('class="probe-block"'));
-    expect(styles).toContain('background-image: url("/dashboard/background-lume.webp?v=orange-halo")');
-    expect(styles).toContain("height: 100lvh");
+    expect(html).toContain('class="scene-image"');
+    expect(html).toContain('src="/dashboard/background-lume.webp?v=orange-halo"');
+    expect(styles).toContain("height: var(--scene-lock-height, 100lvh)");
+    expect(styles).toContain("object-fit: cover");
+    expect(styles).toContain("contain: strict");
+    expect(styles).not.toContain('background-image: url("/dashboard/background-lume.webp?v=orange-halo")');
     expect(styles).not.toContain("transform: scale(1.22)");
     expect(statSync(background).size).toBeLessThan(500_000);
     expect(existsSync(new URL("../public/dashboard/background-alpine.webp", import.meta.url))).toBe(false);
     expect(styles).toContain(".node-card:hover { transform: none; }");
     expect(styles).not.toContain(".node-card:hover { transform: none; border-color:");
     expect(styles).toContain("--scene-filter: brightness(68%) contrast(106%) saturate(78%)");
-    expect(styles).toContain("--scene-filter: brightness(128%) contrast(80%) saturate(78%)");
+    expect(styles).toContain("--scene-filter: brightness(112%) contrast(58%) saturate(48%)");
     expect(styles).toContain("--scene-scrim: rgba(0, 0, 0, 0.18)");
     expect(styles).toContain("--glass-panel-bg: rgba(7, 8, 10, 0.22)");
     expect(styles).toContain("--glass-border: rgba(255, 255, 255, 0.035)");
@@ -76,7 +80,7 @@ describe("dashboard presentation hierarchy", () => {
     expect(nodeCardRule).not.toContain("grayscale(");
     expect(nodeCardRule).not.toContain("rgba(10, 18, 29");
     expect(styles).toContain('html[data-theme="light"]');
-    expect(styles).toContain("--scene-scrim: rgba(239, 245, 251, 0.06)");
+    expect(styles).toContain("--scene-scrim: rgba(239, 245, 251, 0.22)");
     expect(styles).toContain("--glass-panel-bg: rgba(255, 255, 255, 0.035)");
     expect(styles).toContain("--glass-border: rgba(255, 255, 255, 0.055)");
     expect(styles).toContain("--glass-card-bg: rgba(255, 255, 255, 0.03)");
@@ -205,8 +209,8 @@ describe("dashboard presentation hierarchy", () => {
   });
 
   it("loads the pinned chart library locally instead of from a CDN", () => {
-    expect(html).toContain('/dashboard/styles.css?v=1.1.0&amp;b=lume-compact-glass');
-    expect(html).toContain('/dashboard/app.js?v=1.1.0&amp;b=lume-brand');
+    expect(html).toContain('/dashboard/styles.css?v=1.1.0&amp;b=stable-scene-v2');
+    expect(html).toContain('/dashboard/app.js?v=1.1.0&amp;b=stable-scene-v2');
     expect(html).toContain('/dashboard/vendor/uPlot.iife.min.js');
     expect(html).toContain('/dashboard/vendor/uPlot.min.css');
     expect(html).not.toMatch(/https?:\/\/[^\s"']+u[Pp]lot/);
@@ -242,6 +246,15 @@ describe("dashboard presentation hierarchy", () => {
     const dashboardHeader = html.slice(html.indexOf('<header class="command-bar glass-panel">'), html.indexOf('<main class="page-shell">'));
     expect(dashboardHeader).not.toContain('class="brand-mark"');
     expect(styles).toContain(".node-status .node-live-dot { flex: 0 0 6px; background-color: var(--green);");
+  });
+
+  it("locks the background canvas against mobile browser chrome resizing", () => {
+    expect(app).toContain("function usesStableTouchViewport");
+    expect(app).toContain("function lockSceneViewport");
+    expect(app).toContain("function scheduleSceneViewportLock");
+    expect(app).toContain('window.addEventListener("orientationchange"');
+    expect(app).not.toContain('visualViewport.addEventListener("resize"');
+    expect(app).not.toContain('visualViewport.addEventListener("scroll"');
   });
 
   it("uses full-bleed glass chrome while preserving the existing content", () => {

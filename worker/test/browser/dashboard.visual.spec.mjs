@@ -64,6 +64,58 @@ async function expectCompactSingleEdge(page, selector, maxRadius) {
   expect(material.borderWidth).toBeLessThanOrEqual(1);
 }
 
+async function expectStableSceneDuringMobileViewportChange(page) {
+  const before = await page.locator(".scene").evaluate((scene) => {
+    const image = scene.querySelector(".scene-image");
+    const sceneRect = scene.getBoundingClientRect();
+    const imageRect = image.getBoundingClientRect();
+    return {
+      sceneLeft: sceneRect.left,
+      sceneTop: sceneRect.top,
+      sceneWidth: sceneRect.width,
+      sceneHeight: sceneRect.height,
+      imageWidth: imageRect.width,
+      imageHeight: imageRect.height,
+    };
+  });
+
+  await page.setViewportSize({ width: 390, height: 700 });
+  await page.evaluate(() => {
+    window.scrollTo(0, 420);
+    return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+
+  const after = await page.locator(".scene").evaluate((scene) => {
+    const image = scene.querySelector(".scene-image");
+    const sceneRect = scene.getBoundingClientRect();
+    const imageRect = image.getBoundingClientRect();
+    return {
+      sceneLeft: sceneRect.left,
+      sceneTop: sceneRect.top,
+      sceneWidth: sceneRect.width,
+      sceneHeight: sceneRect.height,
+      imageWidth: imageRect.width,
+      imageHeight: imageRect.height,
+    };
+  });
+
+  for (const key of Object.keys(before)) expect(Math.abs(after[key] - before[key])).toBeLessThanOrEqual(1);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+}
+
+async function expectSmallPhoneAndLandscapeLayout(page) {
+  for (const viewport of [{ width: 375, height: 812 }, { width: 812, height: 375 }]) {
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => window.dispatchEvent(new Event("orientationchange")));
+    await page.waitForTimeout(280);
+    await expectNoHorizontalOverflow(page);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.dispatchEvent(new Event("orientationchange")));
+  await page.waitForTimeout(280);
+}
+
 async function attachScreenshot(page, testInfo, name) {
   await testInfo.attach(name, {
     body: await page.screenshot({ fullPage: true, animations: "disabled" }),
@@ -110,6 +162,11 @@ test("fleet page keeps its visual and responsive contract", async ({ page }, tes
       const box = await controls.nth(index).boundingBox();
       expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
     }
+  }
+
+  if (testInfo.project.name === "mobile-390") {
+    await expectStableSceneDuringMobileViewportChange(page);
+    await expectSmallPhoneAndLandscapeLayout(page);
   }
 
   await attachScreenshot(page, testInfo, `${testInfo.project.name}-fleet-dark`);
