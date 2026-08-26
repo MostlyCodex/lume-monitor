@@ -32,7 +32,7 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).toContain('网络质量（24H）');
     const cardTemplate = app.slice(app.indexOf("function renderNodeCard"), app.indexOf("function filteredNodes"));
     expect(cardTemplate.indexOf('class="resource-gauges"')).toBeLessThan(cardTemplate.indexOf('class="probe-block"'));
-    expect(styles).toContain('background-image: url("/dashboard/background-lume.webp?v=kalenemsley")');
+    expect(styles).toContain('background-image: url("/dashboard/background-lume.webp?v=orange-halo")');
     expect(styles).toContain("height: 100lvh");
     expect(styles).not.toContain("transform: scale(1.22)");
     expect(statSync(background).size).toBeLessThan(500_000);

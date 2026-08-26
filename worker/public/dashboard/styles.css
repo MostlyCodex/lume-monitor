@@ -73,8 +73,8 @@ html[data-theme="light"] {
   --green: #118a64;
   --amber: #c77c12;
   --red: #d84352;
-  --scene-filter: brightness(128%) contrast(80%) saturate(78%);
-  --scene-scrim: rgba(239, 245, 251, 0.06);
+  --scene-filter: brightness(112%) contrast(58%) saturate(48%);
+  --scene-scrim: rgba(239, 245, 251, 0.22);
   --glass-panel-bg: rgba(255, 255, 255, 0.035);
   --glass-card-bg: rgba(255, 255, 255, 0.03);
   --glass-control-bg: rgba(255, 255, 255, 0.035);
@@ -136,7 +136,7 @@ code { font-family: var(--mono); }
   z-index: 0;
   overflow: hidden;
   background-color: #07101b;
-  background-image: url("/dashboard/background-lume.webp?v=kalenemsley");
+  background-image: url("/dashboard/background-lume.webp?v=orange-halo");
   background-position: center;
   background-size: cover;
   filter: var(--scene-filter);
@@ -177,7 +177,7 @@ code { font-family: var(--mono); }
 html[data-theme="light"] .scene-glow-one { background: radial-gradient(circle, rgba(67, 126, 225, 0.2), transparent 68%); }
 html[data-theme="light"] .scene-glow-two { background: radial-gradient(circle, rgba(133, 95, 220, 0.14), transparent 70%); }
 html[data-theme="light"] .scene-grid { opacity: 0.12; }
-html[data-theme="light"] .scene { background-color: #dfe8f2; background-image: url("/dashboard/background-lume.webp?v=kalenemsley"); }
+html[data-theme="light"] .scene { background-color: #dfe8f2; background-image: url("/dashboard/background-lume.webp?v=orange-halo"); }
 
 .glass-panel {
   position: relative;

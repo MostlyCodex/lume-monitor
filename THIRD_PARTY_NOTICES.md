@@ -12,15 +12,12 @@ bundled with this project.
 - Emerald Theme for CF Server Monitor — Copyright (c) 2026 Tokinx, MIT License: https://github.com/Tokinx/cf-server-monitor-theme-emerald
 - CF Server Monitor — interaction and chart-structure reference only; no source code is copied or bundled: https://github.com/huilang-me/CF-Server-Monitor
 
-## Dashboard background photograph
+## Dashboard background artwork
 
-`worker/public/dashboard/background-lume.webp` is an optimized derivative of
-photograph `Bkci_8qcdvQ` by Kalen Emsley (`@kalenemsley`) from Unsplash, used under
-the Unsplash License.
-
-- Photograph: https://unsplash.com/photos/Bkci_8qcdvQ
-- Photographer: https://unsplash.com/@kalenemsley
-- License: https://unsplash.com/license
+`worker/public/dashboard/background-lume.webp` is an optimized derivative of a
+user-supplied image named `Unknown.jpeg`. The source file contains no authorship
+or license metadata. It is not covered by this project's MIT License; downstream
+redistributors must independently confirm that they have the necessary rights.
 
 ## uPlot v1.6.32
 
