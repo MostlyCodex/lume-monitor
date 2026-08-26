@@ -2,6 +2,7 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { chmod, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -13,11 +14,16 @@ const repoRoot = resolve(dirname(toolFile), "..");
 const workerDir = join(repoRoot, "worker");
 const agentDir = join(repoRoot, "agent");
 const deployDir = join(repoRoot, "deploy");
-const privateDir = join(repoRoot, ".yuanshan");
+const lumePrivateDir = join(repoRoot, ".lume");
+const legacyPrivateDir = join(repoRoot, ".yuanshan");
+const privateDir = existsSync(join(legacyPrivateDir, "state.json")) && !existsSync(join(lumePrivateDir, "state.json"))
+  ? legacyPrivateDir
+  : lumePrivateDir;
+const privateDirName = basename(privateDir);
 const statePath = join(privateDir, "state.json");
 const wranglerConfigPath = join(workerDir, "wrangler.jsonc");
 const wranglerBin = join(workerDir, "node_modules", "wrangler", "bin", "wrangler.js");
-const releaseRepository = process.env.AEGILUME_RELEASE_REPOSITORY || process.env.YUANSHAN_RELEASE_REPOSITORY || "MostlyCodex/yuanshan-monitor";
+const releaseRepository = process.env.LUME_RELEASE_REPOSITORY || process.env.AEGILUME_RELEASE_REPOSITORY || process.env.YUANSHAN_RELEASE_REPOSITORY || "MostlyCodex/lume-monitor";
 const maxDownloadBytes = 64 * 1024 * 1024;
 
 class DownloadUnavailableError extends Error {}
@@ -97,7 +103,7 @@ export function createWranglerConfig({ workerName, databaseName, databaseId, das
     vars: {
       APP_VERSION: version,
       REPORT_MAX_AGE_SECONDS: "300",
-      TELEGRAM_BOT_USERNAME: botUsername || "aegilume_monitor_bot",
+      TELEGRAM_BOT_USERNAME: botUsername || "lume_monitor_bot",
       DASHBOARD_BASE_URL: dashboardUrl || "https://setup-pending.invalid",
     },
     assets: {
@@ -179,7 +185,7 @@ async function loadState(required = true) {
     return null;
   }
   const info = await lstat(statePath);
-  if (!info.isFile() || info.isSymbolicLink()) fail(".yuanshan/state.json 必须是普通文件，不能是符号链接");
+  if (!info.isFile() || info.isSymbolicLink()) fail(`${privateDirName}/state.json 必须是普通文件，不能是符号链接`);
   const state = JSON.parse(await readFile(statePath, "utf8"));
   assertPlainObject(state, "部署状态");
   assertPlainObject(state.nodeKeys, "nodeKeys");
@@ -275,7 +281,7 @@ async function doctor({ quiet = false } = {}) {
     checks.push({ name, ok: result.found, detail: result.found ? (result.output.split(/\r?\n/)[0] || "已找到") : "未找到" });
   }
   if (!quiet) {
-    line("Aegilume 环境检查");
+    line("Lume 环境检查");
     for (const check of checks) line(`${check.ok ? "✓" : "✗"} ${check.name.padEnd(14)} ${check.detail}`);
     line("");
     line((await exists(statePath)) ? `本地部署状态：${statePath}` : "本地部署状态：尚未初始化");
@@ -372,7 +378,7 @@ async function setup(prompt, assumeYes) {
     if (await exists(wranglerConfigPath)) {
       fail("检测到已有 worker/wrangler.jsonc，但没有部署管理状态。为避免覆盖现有部署，setup 已停止；已有手工部署请继续按原文档管理。");
     }
-    const defaultWorker = `aegilume-${randomBytes(3).toString("hex")}`;
+    const defaultWorker = `lume-${randomBytes(3).toString("hex")}`;
     const workerName = (await prompt.text("Worker 名称", defaultWorker)).toLowerCase();
     if (!validateWorkerName(workerName)) fail("Worker 名称只能使用小写字母、数字和连字符，最长 63 字符");
     const databaseName = (await prompt.text("D1 数据库名称", `${workerName.slice(0, 56)}-db`)).toLowerCase();
@@ -479,7 +485,7 @@ async function addNode(prompt) {
     services: parseServices(units),
   });
   state.nodeKeys[id] = secret;
-  state.nodes[id] = { configPath: `.yuanshan/nodes/${id}/config.json`, sshTarget: "", installed: false };
+  state.nodes[id] = { configPath: `${privateDirName}/nodes/${id}/config.json`, sshTarget: "", installed: false };
   const configPath = join(privateDir, "nodes", id, "config.json");
   await writePrivateJson(configPath, config);
   await writePrivateJson(statePath, state);
@@ -507,7 +513,7 @@ async function download(url) {
 }
 
 async function obtainAgentBinary(version, architecture, outputPath) {
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(releaseRepository)) fail("AEGILUME_RELEASE_REPOSITORY 必须使用 owner/repository 格式");
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(releaseRepository)) fail("LUME_RELEASE_REPOSITORY 必须使用 owner/repository 格式");
   const asset = `vpsmon-agent-linux-${architecture}`;
   const baseUrl = `https://github.com/${releaseRepository}/releases/download/v${version}`;
   try {
@@ -557,9 +563,9 @@ async function installNode(id, target) {
   if (!(await exists(configPath))) fail(`节点配置不存在：${configPath}`);
   const version = await readVersion();
   const architecture = await resolveRemoteArchitecture(target);
-  line(`下载并校验 Aegilume v${version} linux/${architecture}…`);
+  line(`下载并校验 Lume v${version} linux/${architecture}…`);
 
-  const localStage = await mkdtemp(join(tmpdir(), "yuanshan-stage-"));
+  const localStage = await mkdtemp(join(tmpdir(), "lume-stage-"));
   const remoteStage = `/tmp/vpsmon-stage.${randomBytes(8).toString("hex")}`;
   const payloads = ["vpsmon-agent", "config.json", "vpsmon-agent.service", "install-agent.sh"];
   try {
@@ -615,19 +621,19 @@ async function showStatus() {
 }
 
 function usage() {
-  line(`Aegilume 部署管理工具
+  line(`Lume 部署管理工具
 
 用法：
-  node tools/yuanshanctl.mjs doctor
-  node tools/yuanshanctl.mjs setup [--yes]
-  node tools/yuanshanctl.mjs status
-  node tools/yuanshanctl.mjs node add
-  node tools/yuanshanctl.mjs node install <NODE_ID> --ssh <SSH别名>
-  node tools/yuanshanctl.mjs node sync-keys
+  node tools/lumectl.mjs doctor
+  node tools/lumectl.mjs setup [--yes]
+  node tools/lumectl.mjs status
+  node tools/lumectl.mjs node add
+  node tools/lumectl.mjs node install <NODE_ID> --ssh <SSH别名>
+  node tools/lumectl.mjs node sync-keys
 
 快捷入口（worker 目录）：npm run doctor / npm run setup / npm run node:add / npm run node:install
 
-安全说明：Secret 只写入 Cloudflare 和 .yuanshan/ 私有目录；该目录已被 Git 忽略。`);
+安全说明：Secret 只写入 Cloudflare 和 ${privateDirName}/ 私有目录；该目录已被 Git 忽略。`);
 }
 
 async function main() {

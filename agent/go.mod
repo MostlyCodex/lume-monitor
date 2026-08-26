@@ -1,4 +1,4 @@
-module github.com/MostlyCodex/yuanshan-monitor/agent
+module github.com/MostlyCodex/lume-monitor/agent
 
 go 1.26
 

@@ -1,6 +1,6 @@
 # Testing, migration safety and releases
 
-This document defines the repeatable checks behind Aegilume releases. All
+This document defines the repeatable checks behind Lume releases. All
 fixtures use reserved example identities and dummy keys. Never replace them
 with a production D1 export, real node configuration or account secret.
 
@@ -131,7 +131,7 @@ Continue with the normal staged install/upgrade process after inspection.
 If GitHub CLI is available, provenance can also be verified independently:
 
 ```bash
-gh attestation verify /tmp/vpsmon-agent --repo MostlyCodex/yuanshan-monitor
+gh attestation verify /tmp/vpsmon-agent --repo MostlyCodex/lume-monitor
 ```
 
 Forks can set `VPSMON_GITHUB_REPOSITORY=owner/repository` when using the fetch

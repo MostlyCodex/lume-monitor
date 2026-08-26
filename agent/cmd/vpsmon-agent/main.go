@@ -13,13 +13,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/MostlyCodex/yuanshan-monitor/agent/internal/check"
-	"github.com/MostlyCodex/yuanshan-monitor/agent/internal/collect"
-	"github.com/MostlyCodex/yuanshan-monitor/agent/internal/config"
-	"github.com/MostlyCodex/yuanshan-monitor/agent/internal/model"
-	"github.com/MostlyCodex/yuanshan-monitor/agent/internal/probe"
-	"github.com/MostlyCodex/yuanshan-monitor/agent/internal/sender"
-	"github.com/MostlyCodex/yuanshan-monitor/agent/internal/spool"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/check"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/collect"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/config"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/model"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/probe"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/sender"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/spool"
 )
 
 var version = "dev"

@@ -6,7 +6,7 @@
 
 ---
 
-**Project:** Aegilume
+**Project:** Lume
 **Generated:** 2026-08-23 19:45:13
 **Category:** Smart Home/IoT Dashboard
 **Design Dials:** Variance 4/10 (Balanced / Modern) | Density 6/10 (Standard)

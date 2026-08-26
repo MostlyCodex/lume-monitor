@@ -1,4 +1,4 @@
-# Aegilume — Dashboard Override
+# Lume — Dashboard Override
 
 This file overrides `../MASTER.md` for the production dashboard. It records the
 project-specific interpretation of the generated glassmorphism direction.

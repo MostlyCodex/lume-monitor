@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/MostlyCodex/yuanshan-monitor/agent/internal/model"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/model"
 )
 
 func TestFinishResultUsesMedianP95AndStandardDeviation(t *testing.T) {

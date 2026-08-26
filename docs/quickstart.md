@@ -1,6 +1,6 @@
 # 快速部署：十几分钟上线
 
-这条路径面向第一次使用 Aegilume 的人。部署管理工具负责重复、易错的步骤；你仍会在执行前看到资源名称和影响范围，VPS 安装时也会看到 sudo 提示。
+这条路径面向第一次使用 Lume 的人。部署管理工具负责重复、易错的步骤；你仍会在执行前看到资源名称和影响范围，VPS 安装时也会看到 sudo 提示。
 
 ## 1. 准备
 
@@ -15,8 +15,8 @@ VPS：使用 systemd 的 Linux，支持 SSH，登录用户可运行 sudo。VPS �
 ## 2. 环境检查
 
 ```bash
-git clone https://github.com/MostlyCodex/yuanshan-monitor.git
-cd yuanshan-monitor/worker
+git clone https://github.com/MostlyCodex/lume-monitor.git
+cd lume-monitor/worker
 npm ci
 npm run doctor
 ```
@@ -94,9 +94,9 @@ npm run node:install -- NODE_ID --ssh SSH_ALIAS
 
 ## 私密状态与备份
 
-`.yuanshan/state.json` 保存完整节点密钥映射、管理令牌和部署进度；`.yuanshan/nodes/` 保存各节点配置。整个 `.yuanshan/` 已被仓库根目录的 `.gitignore` 排除，工具不会打印密钥。在 Linux/macOS 上会同时设置 `0700/0600` 权限；Windows 继承当前目录 ACL，因此不要把仓库放在多用户共享目录。
+`.lume/state.json` 保存完整节点密钥映射、管理令牌和部署进度；`.lume/nodes/` 保存各节点配置。整个 `.lume/` 已被仓库根目录的 `.gitignore` 排除，工具不会打印密钥。在 Linux/macOS 上会同时设置 `0700/0600` 权限；Windows 继承当前目录 ACL，因此不要把仓库放在多用户共享目录。
 
-Cloudflare 无法回读 Secret，因此部署完成后应把 `.yuanshan/state.json` 加密备份到密码管理器或其他可信介质。不要把 `.yuanshan/`、VPS 配置、终端里的 Token 或真实主机地址提交到 Git、Issue、论坛或聊天记录。
+Cloudflare 无法回读 Secret，因此部署完成后应把 `.lume/state.json` 加密备份到密码管理器或其他可信介质。不要把 `.lume/`、VPS 配置、终端里的 Token 或真实主机地址提交到 Git、Issue、论坛或聊天记录。
 
 ## 常见恢复
 

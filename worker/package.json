@@ -1,24 +1,24 @@
 {
-  "name": "aegilume-worker",
+  "name": "lume-worker",
   "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "tsc --noEmit && node --check public/dashboard/app.js && node --check test/integration.mjs && node --check test/run-local-integration.mjs && node --test ../tools/test/yuanshanctl.test.mjs && vitest run",
+    "check": "tsc --noEmit && node --check public/dashboard/app.js && node --check test/integration.mjs && node --check test/run-local-integration.mjs && node --test ../tools/test/lumectl.test.mjs && vitest run",
     "test": "vitest run",
     "test:integration": "node test/run-local-integration.mjs",
     "test:browser": "playwright test",
     "test:ci": "npm run check && npm run test:integration && npm run test:browser",
     "preview:dashboard": "node test/dashboard-preview-server.mjs",
-    "doctor": "node ../tools/yuanshanctl.mjs doctor",
-    "setup": "node ../tools/yuanshanctl.mjs setup",
-    "node:add": "node ../tools/yuanshanctl.mjs node add",
-    "node:install": "node ../tools/yuanshanctl.mjs node install",
-    "node:sync": "node ../tools/yuanshanctl.mjs node sync-keys",
-    "monitor:status": "node ../tools/yuanshanctl.mjs status",
+    "doctor": "node ../tools/lumectl.mjs doctor",
+    "setup": "node ../tools/lumectl.mjs setup",
+    "node:add": "node ../tools/lumectl.mjs node add",
+    "node:install": "node ../tools/lumectl.mjs node install",
+    "node:sync": "node ../tools/lumectl.mjs node sync-keys",
+    "monitor:status": "node ../tools/lumectl.mjs status",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "db:local": "wrangler d1 migrations apply aegilume --local"
+    "db:local": "wrangler d1 migrations apply lume --local"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260819.1",

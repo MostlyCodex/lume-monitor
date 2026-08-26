@@ -119,7 +119,7 @@ export function formatTelegramStatusMessage(
   }
 
   const lines = [
-    "◇ Aegilume · 最新状态",
+    "◇ Lume · 最新状态",
     `在线  ${onlineCount}/${catalogNodes.length}    更新  ${updateTimestamp(now)}`,
     "━━━━━━━━━━━━━━━━━━",
     "",

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/MostlyCodex/yuanshan-monitor/agent/internal/model"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/model"
 )
 
 func readFirst(path string) (string, error) {

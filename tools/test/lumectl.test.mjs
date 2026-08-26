@@ -10,13 +10,13 @@ import {
   validateNodeId,
   validateSshTarget,
   validateWorkerName,
-} from "../yuanshanctl.mjs";
+} from "../lumectl.mjs";
 
 test("deployment identifiers reject shell syntax and unstable forms", () => {
-  assert.equal(validateWorkerName("yuanshan-monitor-a1b2c3"), true);
-  assert.equal(validateWorkerName("Yuanshan"), false);
+  assert.equal(validateWorkerName("lume-monitor-a1b2c3"), true);
+  assert.equal(validateWorkerName("Lume"), false);
   assert.equal(validateWorkerName("monitor;whoami"), false);
-  assert.equal(validateDatabaseName("yuanshan_monitor-db"), true);
+  assert.equal(validateDatabaseName("lume_monitor-db"), true);
   assert.equal(validateDatabaseName("monitor db"), false);
   assert.equal(validateNodeId("tokyo-edge_01"), true);
   assert.equal(validateNodeId("Tokyo Edge"), false);
@@ -39,16 +39,16 @@ test("release checksum parser matches the exact asset only", () => {
 
 test("generated Worker config contains only generic deployment values", () => {
   const config = createWranglerConfig({
-    workerName: "yuanshan-monitor-demo",
-    databaseName: "yuanshan-monitor-demo-db",
+    workerName: "lume-monitor-demo",
+    databaseName: "lume-monitor-demo-db",
     databaseId: "00000000-0000-0000-0000-000000000000",
-    dashboardUrl: "https://yuanshan-monitor-demo.example.workers.dev",
+    dashboardUrl: "https://lume-monitor-demo.example.workers.dev",
     botUsername: "demo_monitor_bot",
     version: "1.1.0",
   });
-  assert.equal(config.name, "yuanshan-monitor-demo");
+  assert.equal(config.name, "lume-monitor-demo");
   assert.equal(config.d1_databases[0].binding, "DB");
-  assert.equal(config.vars.DASHBOARD_BASE_URL, "https://yuanshan-monitor-demo.example.workers.dev");
+  assert.equal(config.vars.DASHBOARD_BASE_URL, "https://lume-monitor-demo.example.workers.dev");
   assert.equal(JSON.stringify(config).includes("secret"), false);
 });
 

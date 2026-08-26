@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "yuanshan-monitor-integration-test",
+  "name": "lume-monitor-integration-test",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-19",
   "workers_dev": false,
@@ -21,7 +21,7 @@
   },
   "d1_databases": [{
     "binding": "DB",
-    "database_name": "yuanshan-monitor-integration-test",
+    "database_name": "lume-monitor-integration-test",
     "database_id": "00000000-0000-0000-0000-000000000001",
     "migrations_dir": "migrations"
   }],

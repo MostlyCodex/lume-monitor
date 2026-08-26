@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MostlyCodex/yuanshan-monitor/agent/internal/config"
-	"github.com/MostlyCodex/yuanshan-monitor/agent/internal/model"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/config"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/model"
 )
 
 func Services(parent context.Context, services []config.Service) []model.ServiceStatus {

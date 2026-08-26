@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const workerDirectory = join(dirname(fileURLToPath(import.meta.url)), "..");
 const wrangler = join(workerDirectory, "node_modules", "wrangler", "bin", "wrangler.js");
-const temporaryRoot = await mkdtemp(join(tmpdir(), "yuanshan-worker-integration-"));
+const temporaryRoot = await mkdtemp(join(tmpdir(), "lume-worker-integration-"));
 const wranglerEnvironment = {
   ...process.env,
   WRANGLER_LOG_PATH: join(temporaryRoot, "wrangler.log"),

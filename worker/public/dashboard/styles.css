@@ -136,7 +136,7 @@ code { font-family: var(--mono); }
   z-index: 0;
   overflow: hidden;
   background-color: #07101b;
-  background-image: url("/dashboard/background-aegilume.webp?v=kalenemsley");
+  background-image: url("/dashboard/background-lume.webp?v=kalenemsley");
   background-position: center;
   background-size: cover;
   filter: var(--scene-filter);
@@ -177,7 +177,7 @@ code { font-family: var(--mono); }
 html[data-theme="light"] .scene-glow-one { background: radial-gradient(circle, rgba(67, 126, 225, 0.2), transparent 68%); }
 html[data-theme="light"] .scene-glow-two { background: radial-gradient(circle, rgba(133, 95, 220, 0.14), transparent 70%); }
 html[data-theme="light"] .scene-grid { opacity: 0.12; }
-html[data-theme="light"] .scene { background-color: #dfe8f2; background-image: url("/dashboard/background-aegilume.webp?v=kalenemsley"); }
+html[data-theme="light"] .scene { background-color: #dfe8f2; background-image: url("/dashboard/background-lume.webp?v=kalenemsley"); }
 
 .glass-panel {
   position: relative;

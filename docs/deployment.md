@@ -1,7 +1,7 @@
 # Deployment
 
 For a new installation, start with the interactive, resumable
-[`yuanshanctl` quickstart](quickstart.md). It creates the Cloudflare resources,
+[`lumectl` quickstart](quickstart.md). It creates the Cloudflare resources,
 keeps the complete `NODE_KEYS` mapping in a Git-ignored private state directory,
 and can install a checksum-verified release Agent over an SSH alias. The manual
 steps below remain the auditable fallback and the reference for existing
@@ -25,7 +25,7 @@ For a PowerShell-friendly, end-to-end first installation including Telegram bind
 cd worker
 npm ci
 npx wrangler login
-npx wrangler d1 create aegilume
+npx wrangler d1 create lume
 cp wrangler.example.jsonc wrangler.jsonc
 ```
 
@@ -34,7 +34,7 @@ Edit `wrangler.jsonc` and set the returned D1 `database_id`, your Worker URL and
 Apply the generic schema:
 
 ```bash
-npx wrangler d1 migrations apply aegilume --remote
+npx wrangler d1 migrations apply lume --remote
 ```
 
 Choose a lowercase node slug for every VPS. Valid IDs match:

@@ -315,7 +315,7 @@ for (const offsetDays of [0, 1]) {
 const dashboardPage = await fetch(`${base}/dashboard/`);
 assert(dashboardPage.status === 200 && (dashboardPage.headers.get("content-type") ?? "").includes("text/html"), "dashboard asset failed");
 const dashboardHtml = await dashboardPage.text();
-assert(dashboardHtml.includes("Aegilume") && dashboardHtml.includes("node-detail"), "generic dashboard interface is missing");
+assert(dashboardHtml.includes("Lume") && dashboardHtml.includes("node-detail"), "generic dashboard interface is missing");
 
 const logout = await fetch(`${base}/auth/logout`, { method: "POST" });
 assert(logout.status === 204 && (logout.headers.get("set-cookie") ?? "").includes("Max-Age=0"), "dashboard logout failed");

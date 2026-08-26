@@ -5,7 +5,7 @@ package collect
 import (
 	"errors"
 
-	"github.com/MostlyCodex/yuanshan-monitor/agent/internal/model"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/model"
 )
 
 func (c *Collector) Collect() (model.SystemMetrics, []error) {

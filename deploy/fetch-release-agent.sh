@@ -8,7 +8,7 @@ fi
 
 version=$1
 output=${2:-./vpsmon-agent}
-repository=${VPSMON_GITHUB_REPOSITORY:-MostlyCodex/yuanshan-monitor}
+repository=${VPSMON_GITHUB_REPOSITORY:-MostlyCodex/lume-monitor}
 
 if ! printf '%s' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
   echo "version must be an explicit tag such as v1.2.3" >&2

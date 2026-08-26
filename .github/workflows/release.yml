@@ -115,4 +115,4 @@ jobs:
             exit 1
           fi
           gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes \
-            --title "Aegilume ${GITHUB_REF_NAME}"
+            --title "Lume ${GITHUB_REF_NAME}"

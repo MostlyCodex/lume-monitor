@@ -11,8 +11,8 @@ import (
 
 	probing "github.com/prometheus-community/pro-bing"
 
-	"github.com/MostlyCodex/yuanshan-monitor/agent/internal/config"
-	"github.com/MostlyCodex/yuanshan-monitor/agent/internal/model"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/config"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/model"
 )
 
 func cleanError(err error) string {

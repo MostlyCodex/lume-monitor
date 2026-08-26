@@ -1,12 +1,12 @@
-# Aegilume
+# Lume
 
 一个可自托管、面向任意数量 Linux VPS 的轻量监控系统。它由只出站的 Go Agent、Cloudflare Worker、D1、Telegram Bot 和响应式网页面板组成。
 
-名称取自 **Aegis**（守护）与 **Lume**（清晰可见）：以尽量小的暴露面，提供清楚、克制的可观测性。
+**Lume** 取“光与清晰可见”之意：用尽量小的暴露面，把关键状态照亮。
 
 > This repository is a sanitized, self-hostable edition. It contains no production credentials, host addresses, account identifiers, or private deployment data.
 
-![Aegilume PC 端节点总览与移动端节点详情](docs/assets/aegilume-showcase.webp)
+![Lume PC 端节点总览与移动端节点详情](docs/assets/lume-showcase.webp)
 
 > PC 与移动端均为项目真实渲染截图；画面使用内置虚构演示数据，不包含生产凭据、主机地址或账号信息。
 
@@ -15,8 +15,8 @@
 准备一个 Cloudflare 账号、一个 Telegram Bot 和一台可用 SSH + sudo 登录的 systemd Linux VPS。VPS 无需安装 Node.js、Go、Docker 或数据库。
 
 ```bash
-git clone https://github.com/MostlyCodex/yuanshan-monitor.git
-cd yuanshan-monitor/worker
+git clone https://github.com/MostlyCodex/lume-monitor.git
+cd lume-monitor/worker
 npm ci
 npm run doctor
 npm run setup
@@ -62,9 +62,9 @@ npm run setup
 
 ## 与主流探针对比
 
-Aegilume 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质量与最小权限的精简方案。
+Lume 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质量与最小权限的精简方案。
 
-| 维度 | Aegilume | 哪吒 | Komari |
+| 维度 | Lume | 哪吒 | Komari |
 | --- | --- | --- | --- |
 | 核心定位 | 主机状态与多目标 ICMP 线路质量 | 服务器、网站监控与综合运维 | 实时主机监控与可扩展面板 |
 | 后端 | Cloudflare Worker + D1，无需独立面板服务器 | 自托管 Dashboard | 自托管服务端 |
@@ -75,7 +75,7 @@ Aegilume 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质
 | 告警方式 | Telegram 按需查询，不主动告警 | 完整通知与告警体系 | 通知、任务及管理功能 |
 | 生态与平台 | Linux/systemd 优先，代码与依赖较少 | 平台覆盖和运维功能更丰富 | 多平台、主题与插件生态更丰富 |
 
-选择 Aegilume，适合重视**线路延迟与丢包、无远程控制、低暴露面**的场景；需要秒级刷新、跨平台、复杂告警或远程运维时，哪吒和 Komari 更合适。参见[哪吒官方文档](https://nezha.wiki/)、[Komari 官方文档](https://komari-document.pages.dev/)。
+选择 Lume，适合重视**线路延迟与丢包、无远程控制、低暴露面**的场景；需要秒级刷新、跨平台、复杂告警或远程运维时，哪吒和 Komari 更合适。参见[哪吒官方文档](https://nezha.wiki/)、[Komari 官方文档](https://komari-document.pages.dev/)。
 
 ## 安全边界
 
@@ -103,7 +103,7 @@ Aegilume 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质
 
 ## 开始使用
 
-首次部署优先使用上面的 `npm run setup`。管理工具保存可恢复的部署进度，并把私密状态放在被 Git 忽略的 `.yuanshan/`；它不把 Bot Token 保存到本机，也不会在终端打印节点密钥。完整命令见[快速部署指南](docs/quickstart.md)。下面保留手工部署流程，供已有部署或需要逐步审计的人使用。
+首次部署优先使用上面的 `npm run setup`。管理工具保存可恢复的部署进度，并把私密状态放在被 Git 忽略的 `.lume/`；它不把 Bot Token 保存到本机，也不会在终端打印节点密钥。完整命令见[快速部署指南](docs/quickstart.md)。下面保留手工部署流程，供已有部署或需要逐步审计的人使用。
 
 ### 手工部署：从零到面板
 
@@ -111,17 +111,17 @@ Aegilume 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质
 2. 创建后端：
 
    ```bash
-   git clone https://github.com/MostlyCodex/yuanshan-monitor.git
-   cd yuanshan-monitor/worker
+   git clone https://github.com/MostlyCodex/lume-monitor.git
+   cd lume-monitor/worker
    npm ci
    npx wrangler login
-   npx wrangler d1 create aegilume
+   npx wrangler d1 create lume
    ```
 
 3. 将 `worker/wrangler.example.jsonc` 复制为被 Git 忽略的 `worker/wrangler.jsonc`，填写 Worker 名称、D1 `database_id`、最终 Worker URL 和 Bot 用户名，然后执行：
 
    ```bash
-   npx wrangler d1 migrations apply aegilume --remote
+   npx wrangler d1 migrations apply lume --remote
    npm run check
    npm run deploy
    ```
@@ -298,7 +298,7 @@ sudo sh uninstall-agent.sh --confirm
 | `agent/` | 通用 Linux Go Agent 与测试 |
 | `worker/` | Cloudflare Worker、通用 D1 schema、动态面板和测试 |
 | `deploy/` | 单一配置模板、安装/卸载脚本和 systemd unit |
-| `tools/` | `yuanshanctl` 首次部署、节点密钥与 Agent 安装管理 |
+| `tools/` | `lumectl` 首次部署、节点密钥与 Agent 安装管理 |
 | `docs/` | 架构、探针和部署文档 |
 | `scripts/` | 可重复的开发与性能验证脚本 |
 

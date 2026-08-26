@@ -60,10 +60,10 @@ jobs:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
       - name: Run repeatable Agent benchmark
-        run: bash scripts/benchmark-agent.sh "$RUNNER_TEMP/yuanshan-benchmark"
+        run: bash scripts/benchmark-agent.sh "$RUNNER_TEMP/lume-benchmark"
       - uses: actions/upload-artifact@v4
         with:
           name: agent-benchmark-${{ github.sha }}
-          path: ${{ runner.temp }}/yuanshan-benchmark
+          path: ${{ runner.temp }}/lume-benchmark
           if-no-files-found: error
           retention-days: 30

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 const html = readFileSync(new URL("../public/dashboard/index.html", import.meta.url), "utf8");
 const app = readFileSync(new URL("../public/dashboard/app.js", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../public/dashboard/styles.css", import.meta.url), "utf8");
-const background = new URL("../public/dashboard/background-aegilume.webp", import.meta.url);
+const background = new URL("../public/dashboard/background-lume.webp", import.meta.url);
 
 describe("dashboard presentation hierarchy", () => {
   it("keeps the fleet home focused on node cards and current network quality", () => {
@@ -32,7 +32,7 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).toContain('网络质量（24H）');
     const cardTemplate = app.slice(app.indexOf("function renderNodeCard"), app.indexOf("function filteredNodes"));
     expect(cardTemplate.indexOf('class="resource-gauges"')).toBeLessThan(cardTemplate.indexOf('class="probe-block"'));
-    expect(styles).toContain('background-image: url("/dashboard/background-aegilume.webp?v=kalenemsley")');
+    expect(styles).toContain('background-image: url("/dashboard/background-lume.webp?v=kalenemsley")');
     expect(styles).toContain("height: 100lvh");
     expect(styles).not.toContain("transform: scale(1.22)");
     expect(statSync(background).size).toBeLessThan(500_000);
@@ -205,8 +205,8 @@ describe("dashboard presentation hierarchy", () => {
   });
 
   it("loads the pinned chart library locally instead of from a CDN", () => {
-    expect(html).toContain('/dashboard/styles.css?v=1.1.0&amp;b=aegilume-compact-glass');
-    expect(html).toContain('/dashboard/app.js?v=1.1.0&amp;b=aegilume-brand');
+    expect(html).toContain('/dashboard/styles.css?v=1.1.0&amp;b=lume-compact-glass');
+    expect(html).toContain('/dashboard/app.js?v=1.1.0&amp;b=lume-brand');
     expect(html).toContain('/dashboard/vendor/uPlot.iife.min.js');
     expect(html).toContain('/dashboard/vendor/uPlot.min.css');
     expect(html).not.toMatch(/https?:\/\/[^\s"']+u[Pp]lot/);
@@ -232,10 +232,10 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).not.toContain('fetch("/api/v1/dashboard/settings"');
   });
 
-  it("uses the Aegilume identity without the redundant fleet heading", () => {
-    expect(html).toContain("<title>Aegilume</title>");
+  it("uses the Lume identity without the redundant fleet heading", () => {
+    expect(html).toContain("<title>Lume</title>");
     expect(html).not.toContain("远山不见我，而我见远山");
-    expect(app).toContain('brand: "Aegilume"');
+    expect(app).toContain('brand: "Lume"');
     expect(html).not.toContain("节点总览");
     expect(html).not.toContain("LIVE FLEET");
     expect(html).not.toContain("当前状态、线路延迟、丢包与资源占用。");
