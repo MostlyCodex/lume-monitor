@@ -50,6 +50,20 @@ async function expectGlassMaterial(page, selector) {
   expect(material.alpha).toBeLessThan(0.8);
 }
 
+async function expectCompactSingleEdge(page, selector, maxRadius) {
+  const material = await page.locator(selector).first().evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      radius: parseFloat(style.borderTopLeftRadius),
+      shadow: style.boxShadow,
+      borderWidth: parseFloat(style.borderTopWidth),
+    };
+  });
+  expect(material.radius).toBeLessThanOrEqual(maxRadius);
+  expect(material.shadow).not.toContain("inset");
+  expect(material.borderWidth).toBeLessThanOrEqual(1);
+}
+
 async function attachScreenshot(page, testInfo, name) {
   await testInfo.attach(name, {
     body: await page.screenshot({ fullPage: true, animations: "disabled" }),
@@ -71,6 +85,8 @@ test("fleet page keeps its visual and responsive contract", async ({ page }, tes
   await expect(page.locator('.node-flag[aria-label="JP"] svg')).toBeVisible();
   await expectGlassMaterial(page, ".node-card");
   await expectGlassMaterial(page, ".command-bar");
+  await expectCompactSingleEdge(page, ".search-control", 8);
+  await expectCompactSingleEdge(page, ".node-card", 16);
 
   const markers = await page.locator(".node-card").first().locator(".resource-gauge-marker").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("cx")));
   expect(new Set(markers).size).toBe(3);
@@ -115,6 +131,8 @@ test("node detail renders charts, color keys and mobile controls", async ({ page
   await expect(page.locator(".detail-probe-card")).toHaveCount(4);
   await expectNoHorizontalOverflow(page);
   await expectGlassMaterial(page, ".chart-card");
+  await expectCompactSingleEdge(page, "#detail-range-switch", 9);
+  await expectCompactSingleEdge(page, ".detail-probe-card", 8);
 
   const swatches = await page.locator(".detail-probe-swatch").evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).backgroundColor));
   expect(new Set(swatches).size).toBe(4);

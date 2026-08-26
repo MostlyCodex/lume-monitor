@@ -1,4 +1,4 @@
-# 远山 Monitor — Dashboard Override
+# Aegilume — Dashboard Override
 
 This file overrides `../MASTER.md` for the production dashboard. It records the
 project-specific interpretation of the generated glassmorphism direction.
@@ -43,8 +43,8 @@ project-specific interpretation of the generated glassmorphism direction.
 
 - The top command bar material spans the complete viewport width while its controls retain
   bounded, responsive inner gutters. It touches every top and side edge with square corners.
-- The dashboard footer is a full-width smoked-glass closing band with a 112px desktop and
-  96px mobile minimum height. Footer content remains aligned to the main content column.
+- The dashboard footer is a full-width, text-free smoked-glass closing band with a 112px
+  desktop and 96px mobile minimum height.
 - Top and bottom chrome have no border lines or inset highlights. The footer is more
   transparent than the top bar and fades its blur in over 38px for a soft content transition.
 - Full-bleed surfaces must never increase the document scroll width or introduce a horizontal

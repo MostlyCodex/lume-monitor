@@ -1,6 +1,6 @@
 # Testing, migration safety and releases
 
-This document defines the repeatable checks behind 远山 Monitor releases. All
+This document defines the repeatable checks behind Aegilume releases. All
 fixtures use reserved example identities and dummy keys. Never replace them
 with a production D1 export, real node configuration or account secret.
 

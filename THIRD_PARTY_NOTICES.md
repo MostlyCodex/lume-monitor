@@ -14,7 +14,7 @@ bundled with this project.
 
 ## Dashboard background photograph
 
-`worker/public/dashboard/background-yuanshan.webp` is an optimized derivative of
+`worker/public/dashboard/background-aegilume.webp` is an optimized derivative of
 photograph `Bkci_8qcdvQ` by Kalen Emsley (`@kalenemsley`) from Unsplash, used under
 the Unsplash License.
 

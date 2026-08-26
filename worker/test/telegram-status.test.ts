@@ -115,7 +115,7 @@ describe("Telegram status formatting", () => {
   it("renders a compact node summary without exposing an IP field", () => {
     const message = formatTelegramStatusMessage([catalog()], [row(report())], now);
 
-    expect(message).toContain("🏔 远山Monitor · 最新状态");
+    expect(message).toContain("◇ Aegilume · 最新状态");
     expect(message).toContain("在线  1/1");
     expect(message).toContain("🟢 示例节点");
     expect(message).toContain("更新  20秒前");

@@ -25,7 +25,7 @@ For a PowerShell-friendly, end-to-end first installation including Telegram bind
 cd worker
 npm ci
 npx wrangler login
-npx wrangler d1 create yuanshan-monitor
+npx wrangler d1 create aegilume
 cp wrangler.example.jsonc wrangler.jsonc
 ```
 
@@ -34,7 +34,7 @@ Edit `wrangler.jsonc` and set the returned D1 `database_id`, your Worker URL and
 Apply the generic schema:
 
 ```bash
-npx wrangler d1 migrations apply yuanshan-monitor --remote
+npx wrangler d1 migrations apply aegilume --remote
 ```
 
 Choose a lowercase node slug for every VPS. Valid IDs match:

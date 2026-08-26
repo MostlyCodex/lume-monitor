@@ -6,11 +6,11 @@
     <meta name="description" content="Private, lightweight VPS observability dashboard.">
     <meta name="theme-color" content="#050607">
     <meta name="robots" content="noindex, nofollow, noarchive">
-    <title>远山Monitor</title>
+    <title>Aegilume</title>
     <link rel="stylesheet" href="/dashboard/vendor/uPlot.min.css">
-    <link rel="stylesheet" href="/dashboard/styles.css?v=1.1.0&amp;b=single-edge-glass">
+    <link rel="stylesheet" href="/dashboard/styles.css?v=1.1.0&amp;b=aegilume-compact-glass">
     <script src="/dashboard/vendor/uPlot.iife.min.js" defer></script>
-    <script src="/dashboard/app.js?v=1.1.0&amp;b=yuanshan-scale-csp" defer></script>
+    <script src="/dashboard/app.js?v=1.1.0&amp;b=aegilume-brand" defer></script>
   </head>
   <body>
     <div class="scene" aria-hidden="true">
@@ -27,7 +27,7 @@
         </svg>
       </div>
       <div class="loading-copy">
-        <span class="loading-brand">远山 <b>Monitor</b></span>
+        <span class="loading-brand">Aegilume</span>
         <strong>正在连接监控网络</strong>
         <small>建立安全会话 · 同步节点状态</small>
       </div>
@@ -37,8 +37,7 @@
     <main id="auth-view" class="auth-shell is-hidden">
       <section class="auth-card glass-panel" aria-labelledby="auth-title">
         <div class="brand-lockup">
-          <div class="brand-mark" aria-hidden="true">山</div>
-          <div><strong data-dashboard-brand>远山Monitor</strong><span>PRIVATE OBSERVABILITY</span></div>
+          <div><strong data-dashboard-brand>Aegilume</strong><span>MINIMAL OBSERVABILITY</span></div>
         </div>
         <div class="auth-copy">
           <span class="status-pill is-healthy"><i></i> Telegram 安全登录</span>
@@ -71,7 +70,7 @@
     <div id="dashboard-view" class="app-shell is-hidden">
       <header class="command-bar glass-panel">
         <div class="brand-lockup app-brand">
-          <div><strong data-dashboard-brand>远山Monitor</strong><span>NETWORK CONTROL</span></div>
+          <div><strong data-dashboard-brand>Aegilume</strong><span>SECURE OBSERVABILITY</span></div>
         </div>
         <div id="top-health" class="fleet-health"><i></i><div><strong>读取状态中</strong><span id="fleet-health-copy">正在同步节点</span></div></div>
         <div class="command-actions">
@@ -170,9 +169,7 @@
 
       </main>
 
-      <footer class="dashboard-footer">
-        <span class="footer-motto">远山不见我，而我见远山</span>
-      </footer>
+      <footer class="dashboard-footer" aria-hidden="true"></footer>
     </div>
 
     <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">

@@ -115,4 +115,4 @@ jobs:
             exit 1
           fi
           gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes \
-            --title "远山 Monitor ${GITHUB_REF_NAME}"
+            --title "Aegilume ${GITHUB_REF_NAME}"

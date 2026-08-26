@@ -1,4 +1,4 @@
-# 从零搭建远山Monitor
+# 从零搭建 Aegilume
 
 这是一份面向首次使用者的完整部署指南。完成后，你将拥有一个 Cloudflare Worker + D1 后端、一个 Telegram 私聊入口和至少一台持续上报的 Linux VPS。
 
@@ -39,7 +39,7 @@ cd yuanshan-monitor
 cd worker
 npm ci
 npx wrangler login
-npx wrangler d1 create yuanshan-monitor
+npx wrangler d1 create aegilume
 ```
 
 复制生产配置模板：
@@ -65,7 +65,7 @@ cp wrangler.example.jsonc wrangler.jsonc
 应用数据库迁移并首次部署：
 
 ```bash
-npx wrangler d1 migrations apply yuanshan-monitor --remote
+npx wrangler d1 migrations apply aegilume --remote
 npm run check
 npm run deploy
 ```

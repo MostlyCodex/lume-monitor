@@ -1,5 +1,5 @@
 {
-  "name": "yuanshan-monitor-worker",
+  "name": "aegilume-worker",
   "version": "1.1.0",
   "private": true,
   "type": "module",
@@ -18,7 +18,7 @@
     "monitor:status": "node ../tools/yuanshanctl.mjs status",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "db:local": "wrangler d1 migrations apply yuanshan-monitor --local"
+    "db:local": "wrangler d1 migrations apply aegilume --local"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260819.1",

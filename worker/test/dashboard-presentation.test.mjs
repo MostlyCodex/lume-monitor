@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 const html = readFileSync(new URL("../public/dashboard/index.html", import.meta.url), "utf8");
 const app = readFileSync(new URL("../public/dashboard/app.js", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../public/dashboard/styles.css", import.meta.url), "utf8");
-const background = new URL("../public/dashboard/background-yuanshan.webp", import.meta.url);
+const background = new URL("../public/dashboard/background-aegilume.webp", import.meta.url);
 
 describe("dashboard presentation hierarchy", () => {
   it("keeps the fleet home focused on node cards and current network quality", () => {
@@ -32,7 +32,7 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).toContain('网络质量（24H）');
     const cardTemplate = app.slice(app.indexOf("function renderNodeCard"), app.indexOf("function filteredNodes"));
     expect(cardTemplate.indexOf('class="resource-gauges"')).toBeLessThan(cardTemplate.indexOf('class="probe-block"'));
-    expect(styles).toContain('background-image: url("/dashboard/background-yuanshan.webp?v=kalenemsley")');
+    expect(styles).toContain('background-image: url("/dashboard/background-aegilume.webp?v=kalenemsley")');
     expect(styles).toContain("height: 100lvh");
     expect(styles).not.toContain("transform: scale(1.22)");
     expect(statSync(background).size).toBeLessThan(500_000);
@@ -160,7 +160,10 @@ describe("dashboard presentation hierarchy", () => {
     expect(styles).toContain(".plot-tooltip");
     expect(styles).toContain("--probe-telecom");
     expect(styles).toContain(".detail-probe-card { --probe-color: var(--probe-link); display: grid;");
-    expect(styles).toContain("border: 0;");
+    const probeCardRule = styles.slice(styles.indexOf(".detail-probe-card {"), styles.indexOf(".detail-probe-card::before"));
+    expect(probeCardRule).toContain("border: 1px solid var(--glass-border)");
+    expect(probeCardRule).toContain("border-radius: 8px");
+    expect(probeCardRule).not.toContain("inset");
     expect(styles).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
     expect(html).toContain('class="chart-series-key"');
     expect(html).toContain('class="probe-picker"');
@@ -188,9 +191,22 @@ describe("dashboard presentation hierarchy", () => {
     expect(styles).toContain('html[data-theme="light"] .detail-probe-card');
   });
 
+  it("uses one compact glass edge for cards, search and time controls", () => {
+    const searchRule = styles.slice(styles.indexOf(".search-control {"), styles.indexOf(".search-control > svg"));
+    const rangeRule = styles.slice(styles.indexOf(".range-switch { padding:"), styles.indexOf(".range-switch button { min-width"));
+    const nodeCardRule = styles.slice(styles.indexOf(".node-card {"), styles.indexOf(".node-card:focus"));
+    expect(styles).toContain("--radius-xl: 16px");
+    expect(styles).toContain("--radius-lg: 14px");
+    expect(searchRule).toContain("border-radius: 8px");
+    expect(searchRule).not.toContain("inset");
+    expect(rangeRule).toContain("border-radius: 9px");
+    expect(rangeRule).not.toContain("inset");
+    expect(nodeCardRule).toContain("border-radius: 16px");
+  });
+
   it("loads the pinned chart library locally instead of from a CDN", () => {
-    expect(html).toContain('/dashboard/styles.css?v=1.1.0&amp;b=single-edge-glass');
-    expect(html).toContain('/dashboard/app.js?v=1.1.0&amp;b=yuanshan-scale-csp');
+    expect(html).toContain('/dashboard/styles.css?v=1.1.0&amp;b=aegilume-compact-glass');
+    expect(html).toContain('/dashboard/app.js?v=1.1.0&amp;b=aegilume-brand');
     expect(html).toContain('/dashboard/vendor/uPlot.iife.min.js');
     expect(html).toContain('/dashboard/vendor/uPlot.min.css');
     expect(html).not.toMatch(/https?:\/\/[^\s"']+u[Pp]lot/);
@@ -216,10 +232,10 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).not.toContain('fetch("/api/v1/dashboard/settings"');
   });
 
-  it("uses the 远山Monitor identity without the redundant fleet heading", () => {
-    expect(html).toContain("<title>远山Monitor</title>");
-    expect(html).toContain("远山不见我，而我见远山");
-    expect(app).toContain('brand: "远山Monitor"');
+  it("uses the Aegilume identity without the redundant fleet heading", () => {
+    expect(html).toContain("<title>Aegilume</title>");
+    expect(html).not.toContain("远山不见我，而我见远山");
+    expect(app).toContain('brand: "Aegilume"');
     expect(html).not.toContain("节点总览");
     expect(html).not.toContain("LIVE FLEET");
     expect(html).not.toContain("当前状态、线路延迟、丢包与资源占用。");
@@ -236,15 +252,14 @@ describe("dashboard presentation hierarchy", () => {
     expect(commandRule).toContain("border: 0");
     expect(commandRule).toContain("border-radius: 0");
     expect(commandRule).toContain("background: var(--glass-chrome-bg)");
-    expect(styles).toContain(".dashboard-footer { position: relative; isolation: isolate; display: flex; width: calc(100% + 36px)");
+    expect(styles).toContain(".dashboard-footer { position: relative; isolation: isolate; display: block; width: calc(100% + 36px)");
     expect(styles).toContain("margin: 56px -18px 0");
     expect(styles).toContain("border: 0; background: transparent; box-shadow: none");
     expect(styles).toContain(".dashboard-footer::before { content: \"\";");
     expect(styles).toContain("background: var(--glass-footer-bg)");
     expect(styles).toContain("mask-image: linear-gradient(to bottom, transparent, #000 38px)");
     expect(styles).toContain("min-height: 112px");
-    expect(styles).toContain("justify-content: flex-end");
-    expect(styles).toContain("text-align: right");
-    expect(html).toContain("远山不见我，而我见远山");
+    expect(html).toContain('<footer class="dashboard-footer" aria-hidden="true"></footer>');
+    expect(html).not.toContain("footer-motto");
   });
 });

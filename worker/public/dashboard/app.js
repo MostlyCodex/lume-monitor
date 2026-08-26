@@ -22,9 +22,9 @@
   });
   const severityRank = { healthy: 0, warning: 1, critical: 2, offline: 3 };
   const DASHBOARD_LAYOUT_KEY = "vpsmon-dashboard-layout-v1";
-  const LEGACY_DEFAULT_BRANDS = new Set(["Wesley VPS Monitor"]);
+  const LEGACY_DEFAULT_BRANDS = new Set(["Wesley VPS Monitor", "远山Monitor"]);
   const DEFAULT_DASHBOARD_LAYOUT = Object.freeze({
-    brand: "远山Monitor",
+    brand: "Aegilume",
     order: [],
     nodes: {},
   });

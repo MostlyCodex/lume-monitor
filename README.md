@@ -1,10 +1,12 @@
-# 远山Monitor
+# Aegilume
 
 一个可自托管、面向任意数量 Linux VPS 的轻量监控系统。它由只出站的 Go Agent、Cloudflare Worker、D1、Telegram Bot 和响应式网页面板组成。
 
+名称取自 **Aegis**（守护）与 **Lume**（清晰可见）：以尽量小的暴露面，提供清楚、克制的可观测性。
+
 > This repository is a sanitized, self-hostable edition. It contains no production credentials, host addresses, account identifiers, or private deployment data.
 
-![远山Monitor PC 端节点总览与移动端节点详情](docs/assets/yuanshan-monitor-showcase.webp)
+![Aegilume PC 端节点总览与移动端节点详情](docs/assets/aegilume-showcase.webp)
 
 > PC 与移动端均为项目真实渲染截图；画面使用内置虚构演示数据，不包含生产凭据、主机地址或账号信息。
 
@@ -60,9 +62,9 @@ npm run setup
 
 ## 与主流探针对比
 
-远山Monitor 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质量与最小权限的精简方案。
+Aegilume 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质量与最小权限的精简方案。
 
-| 维度 | 远山Monitor | 哪吒 | Komari |
+| 维度 | Aegilume | 哪吒 | Komari |
 | --- | --- | --- | --- |
 | 核心定位 | 主机状态与多目标 ICMP 线路质量 | 服务器、网站监控与综合运维 | 实时主机监控与可扩展面板 |
 | 后端 | Cloudflare Worker + D1，无需独立面板服务器 | 自托管 Dashboard | 自托管服务端 |
@@ -73,7 +75,7 @@ npm run setup
 | 告警方式 | Telegram 按需查询，不主动告警 | 完整通知与告警体系 | 通知、任务及管理功能 |
 | 生态与平台 | Linux/systemd 优先，代码与依赖较少 | 平台覆盖和运维功能更丰富 | 多平台、主题与插件生态更丰富 |
 
-选择远山Monitor，适合重视**线路延迟与丢包、无远程控制、低暴露面**的场景；需要秒级刷新、跨平台、复杂告警或远程运维时，哪吒和 Komari 更合适。参见[哪吒官方文档](https://nezha.wiki/)、[Komari 官方文档](https://komari-document.pages.dev/)。
+选择 Aegilume，适合重视**线路延迟与丢包、无远程控制、低暴露面**的场景；需要秒级刷新、跨平台、复杂告警或远程运维时，哪吒和 Komari 更合适。参见[哪吒官方文档](https://nezha.wiki/)、[Komari 官方文档](https://komari-document.pages.dev/)。
 
 ## 安全边界
 
@@ -113,13 +115,13 @@ npm run setup
    cd yuanshan-monitor/worker
    npm ci
    npx wrangler login
-   npx wrangler d1 create yuanshan-monitor
+   npx wrangler d1 create aegilume
    ```
 
 3. 将 `worker/wrangler.example.jsonc` 复制为被 Git 忽略的 `worker/wrangler.jsonc`，填写 Worker 名称、D1 `database_id`、最终 Worker URL 和 Bot 用户名，然后执行：
 
    ```bash
-   npx wrangler d1 migrations apply yuanshan-monitor --remote
+   npx wrangler d1 migrations apply aegilume --remote
    npm run check
    npm run deploy
    ```

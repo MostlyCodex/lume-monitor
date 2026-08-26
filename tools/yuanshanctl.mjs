@@ -17,7 +17,7 @@ const privateDir = join(repoRoot, ".yuanshan");
 const statePath = join(privateDir, "state.json");
 const wranglerConfigPath = join(workerDir, "wrangler.jsonc");
 const wranglerBin = join(workerDir, "node_modules", "wrangler", "bin", "wrangler.js");
-const releaseRepository = process.env.YUANSHAN_RELEASE_REPOSITORY || "MostlyCodex/yuanshan-monitor";
+const releaseRepository = process.env.AEGILUME_RELEASE_REPOSITORY || process.env.YUANSHAN_RELEASE_REPOSITORY || "MostlyCodex/yuanshan-monitor";
 const maxDownloadBytes = 64 * 1024 * 1024;
 
 class DownloadUnavailableError extends Error {}
@@ -97,7 +97,7 @@ export function createWranglerConfig({ workerName, databaseName, databaseId, das
     vars: {
       APP_VERSION: version,
       REPORT_MAX_AGE_SECONDS: "300",
-      TELEGRAM_BOT_USERNAME: botUsername || "yuanshan_monitor_bot",
+      TELEGRAM_BOT_USERNAME: botUsername || "aegilume_monitor_bot",
       DASHBOARD_BASE_URL: dashboardUrl || "https://setup-pending.invalid",
     },
     assets: {
@@ -275,7 +275,7 @@ async function doctor({ quiet = false } = {}) {
     checks.push({ name, ok: result.found, detail: result.found ? (result.output.split(/\r?\n/)[0] || "已找到") : "未找到" });
   }
   if (!quiet) {
-    line("远山Monitor 环境检查");
+    line("Aegilume 环境检查");
     for (const check of checks) line(`${check.ok ? "✓" : "✗"} ${check.name.padEnd(14)} ${check.detail}`);
     line("");
     line((await exists(statePath)) ? `本地部署状态：${statePath}` : "本地部署状态：尚未初始化");
@@ -370,9 +370,9 @@ async function setup(prompt, assumeYes) {
   let state = await loadState(false);
   if (!state) {
     if (await exists(wranglerConfigPath)) {
-      fail("检测到已有 worker/wrangler.jsonc，但没有 yuanshanctl 状态。为避免覆盖现有部署，setup 已停止；已有手工部署请继续按原文档管理。");
+      fail("检测到已有 worker/wrangler.jsonc，但没有部署管理状态。为避免覆盖现有部署，setup 已停止；已有手工部署请继续按原文档管理。");
     }
-    const defaultWorker = `yuanshan-monitor-${randomBytes(3).toString("hex")}`;
+    const defaultWorker = `aegilume-${randomBytes(3).toString("hex")}`;
     const workerName = (await prompt.text("Worker 名称", defaultWorker)).toLowerCase();
     if (!validateWorkerName(workerName)) fail("Worker 名称只能使用小写字母、数字和连字符，最长 63 字符");
     const databaseName = (await prompt.text("D1 数据库名称", `${workerName.slice(0, 56)}-db`)).toLowerCase();
@@ -507,7 +507,7 @@ async function download(url) {
 }
 
 async function obtainAgentBinary(version, architecture, outputPath) {
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(releaseRepository)) fail("YUANSHAN_RELEASE_REPOSITORY 必须使用 owner/repository 格式");
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(releaseRepository)) fail("AEGILUME_RELEASE_REPOSITORY 必须使用 owner/repository 格式");
   const asset = `vpsmon-agent-linux-${architecture}`;
   const baseUrl = `https://github.com/${releaseRepository}/releases/download/v${version}`;
   try {
@@ -557,7 +557,7 @@ async function installNode(id, target) {
   if (!(await exists(configPath))) fail(`节点配置不存在：${configPath}`);
   const version = await readVersion();
   const architecture = await resolveRemoteArchitecture(target);
-  line(`下载并校验远山Monitor v${version} linux/${architecture}…`);
+  line(`下载并校验 Aegilume v${version} linux/${architecture}…`);
 
   const localStage = await mkdtemp(join(tmpdir(), "yuanshan-stage-"));
   const remoteStage = `/tmp/vpsmon-stage.${randomBytes(8).toString("hex")}`;
@@ -615,7 +615,7 @@ async function showStatus() {
 }
 
 function usage() {
-  line(`远山Monitor 部署管理工具
+  line(`Aegilume 部署管理工具
 
 用法：
   node tools/yuanshanctl.mjs doctor
