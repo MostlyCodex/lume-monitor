@@ -15,11 +15,11 @@ bundled with this project.
 ## Dashboard background photograph
 
 `worker/public/dashboard/background-yuanshan.webp` is an optimized derivative of
-photograph `ruWkmt3nU58` by Luca Micheli (`@lucamicheli`) from Unsplash, used under
+photograph `Bkci_8qcdvQ` by Kalen Emsley (`@kalenemsley`) from Unsplash, used under
 the Unsplash License.
 
-- Photograph: https://unsplash.com/photos/ruWkmt3nU58
-- Photographer: https://unsplash.com/@lucamicheli
+- Photograph: https://unsplash.com/photos/Bkci_8qcdvQ
+- Photographer: https://unsplash.com/@kalenemsley
 - License: https://unsplash.com/license
 
 ## uPlot v1.6.32
