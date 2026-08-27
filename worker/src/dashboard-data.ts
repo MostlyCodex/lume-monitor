@@ -1,8 +1,10 @@
 import {
   loadDashboardCatalog,
+  publicCounterCatalogEntry,
   publicNodeCatalogEntry,
   publicProbeCatalogEntry,
   type DashboardCatalog,
+  type CounterCatalogRow,
   type NodeCatalogRow,
   type ProbeCatalogRow,
 } from "./catalog";
@@ -72,6 +74,18 @@ interface ProbeTrendRow {
   rounds: number;
 }
 
+interface CounterHistoryRow {
+  node_id: NodeId;
+  counter_name: string;
+  observed_at: number;
+  complete: number;
+  baseline: number;
+  reset: number;
+  delta: number | null;
+  interval_seconds: number | null;
+  rate_per_minute: number | null;
+}
+
 export type HistoryHours = 6 | 24 | 168 | 720 | 2160;
 
 export function historyBucketSeconds(hours: HistoryHours, selectedNode: boolean): number {
@@ -113,6 +127,10 @@ function probeMap(catalog: DashboardCatalog): Map<string, ProbeCatalogRow> {
   return new Map(catalog.probes.map((probe) => [`${probe.node_id}:${probe.probe_name}`, probe]));
 }
 
+function counterMap(catalog: DashboardCatalog): Map<string, CounterCatalogRow> {
+  return new Map(catalog.counters.map((counter) => [`${counter.node_id}:${counter.counter_name}`, counter]));
+}
+
 function publicCatalog(catalog: DashboardCatalog): Record<string, unknown> {
   const nodeByInternal = new Map(catalog.nodes.map((node) => [node.node_id, node]));
   const probes = probeMap(catalog);
@@ -127,6 +145,9 @@ function publicCatalog(catalog: DashboardCatalog): Record<string, unknown> {
     })),
     probes: catalog.probes.map((probe) =>
       publicProbeCatalogEntry(probe, nodeByInternal.get(probe.node_id)?.public_id ?? probe.node_id),
+    ),
+    counters: catalog.counters.map((counter) =>
+      publicCounterCatalogEntry(counter, nodeByInternal.get(counter.node_id)?.public_id ?? counter.node_id),
     ),
     metrics: catalog.metrics.map((metric) => ({
       key: metric.metric_key,
@@ -190,6 +211,7 @@ export async function latestDashboardData(env: Env, now: number): Promise<Record
   ]);
   const { byInternal } = nodeMaps(catalog);
   const probesByKey = probeMap(catalog);
+  const countersByKey = counterMap(catalog);
   const reports = new Map(nodeRows.results.map((row) => [row.node_id, row]));
 
   const nodes = catalog.nodes.map((meta) => {
@@ -322,10 +344,34 @@ export async function latestDashboardData(env: Env, now: number): Promise<Record
             attempted_samples: probe.attempted_samples,
             successful_samples: probe.successful_samples,
             sample_failure_percent: safePercent(probe.sample_failure_percent),
-            packet_loss_percent: safePercent(probe.packet_loss_percent ?? probe.sample_failure_percent),
+            packet_loss_percent: probe.kind === "icmp"
+              ? safePercent(probe.packet_loss_percent ?? probe.sample_failure_percent)
+              : null,
             checked_at: probe.checked_at,
           };
         })
+        .sort((left, right) => left.order - right.order),
+      counters: (report.counters ?? [])
+        .map((counter) => {
+          const counterMeta = countersByKey.get(`${meta.node_id}:${counter.name}`);
+          if (!counterMeta) return null;
+          return {
+            name: counterMeta.public_id,
+            label: counterMeta.display_name,
+            kind: counterMeta.kind,
+            unit: counterMeta.unit,
+            order: counterMeta.display_order,
+            complete: counter.complete,
+            baseline: counter.baseline === true,
+            reset: counter.reset === true,
+            delta: counter.delta ?? null,
+            interval_seconds: counter.interval_seconds ?? null,
+            rate_per_minute: counter.rate_per_minute ?? null,
+            observed_at: counter.observed_at,
+            error: counter.error ? cleanText(counter.error, "观测失败") : null,
+          };
+        })
+        .filter((counter): counter is NonNullable<typeof counter> => counter !== null)
         .sort((left, right) => left.order - right.order),
       agent: {
         version: cleanText(report.agent_version, "unknown"),
@@ -409,6 +455,7 @@ export async function dashboardHistoryData(
   const catalog = await loadDashboardCatalog(env);
   const { byInternal, byPublic } = nodeMaps(catalog);
   const probesByKey = probeMap(catalog);
+  const countersByKey = counterMap(catalog);
   const selectedNode = requestedPublicNodeId ? byPublic.get(requestedPublicNodeId) ?? null : null;
   if (requestedPublicNodeId && !selectedNode) throw new Error("unknown dashboard node");
   const internalNodeId = selectedNode?.node_id ?? null;
@@ -497,6 +544,59 @@ export async function dashboardHistoryData(
   // not linger in fleet trends or node details.
   probeRows = probeRows.filter((row) => probesByKey.has(`${row.node_id}:${row.probe_name}`));
 
+  let counterHistory: Array<Record<string, unknown>> = [];
+  if (selectedNode && catalog.counters.some((counter) => counter.node_id === selectedNode.node_id)) {
+    const counterSince = Math.max(since, now - 30 * 86400);
+    const rows = await env.DB.prepare(
+      "SELECT samples.node_id, CAST(json_extract(counter.value, '$[0]') AS TEXT) AS counter_name, " +
+        "CAST(json_extract(counter.value, '$[1]') AS INTEGER) AS observed_at, " +
+        "CAST(json_extract(counter.value, '$[2]') AS INTEGER) AS complete, " +
+        "CAST(json_extract(counter.value, '$[3]') AS INTEGER) AS baseline, " +
+        "CAST(json_extract(counter.value, '$[4]') AS INTEGER) AS reset, " +
+        "CAST(json_extract(counter.value, '$[5]') AS INTEGER) AS delta, " +
+        "CAST(json_extract(counter.value, '$[6]') AS INTEGER) AS interval_seconds, " +
+        "CAST(json_extract(counter.value, '$[7]') AS REAL) AS rate_per_minute " +
+        "FROM metric_samples_v3 AS samples CROSS JOIN json_each(samples.local_counters_json) AS counter " +
+        "WHERE samples.reported_at >= ? AND samples.reported_at < ? AND samples.node_id = ? " +
+        "ORDER BY observed_at, counter_name",
+    ).bind(counterSince, rawEnd, selectedNode.node_id).all<CounterHistoryRow>();
+    const unique = new Map<string, CounterHistoryRow>();
+    for (const row of rows.results) {
+      if (!countersByKey.has(`${row.node_id}:${row.counter_name}`)) continue;
+      unique.set(`${row.counter_name}\u0000${row.observed_at}`, row);
+    }
+    const buckets = new Map<string, { name: string; timestamp: number; rows: CounterHistoryRow[] }>();
+    for (const row of unique.values()) {
+      const timestamp = Math.floor(row.observed_at / outputBucket) * outputBucket;
+      const key = `${row.counter_name}\u0000${timestamp}`;
+      const bucket = buckets.get(key) ?? { name: row.counter_name, timestamp, rows: [] };
+      bucket.rows.push(row);
+      buckets.set(key, bucket);
+    }
+    counterHistory = [...buckets.values()].map((bucket) => {
+      const usable = bucket.rows.filter((row) =>
+        row.complete === 1 && row.baseline !== 1 && row.reset !== 1 &&
+        row.delta !== null && row.interval_seconds !== null && row.interval_seconds > 0
+      );
+      const delta = usable.reduce((sum, row) => sum + Number(row.delta), 0);
+      const interval = usable.reduce((sum, row) => sum + Number(row.interval_seconds), 0);
+      const meta = countersByKey.get(`${selectedNode.node_id}:${bucket.name}`);
+      return {
+        node_id: selectedNode.public_id,
+        counter_name: meta?.public_id ?? bucket.name,
+        label: meta?.display_name ?? bucket.name,
+        kind: meta?.kind ?? "nftables-rule",
+        unit: meta?.unit ?? "matches",
+        timestamp: bucket.timestamp,
+        samples: usable.length,
+        delta: usable.length > 0 ? delta : null,
+        interval_seconds: usable.length > 0 ? interval : null,
+        rate_per_minute: interval > 0 ? Math.round((delta * 60 / interval) * 100) / 100 : null,
+        resets: bucket.rows.filter((row) => row.reset === 1).length,
+      };
+    }).sort((left, right) => Number(left.timestamp) - Number(right.timestamp));
+  }
+
   let routeData: Array<Record<string, unknown>> = [];
   if (!selectedNode) {
     const routeSince = Math.max(since, now - 30 * 86400);
@@ -523,6 +623,7 @@ export async function dashboardHistoryData(
         route.critical_ms,
         probeMeta?.warning_failure_percent ?? 0,
         probeMeta?.critical_failure_percent ?? 0,
+        probeMeta?.kind ?? "icmp",
       );
       const source = byInternal.get(route.source_node_id);
       const target = route.target_node_id ? byInternal.get(route.target_node_id) : null;
@@ -595,7 +696,7 @@ export async function dashboardHistoryData(
         successful_sample_percent: totalSamples ? (100 * successfulSamples) / totalSamples : 0,
         sample_failure_percent: failurePercent,
         sample_coverage_percent: requestedSamples ? (100 * totalSamples) / requestedSamples : 0,
-        packet_loss_percent: failurePercent,
+        packet_loss_percent: meta?.kind === "tcp" ? null : failurePercent,
         latency_average_ms: latency?.average ?? null,
         latency_min_ms: latency?.minimum ?? null,
         latency_max_ms: latency?.maximum ?? null,
@@ -641,7 +742,7 @@ export async function dashboardHistoryData(
         label: meta?.display_name ?? row.probe_name,
         category: meta?.category ?? "other",
         kind: meta?.kind ?? "icmp",
-        packet_loss_percent: row.sample_failure_percent,
+        packet_loss_percent: meta?.kind === "tcp" ? null : row.sample_failure_percent,
         warning_ms: meta?.warning_ms ?? null,
         critical_ms: meta?.critical_ms ?? null,
         warning_failure_percent: meta?.warning_failure_percent ?? 0,
@@ -649,6 +750,7 @@ export async function dashboardHistoryData(
       };
     }),
     probe_summaries: probeSummaries,
+    counters: counterHistory,
     routes: routeData,
     route_recommendation: routeRecommendation(routeData),
     annotations,

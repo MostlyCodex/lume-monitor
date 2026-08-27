@@ -1,6 +1,6 @@
 {
   "name": "lume-worker",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,6 +13,7 @@
     "doctor": "node ../tools/lumectl.mjs doctor",
     "setup": "node ../tools/lumectl.mjs setup",
     "node:add": "node ../tools/lumectl.mjs node add",
+    "node:configure": "node ../tools/lumectl.mjs node configure",
     "node:install": "node ../tools/lumectl.mjs node install",
     "node:sync": "node ../tools/lumectl.mjs node sync-keys",
     "monitor:status": "node ../tools/lumectl.mjs status",

@@ -105,7 +105,7 @@ modify a VPS. The complete release and provenance process is documented in
 ```bash
 cd ../agent
 go test ./...
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=1.1.0" -o vpsmon-agent ./cmd/vpsmon-agent
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=1.2.0" -o vpsmon-agent ./cmd/vpsmon-agent
 ```
 
 The same binary is used on every VPS.
@@ -118,6 +118,8 @@ cat /proc/sys/net/ipv4/ping_group_range
 ```
 
 If the range excludes `vpsmon`, leave ICMP probes disabled or deliberately configure the host's ping group policy after a security review. Do not grant the Agent root, `CAP_NET_RAW`, or an ambient capability.
+
+TCP Connect uses the Go standard library and needs no extra package or capability. Optional nftables counter observation uses the host's existing `nft` executable. Only its timer-triggered snapshot service holds `CAP_NET_ADMIN`; the resident Agent remains unprivileged and no rule is changed.
 
 ## 5. Create one node configuration
 
@@ -134,14 +136,15 @@ At minimum, replace:
 - `endpoint` with `https://<worker>/api/v1/report`;
 - `secret` with that node's matching secret.
 
-Leave both optional arrays empty for pure host monitoring:
+Leave all optional arrays empty for pure host monitoring:
 
 ```json
 "services": [],
-"probes": []
+"probes": [],
+"nftables_counters": []
 ```
 
-Add service or communication checks only when needed. See [probes.md](probes.md) for composable examples.
+Add service, communication or local-counter checks only when needed. See the [optional-observer manual](probes.md) for composable examples, exact semantics and clean removal.
 
 ## 6. Install one Agent
 
@@ -150,13 +153,17 @@ Create a private staging directory on the VPS matching `/tmp/vpsmon-stage.*`. Pl
 - compiled binary named `vpsmon-agent`;
 - that node's configuration named `config.json`;
 - `deploy/vpsmon-agent.service`;
+- `deploy/vpsmon-nftables-snapshot.service`;
+- `deploy/vpsmon-nftables-snapshot.timer`;
 - `deploy/install-agent.sh`;
-- `checksums.sha256` covering the three files above.
+- `checksums.sha256` covering the binary, configuration and three units.
 
 Example checksum creation inside the staging directory:
 
 ```bash
-sha256sum vpsmon-agent config.json vpsmon-agent.service > checksums.sha256
+sha256sum vpsmon-agent config.json vpsmon-agent.service \
+  vpsmon-nftables-snapshot.service vpsmon-nftables-snapshot.timer \
+  > checksums.sha256
 ```
 
 Run the installer as root:
@@ -165,7 +172,7 @@ Run the installer as root:
 sudo sh install-agent.sh /tmp/vpsmon-stage.<random>
 ```
 
-The installer refuses to overwrite an existing Agent installation, validates checksums and configuration, starts only `vpsmon-agent.service`, compares every configured monitored service before and after, and rolls back only its own files if validation fails.
+The installer refuses to overwrite an existing Agent installation, validates checksums and configuration, compares every configured monitored service before and after, and rolls back only its own files if validation fails. It always starts `vpsmon-agent.service`; the snapshot timer is enabled only when `nftables_counters` is non-empty.
 
 Verify:
 
@@ -191,11 +198,11 @@ Do not reuse node IDs or secrets. No code or schema edit is needed.
 sudo sh uninstall-agent.sh --confirm
 ```
 
-The uninstaller removes the monitoring unit, binary and configuration. It retains the service account and spool directory for recoverability.
+The uninstaller removes the monitoring units, optional numeric snapshot, binary and configuration. It retains the service account and report spool for recoverability. It never deletes or changes nftables rules.
 
 ## 9. Upgrade an existing Agent
 
-Build and stage the new binary, configuration, unit and checksum file exactly as in section 6, then run:
+Build and stage the new binary, configuration, three units and checksum file exactly as in section 6, then run:
 
 ```bash
 sudo sh upgrade-agent.sh /tmp/vpsmon-stage.<random>
@@ -218,6 +225,6 @@ Use this order when upgrading an existing installation:
 2. deploy the Worker and verify old Agent reports are still accepted;
 3. upgrade one Agent and observe it for several report/probe rounds;
 4. upgrade remaining Agents;
-5. add ICMP probes or failure-rate thresholds only after the upgraded Agent is stable.
+5. add ICMP/TCP probes, nftables counters or failure-rate thresholds only after the upgraded Agent is stable.
 
 This keeps database and API consumers ahead of producers. Never copy production Agent configurations or D1 exports into the repository while preparing a release.

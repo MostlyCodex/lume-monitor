@@ -18,5 +18,6 @@
   "probe_interval_seconds": 60,
   "services": [],
   "probes": [],
+  "nftables_counters": [],
   "spool_path": "/var/lib/vpsmon/pending.json"
 }

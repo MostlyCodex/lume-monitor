@@ -38,7 +38,9 @@ npm run setup
 | --- | --- | --- |
 | 基础主机监控 | 是 | CPU、负载、内存、Swap、磁盘、inode、流量、错误、启动与 Agent 状态 |
 | systemd 服务监测 | 否 | 监测零个到多个本机服务，只读状态，不重启、不修改 |
-| 通信探针 | 否 | 监测节点到节点或外部参考目标的 ICMP RTT 与丢包率 |
+| ICMP 通信探针 | 否 | 监测节点到节点或外部参考目标的 RTT 与 Echo 丢包率 |
+| TCP 建连探针 | 否 | 监测指定主机与端口的建连耗时和失败率，不发送应用数据 |
+| nftables 转发计数 | 否 | 读取明确选择的规则累计命中数，展示增量和每分钟速率 |
 
 新增 VPS 时只需：
 
@@ -52,7 +54,9 @@ npm run setup
 
 - 任意数量和任意角色的 VPS 动态注册与展示。
 - ICMP 多样本探测，记录 p50/p95、RTT 标准差、丢包率和采样覆盖率。
-- Agent、Worker、Telegram 和网页统一采用 ICMP 语义，不携带未使用的端口或握手探测能力。
+- 可选 TCP Connect 多样本探测，记录建连延迟与建连失败率；不执行 TLS、HTTP、登录或任意命令。
+- 可选 nftables 规则计数观测，只上传名称、命中增量、时间间隔与速率，不上传规则、地址、域名或载荷。
+- 首页保持 ICMP 线路质量视图；TCP 与转发活动仅在已配置节点的详情中出现。
 - 节点间 `node-link` 探针自动生成通信关系和链路分析。
 - Agent 使用 HMAC-SHA256 签名上报，带时间窗、nonce 和重放保护。
 - D1 保存最新状态、原始样本、长期聚合、运行事件和 IP 历史。
@@ -66,12 +70,12 @@ Lume 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质量�
 
 | 维度 | Lume | 哪吒 | Komari |
 | --- | --- | --- | --- |
-| 核心定位 | 主机状态与多目标 ICMP 线路质量 | 服务器、网站监控与综合运维 | 实时主机监控与可扩展面板 |
+| 核心定位 | 主机状态与少量显式网络/转发观测 | 服务器、网站监控与综合运维 | 实时主机监控与可扩展面板 |
 | 后端 | Cloudflare Worker + D1，无需独立面板服务器 | 自托管 Dashboard | 自托管服务端 |
 | Agent 通信 | 定时 HMAC/HTTPS 单向上报 | 出站 gRPC 长连接 | WebSocket，支持 POST 回退 |
 | 被监测端口 | 不新增入站端口 | 通常不新增入站端口 | 通常不新增入站端口 |
 | 远程能力 | 无远程命令、终端、文件管理或自动更新 | 可配置命令、终端、文件及 NAT 等任务 | 可配置远程命令与 Web SSH |
-| 网络监测 | 配置驱动的 ICMP RTT、丢包率及节点间链路 | ICMP、TCP、HTTP 等服务监测 | Ping、任务与通用状态监测 |
+| 网络监测 | 配置驱动的 ICMP RTT/丢包、TCP 建连及 nftables 规则计数 | ICMP、TCP、HTTP 等服务监测 | Ping、任务与通用状态监测 |
 | 告警方式 | Telegram 按需查询，不主动告警 | 完整通知与告警体系 | 通知、任务及管理功能 |
 | 生态与平台 | Linux/systemd 优先，代码与依赖较少 | 平台覆盖和运维功能更丰富 | 多平台、主题与插件生态更丰富 |
 
@@ -80,9 +84,10 @@ Lume 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质量�
 ## 安全边界
 
 - Agent 不监听端口，只发起配置中明确声明的出站连接。
-- `/etc/vpsmon/config.json` 是唯一执行清单：Agent 不生成隐藏探针，也不会探测未写入 `probes` 的目标；每个通信探针都必须明确写为 `kind: "icmp"`。
+- `/etc/vpsmon/config.json` 是唯一执行清单：Agent 不生成隐藏探针，也不会探测未写入 `probes` 的目标；通信探针必须明确写为 `kind: "icmp"` 或 `kind: "tcp"`。
 - Agent 以无特权用户运行；systemd 服务状态检查是只读的。
-- 安装脚本只管理 `/opt/vpsmon`、`/etc/vpsmon`、`/var/lib/vpsmon` 和独立的 `vpsmon-agent.service`。
+- TCP 使用普通出站 socket，无额外权限；仅在配置 nftables 计数时启用短时 oneshot，它只持有 `CAP_NET_ADMIN`，常驻 Agent 仍无 capability。
+- 安装脚本只管理 `/opt/vpsmon`、`/etc/vpsmon`、`/var/lib/vpsmon` 及项目自己的 systemd units。
 - Agent 成功升级后只保留最新 3 份校验过的回滚备份；清理器只匹配严格时间戳目录，不触碰其他状态文件。
 - 系统不会自动切换线路，也不会修改 nftables、Xray 或其他业务配置。
 - 密钥通过 Cloudflare Worker Secrets 和权限为 `0640` 或更严格的 VPS 配置文件保存。
@@ -96,10 +101,11 @@ Lume 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质量�
       │                                  │               │
       ├── 基础主机指标                   ├── Telegram    ├── latest/history
       ├── 可选 systemd 服务              └── Dashboard   └── rollups/events
-      └── 可选节点/外部通信探针
+      ├── 可选 ICMP/TCP 通信探针
+      └── 可选 nftables 数字计数快照
 ```
 
-设计说明见 [docs/architecture.md](docs/architecture.md)，测量口径见 [docs/monitoring-methodology.md](docs/monitoring-methodology.md)，探针示例见 [docs/probes.md](docs/probes.md)，测试与可信发布流程见 [docs/testing-and-releases.md](docs/testing-and-releases.md)。
+设计说明见 [docs/architecture.md](docs/architecture.md)，测量口径见 [docs/monitoring-methodology.md](docs/monitoring-methodology.md)，可选能力的配置与清理见[功能手册](docs/probes.md)，测试与可信发布流程见 [docs/testing-and-releases.md](docs/testing-and-releases.md)。
 
 ## 开始使用
 
@@ -145,7 +151,7 @@ Lume 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质量�
    mkdir -p bin
    go test ./...
    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-     -ldflags="-s -w -X main.version=1.1.0" \
+     -ldflags="-s -w -X main.version=1.2.0" \
      -o bin/vpsmon-agent-linux-amd64 ./cmd/vpsmon-agent
    cd ..
    ```
@@ -156,8 +162,11 @@ Lume 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质量�
 
    ```json
    "services": [],
-   "probes": []
+   "probes": [],
+   "nftables_counters": []
    ```
+
+   三项可选模块可在添加节点时配置，也可稍后运行 `npm run node:configure -- NODE_ID` 调整。字段、语义和干净下线方法见[功能手册](docs/probes.md)。
 
 8. 按[完整教程第 6 节](docs/getting-started.md#6-安装首台-agent)将二进制、私密配置、systemd unit 和安装脚本放入 VPS 的 `/tmp/vpsmon-stage.<random>`，生成校验和并运行安装器。首份认证报告会自动创建面板目录，最后用 `/status`、`/panel` 验收。
 
@@ -186,7 +195,8 @@ npm run node:add
 ### 默认频率
 
 - CPU、RAM、磁盘、流量和服务状态：每 60 秒采集并上报；
-- ICMP 主动探测：模板默认每 60 秒执行；
+- 已配置的 ICMP/TCP 主动探测：模板默认每 60 秒执行；
+- 已配置的 nftables 计数快照：每 60 秒读取一次；空配置时对应 timer 不启用；
 - Worker 将每轮资源样本和整组探针结果分别压缩成单行时间序列，并继续兼容读取旧历史。当前约 5 台节点、十余个探针可按 60 秒运行在 D1 免费日额度内；扩容前仍应按节点数核算并观察 D1 Analytics，长期 30 秒不推荐。
 
 采集频率与页面显示分辨率相互独立：
@@ -202,9 +212,10 @@ npm run node:add
 
 频率约束、流量公式和容量建议见[完整教程第 8 节](docs/getting-started.md#8-采集与探测频率)。
 
-### 探针执行清单与清理
+### 可选观测的执行清单与清理
 
-- ICMP 结果显示在首页、节点详情和 Telegram `/status`；Agent 和 Worker 都拒绝其他探针类型；
+- ICMP 显示在首页、详情和 Telegram `/status`；TCP 使用“建连失败率”且只在详情和按需状态中显示；
+- nftables 计数只在配置它的节点详情中显示“转发活动”，空配置不会读取规则或产生后台任务；
 - Agent 会按 `probe_interval_seconds` 执行配置中的**每一项**。如果某项已经没有使用场景，必须从节点配置删除，而不是只在前端隐藏。
 
 仓库提供 `deploy/prune-probes.py` 生成不含指定探针的全新配置；它不覆盖源文件，可先校验再替换：
@@ -218,7 +229,7 @@ python3 prune-probes.py \
 sudo /opt/vpsmon/vpsmon-agent --config /tmp/config.next.json --dry-run
 ```
 
-可重复 `--remove` 一次删除多项。完成备份并安装新配置、仅重启 `vpsmon-agent` 后，下一份认证报告会自动把缺失探针和对应链路标为禁用。已有历史样本是静态记录，会按 30 天保留策略自然过期；它们不会继续发包或触发额外采集。完整的备份、替换、回滚和核验步骤见[可选检查文档](docs/probes.md#removing-an-unused-probe)。
+可重复 `--remove` 一次删除多项。完成备份并安装新配置、仅重启 `vpsmon-agent` 后，下一份认证报告会自动把缺失探针和对应链路标为禁用。nftables 计数应从 `nftables_counters` 删除并通过升级器部署；数组变空时升级器会停用 timer 并删除数字快照。已有历史样本会按保留策略自然过期，不会继续发包或触发额外采集。完整步骤见[功能手册的干净停用章节](docs/probes.md#干净停用)。
 
 ## 手动下线节点
 
@@ -229,7 +240,7 @@ sudo /opt/vpsmon/vpsmon-agent --config /tmp/config.next.json --dry-run
 在待下线 VPS 上执行：
 
 ```bash
-sudo systemctl disable --now vpsmon-agent.service
+sudo systemctl disable --now vpsmon-agent.service vpsmon-nftables-snapshot.timer
 systemctl is-active vpsmon-agent.service
 ```
 
@@ -251,7 +262,7 @@ Cloudflare Secret 不能读取明文；部署者必须在安全位置维护完�
 将以下 `NODE_ID` 和数据库名替换为实际值：
 
 ```bash
-npx wrangler d1 execute YOUR_DATABASE --remote --command "UPDATE node_catalog SET enabled=0, updated_at=unixepoch() WHERE node_id='NODE_ID'; UPDATE service_catalog SET enabled=0, updated_at=unixepoch() WHERE node_id='NODE_ID'; UPDATE probe_catalog SET enabled=0, updated_at=unixepoch() WHERE node_id='NODE_ID' OR target_node_id='NODE_ID'; UPDATE business_routes SET enabled=0, updated_at=unixepoch() WHERE source_node_id='NODE_ID' OR target_node_id='NODE_ID';"
+npx wrangler d1 execute YOUR_DATABASE --remote --command "UPDATE node_catalog SET enabled=0, updated_at=unixepoch() WHERE node_id='NODE_ID'; UPDATE service_catalog SET enabled=0, updated_at=unixepoch() WHERE node_id='NODE_ID'; UPDATE probe_catalog SET enabled=0, updated_at=unixepoch() WHERE node_id='NODE_ID' OR target_node_id='NODE_ID'; UPDATE counter_catalog SET enabled=0, updated_at=unixepoch() WHERE node_id='NODE_ID'; UPDATE business_routes SET enabled=0, updated_at=unixepoch() WHERE source_node_id='NODE_ID' OR target_node_id='NODE_ID';"
 ```
 
 确认节点已停用：
@@ -270,7 +281,7 @@ npx wrangler d1 execute YOUR_DATABASE --remote --command "SELECT node_id, displa
 sudo sh uninstall-agent.sh --confirm
 ```
 
-卸载脚本只删除 `vpsmon-agent.service`、Agent 二进制和 `/etc/vpsmon/config.json`，保留 `vpsmon` 服务账号与 `/var/lib/vpsmon` spool，避免不可逆地清除恢复资料。
+卸载脚本删除 Agent、配置、项目 systemd units 和 nftables 数字快照；保留 `vpsmon` 服务账号与报告 spool，避免不可逆地清除恢复资料。它不会修改 nftables 规则、Xray、SSH 或其他业务配置。
 
 ## 面板显示自定义
 
@@ -285,7 +296,7 @@ sudo sh uninstall-agent.sh --confirm
 
 ## 面板设计
 
-首页采用状态头部、CPU/RAM/Disk 横向资源刻度、网络速率/累计流量以及逐目标的 24 小时延迟与丢包能量格。一个节点可以同时展示多条运营商探测和节点间链路，不会被压缩成单一平均值。资源刻度以连续长度表示当前占用，并在 70%/85% 标示关注与异常阈值；CPU/RAM/Disk 仅在首页展示，不在详情重复出现。详情页提供时间范围切换、可点选的目标图例以及延迟、丢包和网络速率历史，其中 6/24 小时曲线按 1 分钟显示，7/30 天按小时显示，90 天按天显示。进入 6/24 小时详情时先用首页已加载的数据即时绘制，精细历史在后台替换并在当前会话缓存；系统不会预取所有节点或增加 D1 读取频率。速率由相邻两次 Agent 上报的网卡累计字节差除以上报时间差计算，代表最近一个上报区间的平均速率，不是实时流式测速。
+首页采用状态头部、CPU/RAM/Disk 横向资源刻度、网络速率/累计流量以及逐目标的 24 小时延迟与丢包能量格。一个节点可以同时展示多条运营商探测和节点间链路，不会被压缩成单一平均值。资源刻度以连续长度表示当前占用，并在 70%/85% 标示关注与异常阈值；CPU/RAM/Disk 仅在首页展示，不在详情重复出现。详情页提供时间范围切换、可点选的目标图例以及延迟、失败事件和网络速率历史，其中 6/24 小时曲线按 1 分钟显示，7/30 天按小时显示，90 天按天显示。配置 TCP 时沿用相同图表但明确标为建连失败；配置 nftables 计数时才出现“转发活动”卡片和速率曲线。进入 6/24 小时详情时先用首页已加载的数据即时绘制，精细历史在后台替换并在当前会话缓存；系统不会预取所有节点。网络速率由相邻两次 Agent 上报的网卡累计字节差除以上报时间差计算，代表最近一个上报区间的平均速率，不是实时流式测速。
 
 卡片指标右侧的数字表示最新一轮探测；下方 18 个能量棒色块表示最近 24 小时，每个色块约覆盖 80 分钟。历史丢包率按色块内实际 ICMP 尝试数和成功数加权，而不是直接平均百分比：不超过 2% 为绿色，超过 2% 至 10% 为黄色，超过 10% 为红色；若任一五分钟桶达到 60%，所在色块直接标红。最新一轮仍采用探针自身配置的失败率阈值，因此能及时显示刚发生但尚未显著影响长窗口平均值的异常。完整公式与设计依据见 [监测方法与技术实现](docs/monitoring-methodology.md#首页当前值与-24-小时能量棒)。
 

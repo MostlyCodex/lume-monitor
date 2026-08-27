@@ -31,7 +31,7 @@ export interface ProbeCatalogRow {
   public_id: string;
   display_name: string;
   category: string;
-  kind: "icmp";
+  kind: "icmp" | "tcp";
   target_node_id: NodeId | null;
   warning_ms: number | null;
   critical_ms: number | null;
@@ -40,6 +40,17 @@ export interface ProbeCatalogRow {
   severity: Severity;
   display_order: number;
   is_primary: number;
+  enabled: number;
+}
+
+export interface CounterCatalogRow {
+  node_id: NodeId;
+  counter_name: string;
+  public_id: string;
+  display_name: string;
+  kind: "nftables-rule";
+  unit: "matches";
+  display_order: number;
   enabled: number;
 }
 
@@ -71,12 +82,13 @@ export interface DashboardCatalog {
   nodes: NodeCatalogRow[];
   services: ServiceCatalogRow[];
   probes: ProbeCatalogRow[];
+  counters: CounterCatalogRow[];
   metrics: MetricCatalogRow[];
   routes: BusinessRouteRow[];
 }
 
 export async function loadDashboardCatalog(env: Env): Promise<DashboardCatalog> {
-  const [nodes, services, probes, metrics, routes] = await Promise.all([
+  const [nodes, services, probes, counters, metrics, routes] = await Promise.all([
     env.DB.prepare(
       "SELECT node_id, public_id, display_name, short_mark, role_label, group_name, region_label, " +
         "stale_seconds, display_order, color_key, offline_severity, ip_change_severity, enabled " +
@@ -93,6 +105,10 @@ export async function loadDashboardCatalog(env: Env): Promise<DashboardCatalog> 
         "ORDER BY node_id, display_order, display_name",
     ).all<ProbeCatalogRow>(),
     env.DB.prepare(
+      "SELECT node_id, counter_name, public_id, display_name, kind, unit, display_order, enabled " +
+        "FROM counter_catalog WHERE enabled = 1 ORDER BY node_id, display_order, display_name",
+    ).all<CounterCatalogRow>(),
+    env.DB.prepare(
       "SELECT metric_key, display_name, unit, category, warning_value, critical_value, " +
         "display_order, default_visible FROM metric_catalog ORDER BY display_order, display_name",
     ).all<MetricCatalogRow>(),
@@ -106,8 +122,23 @@ export async function loadDashboardCatalog(env: Env): Promise<DashboardCatalog> 
     nodes: nodes.results,
     services: services.results,
     probes: probes.results,
+    counters: counters.results,
     metrics: metrics.results,
     routes: routes.results,
+  };
+}
+
+export function publicCounterCatalogEntry(
+  counter: CounterCatalogRow,
+  nodePublicId: string,
+): Record<string, unknown> {
+  return {
+    node_id: nodePublicId,
+    name: counter.public_id,
+    label: counter.display_name,
+    kind: counter.kind,
+    unit: counter.unit,
+    order: counter.display_order,
   };
 }
 

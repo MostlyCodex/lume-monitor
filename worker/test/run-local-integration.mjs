@@ -116,7 +116,7 @@ function testProductionUpgrade(root) {
     throw new Error(`legacy latest state was not preserved correctly: ${JSON.stringify(latest)}`);
   }
 
-  const invalidKinds = query(config, persistence, "SELECT COUNT(*) AS count FROM probe_catalog WHERE kind <> 'icmp'");
+  const invalidKinds = query(config, persistence, "SELECT COUNT(*) AS count FROM probe_catalog WHERE kind NOT IN ('icmp','tcp')");
   if (Number(invalidKinds[0]?.count) !== 0) {
     throw new Error(`obsolete probe kinds survived the upgrade: ${JSON.stringify(invalidKinds)}`);
   }
@@ -133,7 +133,7 @@ async function testFreshDatabase(root) {
   runWrangler([
     "d1", "execute", "DB", "--local", "--config", config, "--persist-to", persistence,
     "--command",
-    "INSERT INTO metric_samples_v3 VALUES (1,'expired-fixture',1,'expired-boot',0,0,0,0,0,0,0,0,0,0,NULL,NULL,0,0,0,0); " +
+    "INSERT INTO metric_samples_v3 VALUES (1,'expired-fixture',1,'expired-boot',0,0,0,0,0,0,0,0,0,0,NULL,NULL,0,0,0,0,'[]'); " +
       "INSERT INTO probe_rounds_v3 VALUES (1,'expired-fixture',1,'[]');",
     "--yes",
   ], true);

@@ -8,9 +8,9 @@
     <meta name="robots" content="noindex, nofollow, noarchive">
     <title>Lume</title>
     <link rel="stylesheet" href="/dashboard/vendor/uPlot.min.css">
-    <link rel="stylesheet" href="/dashboard/styles.css?v=1.1.0&amp;b=stable-scene-v2">
+    <link rel="stylesheet" href="/dashboard/styles.css?v=1.2.0&amp;b=optional-observers">
     <script src="/dashboard/vendor/uPlot.iife.min.js" defer></script>
-    <script src="/dashboard/app.js?v=1.1.0&amp;b=stable-scene-v2" defer></script>
+    <script src="/dashboard/app.js?v=1.2.0&amp;b=optional-observers" defer></script>
   </head>
   <body>
     <div class="scene" aria-hidden="true">
@@ -119,7 +119,7 @@
           <div id="detail-content" class="detail-content">
             <section class="detail-section">
               <div class="section-heading">
-                <div><p class="eyebrow">NETWORK QUALITY</p><h2>延迟与丢包</h2></div>
+                <div><p class="eyebrow">NETWORK QUALITY</p><h2 id="network-section-title">延迟与丢包</h2></div>
               </div>
               <div class="probe-picker">
                 <div class="probe-picker-head">
@@ -133,14 +133,24 @@
               <div class="network-chart-toolbar">
                 <div id="network-layer-switch" class="network-layer-switch" aria-label="网络图层">
                   <button class="is-active" type="button" data-network-layer="latency" aria-pressed="true"><i class="legend-line"></i>延迟</button>
-                  <button class="is-active" type="button" data-network-layer="loss" aria-pressed="true"><i class="legend-bars"></i>丢包事件</button>
+                  <button class="is-active" type="button" data-network-layer="loss" aria-pressed="true"><i class="legend-bars"></i><span id="network-failure-layer-label">丢包事件</span></button>
                 </div>
-                <p><i class="legend-line"></i>实线 = 延迟（ms）<i class="legend-bars"></i>竖条 = 丢包；颜色越实，比例越高</p>
+                <p><i class="legend-line"></i>实线 = 延迟（ms）<i class="legend-bars"></i><span id="network-failure-legend">竖条 = 丢包；颜色越实，比例越高</span></p>
               </div>
               <article class="chart-card network-chart-card glass-panel">
-                <div class="chart-title"><div><strong>线路质量历史</strong><span>Latency line · Packet-loss event</span></div><span id="network-chart-state">读取采样中</span></div>
+                <div class="chart-title"><div><strong>线路质量历史</strong><span id="network-chart-subtitle">Latency line · Packet-loss event</span></div><span id="network-chart-state">读取采样中</span></div>
                 <div id="network-plot" class="plot-host plot-host-network" role="img" aria-label="网络延迟与丢包历史图"></div>
                 <div id="network-empty" class="chart-empty is-hidden">暂无网络质量历史</div>
+              </article>
+            </section>
+
+            <section id="counter-section" class="detail-section is-hidden">
+              <div class="section-heading"><div><p class="eyebrow">FORWARDING ACTIVITY</p><h2>转发活动</h2></div></div>
+              <div id="counter-summary" class="counter-summary" aria-live="polite"></div>
+              <article class="chart-card glass-panel counter-chart-card">
+                <div class="chart-title"><div><strong>规则命中速率</strong><span>Numeric counter delta · matches/min</span></div></div>
+                <div id="counter-plot" class="plot-host" role="img" aria-label="nftables 规则命中速率历史图"></div>
+                <div id="counter-empty" class="chart-empty is-hidden">正在建立计数基线</div>
               </article>
             </section>
 

@@ -207,7 +207,7 @@ $env:CGO_ENABLED = "0"
 $env:GOOS = "linux"
 $env:GOARCH = "amd64"
 go test ./...
-go build -trimpath -ldflags="-s -w -X main.version=1.1.0" -o bin/vpsmon-agent-linux-amd64 ./cmd/vpsmon-agent
+go build -trimpath -ldflags="-s -w -X main.version=1.2.0" -o bin/vpsmon-agent-linux-amd64 ./cmd/vpsmon-agent
 Remove-Item Env:CGO_ENABLED, Env:GOOS, Env:GOARCH
 Set-Location ..
 ```
@@ -219,7 +219,7 @@ cd agent
 mkdir -p bin
 go test ./...
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-  go build -trimpath -ldflags="-s -w -X main.version=1.1.0" \
+  go build -trimpath -ldflags="-s -w -X main.version=1.2.0" \
   -o bin/vpsmon-agent-linux-amd64 ./cmd/vpsmon-agent
 cd ..
 ```
@@ -247,7 +247,8 @@ Copy-Item deploy/config.example.json "$env:USERPROFILE\vpsmon-private\my-vps-01\
 
 ```json
 "services": [],
-"probes": []
+"probes": [],
+"nftables_counters": []
 ```
 
 要只读监测 systemd 服务，可加入：
@@ -258,7 +259,7 @@ Copy-Item deploy/config.example.json "$env:USERPROFILE\vpsmon-private\my-vps-01\
 ]
 ```
 
-要监测节点间或外部参考目标，复制 [probes.md](probes.md) 中的 ICMP 示例。它们只是附加层，不会改变基础 Agent 模板，但配置中的每个探针都会按周期真实执行。不再需要时，请按[删除无用探针](probes.md#removing-an-unused-probe)流程从节点配置移除。
+要监测节点间/外部参考目标、指定 TCP 端口或 nftables 转发活动，使用[功能手册](probes.md)中的可组合示例。它们不会改变基础 Agent 模板，但每个配置项都会真实执行；数组为空时对应模块完全不运行。已有节点可先运行 `npm run node:configure -- NODE_ID` 生成候选私密配置，再按升级流程部署。
 
 ## 6. 安装首台 Agent
 
@@ -268,11 +269,11 @@ Copy-Item deploy/config.example.json "$env:USERPROFILE\vpsmon-private\my-vps-01\
 ssh <ssh-user>@<vps-host> "install -d -m 0700 /tmp/vpsmon-stage.a1b2c3"
 scp agent/bin/vpsmon-agent-linux-amd64 <ssh-user>@<vps-host>:/tmp/vpsmon-stage.a1b2c3/vpsmon-agent
 scp /private/path/config.json <ssh-user>@<vps-host>:/tmp/vpsmon-stage.a1b2c3/config.json
-scp deploy/vpsmon-agent.service deploy/install-agent.sh <ssh-user>@<vps-host>:/tmp/vpsmon-stage.a1b2c3/
-ssh <ssh-user>@<vps-host> "cd /tmp/vpsmon-stage.a1b2c3 && sha256sum vpsmon-agent config.json vpsmon-agent.service > checksums.sha256 && sudo sh ./install-agent.sh /tmp/vpsmon-stage.a1b2c3"
+scp deploy/vpsmon-agent.service deploy/vpsmon-nftables-snapshot.service deploy/vpsmon-nftables-snapshot.timer deploy/install-agent.sh <ssh-user>@<vps-host>:/tmp/vpsmon-stage.a1b2c3/
+ssh <ssh-user>@<vps-host> "cd /tmp/vpsmon-stage.a1b2c3 && sha256sum vpsmon-agent config.json vpsmon-agent.service vpsmon-nftables-snapshot.service vpsmon-nftables-snapshot.timer > checksums.sha256 && sudo sh ./install-agent.sh /tmp/vpsmon-stage.a1b2c3"
 ```
 
-安装器只管理自己的 Agent 文件和 systemd unit。它会先验证校验和与配置、记录被监测服务状态，失败时只回滚监控自身，不会修改或重启被监测服务。
+安装器只管理自己的 Agent 文件和 systemd units。它会先验证校验和与配置、记录被监测服务状态，失败时只回滚监控自身，不会修改或重启被监测服务。`nftables_counters` 为空时不会启用快照 timer。
 
 验证：
 
@@ -316,9 +317,9 @@ ssh <ssh-user>@<vps-host> "systemctl is-active vpsmon-agent.service && sudo jour
 | 配置 | 含义 | 模板默认值 |
 | --- | --- | ---: |
 | `report_interval_seconds` | 采集资源、服务状态并上报最新值 | 60 秒 |
-| `probe_interval_seconds` | 真正执行 ICMP 主动探测 | 60 秒 |
+| `probe_interval_seconds` | 真正执行已配置的 ICMP/TCP 主动探测 | 60 秒 |
 
-所以默认状态下，CPU/RAM/Disk 和网络质量都按分钟更新。ICMP 默认每个目标发送 5 个 Echo；一次探测仍只形成该节点这一轮的一条紧凑 D1 记录，不会按目标拆成多行。
+所以默认状态下，CPU/RAM/Disk 和网络质量都按分钟更新。ICMP 默认每目标 5 个 Echo，TCP 默认每目标 3 次 Connect；同一节点的一轮通信探针仍压成一条 D1 记录。nftables 快照 timer 固定每 60 秒读取一次已配置规则，增量随资源报告写入原有行，不新增一类历史行；数组为空时 timer 停用。
 
 约束：上报间隔为 30–600 秒；探测间隔不得短于上报间隔，且不得超过 3600 秒。
 
@@ -358,6 +359,7 @@ P = 全部节点的探针总数
 
 每日探测轮数 = P × 86400 ÷ probe_interval_seconds
 每日 ICMP Echo 数 = ICMP 探测轮数 × samples
+每日 TCP Connect 数 = TCP 探测轮数 × samples
 ```
 
 D1 按实际读写行计量，索引更新和删除也会计入写入。公式是容量规划上界，不替代账单数据；运行满 24 小时后应查看 Cloudflare D1 Analytics。当前免费额度和数据库尺寸限制以 [Cloudflare D1 官方定价](https://developers.cloudflare.com/d1/platform/pricing/) 为准。
@@ -383,6 +385,14 @@ cat /proc/sys/net/ipv4/ping_group_range
 
 不要为此给 Agent root、`CAP_NET_RAW` 或额外开放端口。详见 [deployment.md](deployment.md)。
 
+### TCP 建连失败率很高
+
+TCP 只验证三次握手，不发送 TLS/HTTP 数据。先用 `ss -lnt` 确认目标端口在监听，再检查目标 ACL、防火墙和上游网络；不要把 TCP 建连失败率称为 ICMP 丢包率。
+
+### 转发活动没有数据
+
+确认 `vpsmon-nftables-snapshot.timer` 为 `active`，再运行 `sudo systemctl start vpsmon-nftables-snapshot.service` 和 `sudo journalctl -u vpsmon-nftables-snapshot.service -n 20 --no-pager` 查看选择器错误。每个选择器必须且只能匹配一条带 `counter` 的现有规则；helper 只读，不会修改规则。
+
 ### Bot 没有响应
 
 确认是在已绑定账号的私聊中发送命令，并重新调用 Webhook 配置接口。`/bind` 只在尚未绑定所有者时生效。
@@ -393,7 +403,7 @@ cat /proc/sys/net/ipv4/ping_group_range
 
 ## 下一步
 
-- 配置可选探针：[probes.md](probes.md)
+- 配置、解释与清理可选观测：[功能手册](probes.md)
 - 安全升级与回滚：[deployment.md](deployment.md)
 - 技术架构：[architecture.md](architecture.md)
 - 测量口径：[monitoring-methodology.md](monitoring-methodology.md)

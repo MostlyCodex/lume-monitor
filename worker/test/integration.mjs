@@ -9,7 +9,7 @@ const secrets = {
 // Keep the complete synthetic sequence at or before wall-clock now. History
 // assertions aggregate across output buckets, so CI start time cannot create
 // future samples or make the result depend on a five-minute boundary.
-const reportEpoch = Math.floor(Date.now() / 1000) - 120;
+const reportEpoch = Math.floor(Date.now() / 1000) - 240;
 
 function nodeMetadata(id, name, order, color) {
   return {
@@ -127,6 +127,7 @@ function report(id = "alpha-vps") {
           },
         ]
       : [],
+    counters: [],
     agent: { queue_depth: 0, collect_errors: 0, send_errors: 0, started_at: now - 1000 },
   };
 }
@@ -230,6 +231,58 @@ const legacyAccepted = await fetch(
 );
 assert(legacyAccepted.status === 202, `schema v1 compatibility returned ${legacyAccepted.status}: ${await legacyAccepted.text()}`);
 
+const optionalReport = structuredClone(rateReport);
+optionalReport.generated_at += 120;
+optionalReport.system.network_rx_bytes += 12_000;
+optionalReport.system.network_tx_bytes += 24_000;
+optionalReport.probes.forEach((probe) => { probe.checked_at += 120; });
+optionalReport.probes.push({
+  name: "peer_tcp_443",
+  label: "Alpha → Beta · TCP 443",
+  category: "node-link",
+  target_node_id: "beta-vps",
+  kind: "tcp",
+  target: "beta.example",
+  port: 443,
+  warning_ms: 30,
+  critical_ms: 50,
+  warning_failure_percent: 1,
+  critical_failure_percent: 60,
+  severity: "P2",
+  display_order: 20,
+  success: true,
+  complete: true,
+  duration_ms: 12.4,
+  average_duration_ms: 12.4,
+  p95_duration_ms: 13.1,
+  min_duration_ms: 11.9,
+  max_duration_ms: 13.2,
+  range_ms: 1.3,
+  jitter_ms: 0.5,
+  samples: 3,
+  attempted_samples: 3,
+  successful_samples: 2,
+  sample_failure_percent: 100 / 3,
+  checked_at: optionalReport.generated_at,
+});
+optionalReport.counters = [{
+  name: "relay_443",
+  label: "443 转发规则",
+  kind: "nftables-rule",
+  unit: "matches",
+  display_order: 10,
+  complete: true,
+  delta: 12,
+  interval_seconds: 60,
+  rate_per_minute: 12,
+  observed_at: optionalReport.generated_at,
+}];
+const optionalAccepted = await fetch(
+  `${base}/api/v1/report`,
+  signedRequest(JSON.stringify(optionalReport)),
+);
+assert(optionalAccepted.status === 202, `optional observers report returned ${optionalAccepted.status}: ${await optionalAccepted.text()}`);
+
 const betaReport = report("beta-vps");
 const betaAccepted = await fetch(
   `${base}/api/v1/report`,
@@ -257,19 +310,24 @@ assert(dashboardBody.summary.total_nodes === 2, "dashboard fleet is not catalog-
 assert(dashboardBody.schema_version === 2, "dashboard schema version is incorrect");
 assert(dashboardBody.catalog.nodes.length === 2, "node catalog is incomplete");
 assert(dashboardBody.catalog.services.length === 1, "service catalog is incomplete");
-assert(dashboardBody.catalog.routes.length === 1, "node-link route was not registered");
+assert(dashboardBody.catalog.routes.length === 2, "node-link routes were not registered");
+assert(dashboardBody.catalog.counters.length === 1, "optional counter catalog is incomplete");
 const alphaLatest = dashboardBody.nodes.find((node) => node.id === "alpha-vps");
 const betaLatest = dashboardBody.nodes.find((node) => node.id === "beta-vps");
 assert(alphaLatest.metrics.network_rx_rate_bps === 100, `network RX rate was not derived correctly: ${alphaLatest.metrics.network_rx_rate_bps}`);
 assert(alphaLatest.metrics.network_tx_rate_bps === 200, `network TX rate was not derived correctly: ${alphaLatest.metrics.network_tx_rate_bps}`);
 assert(alphaLatest.probes.find((probe) => probe.name === "external_icmp")?.packet_loss_percent === 20, "ICMP packet loss was not exposed");
+const tcpLatest = alphaLatest.probes.find((probe) => probe.name === "peer_tcp_443");
+assert(tcpLatest?.kind === "tcp" && tcpLatest.packet_loss_percent === null, "TCP failure was mislabeled as packet loss");
+assert(Math.round(tcpLatest?.sample_failure_percent) === 33, "TCP connect failure rate is missing");
+assert(alphaLatest.counters[0]?.rate_per_minute === 12, "latest nftables counter rate is missing");
 assert(betaLatest.services.length === 0 && betaLatest.probes.length === 0, "host-only node gained unwanted optional checks");
 
 const history = await fetch(`${base}/api/v1/dashboard/history?hours=24`, { headers: adminHeaders });
 const historyBody = await history.json();
 assert(history.status === 200 && historyBody.metrics.length >= 1, "dashboard history failed");
 assert(historyBody.bucket_seconds === 300, `fleet history should use 5-minute buckets: ${historyBody.bucket_seconds}`);
-assert(historyBody.routes.length === 1, "generic node-link statistics are missing");
+assert(historyBody.routes.length === 2, "generic node-link statistics are missing");
 const alphaRoute = historyBody.routes.find((route) => route.key === "alpha-vps--peer_icmp");
 assert(alphaRoute?.rounds >= 2 && alphaRoute?.latency_p50_ms === 11.5, "node-link statistics are incorrect");
 const alphaHistory = historyBody.probes.find((probe) => probe.node_id === "alpha-vps" && probe.probe_name === "peer_icmp");
@@ -284,7 +342,7 @@ assert(
 const icmpAttemptedSamples = icmpHistoryRows.reduce((sum, probe) => sum + Number(probe.attempted_samples ?? 0), 0);
 const icmpSuccessfulSamples = icmpHistoryRows.reduce((sum, probe) => sum + Number(probe.successful_samples ?? 0), 0);
 assert(
-  icmpAttemptedSamples === 15 && icmpSuccessfulSamples === 12,
+  icmpAttemptedSamples === 20 && icmpSuccessfulSamples === 16,
   `fleet history did not preserve exact sample counts for weighted loss: ${JSON.stringify(icmpHistoryRows)}`,
 );
 
@@ -294,6 +352,9 @@ assert(detail.status === 200 && detailBody.selected_node === "alpha-vps", "node 
 assert(detailBody.bucket_seconds === 60, `node detail history should use 1-minute buckets: ${detailBody.bucket_seconds}`);
 assert(detailBody.metrics.every((row) => row.node_id === "alpha-vps"), "node detail leaked another node into metric rows");
 assert(detailBody.probe_summaries.some((probe) => probe.probe_name === "peer_icmp"), "node probe summary is missing");
+const tcpSummary = detailBody.probe_summaries.find((probe) => probe.probe_name === "peer_tcp_443");
+assert(tcpSummary?.packet_loss_percent === null && Math.round(tcpSummary?.sample_failure_percent) === 33, "TCP detail semantics are incorrect");
+assert(detailBody.counters.some((counter) => counter.counter_name === "relay_443" && counter.rate_per_minute === 12), "counter history is missing");
 assert(detailBody.routes.length === 0, "node detail performed unused fleet route aggregation");
 
 for (const hours of [720, 2160]) {
@@ -324,9 +385,10 @@ const canary = await fetch(`${base}/api/v1/canary?probe_id=test&nonce=abcdefgh12
 assert(canary.status === 200 && (await canary.json()).nonce === "abcdefgh12345678", "canary failed");
 
 const hostOnlyAlpha = report();
-hostOnlyAlpha.generated_at += 120;
+hostOnlyAlpha.generated_at += 240;
 hostOnlyAlpha.services = [];
 hostOnlyAlpha.probes = [];
+hostOnlyAlpha.counters = [];
 const hostOnlyAccepted = await fetch(
   `${base}/api/v1/report`,
   signedRequest(JSON.stringify(hostOnlyAlpha)),
@@ -335,8 +397,8 @@ assert(hostOnlyAccepted.status === 202, "removing optional checks rejected the b
 const hostOnlyDashboard = await fetch(`${base}/api/v1/dashboard/latest`, { headers: adminHeaders });
 const hostOnlyDashboardBody = await hostOnlyDashboard.json();
 const hostOnlyAlphaLatest = hostOnlyDashboardBody.nodes.find((node) => node.id === "alpha-vps");
-assert(hostOnlyAlphaLatest.services.length === 0 && hostOnlyAlphaLatest.probes.length === 0, "removed optional checks remained on the node");
-assert(hostOnlyDashboardBody.catalog.services.length === 0 && hostOnlyDashboardBody.catalog.routes.length === 0, "removed optional catalogs remained enabled");
+assert(hostOnlyAlphaLatest.services.length === 0 && hostOnlyAlphaLatest.probes.length === 0 && hostOnlyAlphaLatest.counters.length === 0, "removed optional checks remained on the node");
+assert(hostOnlyDashboardBody.catalog.services.length === 0 && hostOnlyDashboardBody.catalog.routes.length === 0 && hostOnlyDashboardBody.catalog.counters.length === 0, "removed optional catalogs remained enabled");
 assert(hostOnlyDashboardBody.mode === "passive" && hostOnlyDashboardBody.alerts.length === 0, "passive dashboard exposed alert state");
 const hostOnlyHistory = await fetch(`${base}/api/v1/dashboard/history?hours=24`, { headers: adminHeaders });
 const hostOnlyHistoryBody = await hostOnlyHistory.json();
@@ -348,6 +410,7 @@ const hostOnlyDetail = await fetch(`${base}/api/v1/dashboard/history?hours=24&no
 const hostOnlyDetailBody = await hostOnlyDetail.json();
 assert(hostOnlyDetailBody.probes.length === 0, "disabled probes remained in node detail history");
 assert(hostOnlyDetailBody.probe_summaries.length === 0, "disabled probes remained in node detail summaries");
+assert(hostOnlyDetailBody.counters.length === 0, "disabled counters remained in node detail history");
 
 const scheduled = await fetch(`${base}/cdn-cgi/local/scheduled?cron=*+*+*+*+*&format=json`);
 assert(scheduled.status === 200, `scheduled handler returned ${scheduled.status}`);

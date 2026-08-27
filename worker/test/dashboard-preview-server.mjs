@@ -32,6 +32,7 @@ function probeDefinitions(node) {
     { name: "beijing-cm", label: "北京移动", category: "carrier", base: node.bases[2], order: 3 },
   ];
   if (node.bases[3]) probes.push({ name: "node-link", label: `${node.label} → Egress-Las-Vegas`, category: "node-link", base: node.bases[3], order: 4 });
+  if (node.id === "transit-la") probes.push({ name: "peer-tcp-443", label: "Egress-Las-Vegas · TCP 443", category: "node-link", kind: "tcp", port: 443, base: 12, order: 5 });
   return probes;
 }
 
@@ -41,7 +42,8 @@ function currentProbe(node, probe, index) {
     name: probe.name,
     label: probe.label,
     category: probe.category,
-    kind: "icmp",
+    kind: probe.kind || "icmp",
+    ...(probe.kind === "tcp" ? { port: probe.port } : {}),
     primary: index === 0,
     order: probe.order,
     warning_ms: probe.base * 1.35,
@@ -51,7 +53,7 @@ function currentProbe(node, probe, index) {
     success: true,
     complete: true,
     duration_ms: Math.round((elevated ? probe.base * 1.42 : probe.base + Math.sin(index + 0.8) * 3) * 10) / 10,
-    packet_loss_percent: elevated ? 6 : index === 1 && node.id === "transit-la" ? 2 : 0,
+    packet_loss_percent: probe.kind === "tcp" ? null : elevated ? 6 : index === 1 && node.id === "transit-la" ? 2 : 0,
     sample_failure_percent: elevated ? 6 : index === 1 && node.id === "transit-la" ? 2 : 0,
     samples: 20,
     attempted_samples: 20,
@@ -85,6 +87,11 @@ function latestData() {
     },
     services: [{ name: definition.service[0], label: definition.service[1], state: "active" }],
     probes: probeDefinitions(definition).map((probe, index) => currentProbe(definition, probe, index)),
+    counters: definition.id === "transit-la" ? [{
+      name: "relay_443_matches", label: "443 转发活动", kind: "nftables-rule", unit: "matches", order: 10,
+      complete: true, baseline: false, reset: false, delta: 4, interval_seconds: 60,
+      rate_per_minute: 4, observed_at: now - 8, error: null,
+    }] : [],
     agent: { version: "1.0.0-preview", queue_depth: 0, collect_errors: 0, send_errors: 0 },
   }));
   return {
@@ -93,7 +100,11 @@ function latestData() {
     app_version: "preview",
     mode: "live",
     summary: { online_nodes: nodes.length, total_nodes: nodes.length, active_alerts: 0, pending_alerts: 0, p1_alerts: 0 },
-    catalog: { nodes: nodeDefinitions.map((node, index) => ({ id: node.id, label: node.label, mark: node.mark, role: node.role, region: node.region, order: index + 1 })), routes: [] },
+    catalog: {
+      nodes: nodeDefinitions.map((node, index) => ({ id: node.id, label: node.label, mark: node.mark, role: node.role, region: node.region, order: index + 1 })),
+      routes: [],
+      counters: [{ node_id: "transit-la", counter_name: "relay_443_matches", label: "443 转发活动", kind: "nftables-rule", unit: "matches", order: 10 }],
+    },
     nodes,
     alerts: [],
     recent_events: [],
@@ -109,6 +120,7 @@ function historyData(hours, selectedNode) {
   const selected = selectedNode ? nodeDefinitions.filter((node) => node.id === selectedNode) : nodeDefinitions;
   const metrics = [];
   const probes = [];
+  const counters = [];
   for (const [nodeIndex, node] of selected.entries()) {
     for (let step = 0; step < steps; step += 1) {
       const timestamp = now - (steps - 1 - step) * bucket;
@@ -121,14 +133,24 @@ function historyData(hours, selectedNode) {
         network_rx_rate_bps: 150000 + Math.abs(Math.sin(cycle * 1.7)) * 620000,
         network_tx_rate_bps: 70000 + Math.abs(Math.cos(cycle * 1.4)) * 280000,
       });
+      if (node.id === "transit-la") {
+        const delta = step === 0 ? null : Math.round(2 + Math.abs(Math.sin(cycle)) * 7);
+        counters.push({
+          node_id: node.id, counter_name: "relay_443_matches", label: "443 转发活动",
+          kind: "nftables-rule", unit: "matches", timestamp, samples: delta === null ? 0 : 1,
+          delta, interval_seconds: delta === null ? null : bucket,
+          rate_per_minute: delta === null ? null : Math.round((delta * 60 / bucket) * 100) / 100,
+          resets: 0,
+        });
+      }
       for (const probe of probeDefinitions(node)) {
         const burst = step % 83 >= 79 ? probe.base * 0.38 : 0;
         const loss = step % 97 === 93 ? 8 : step % 47 === 31 ? 2 : 0;
         const missing = step % 113 === 42;
         probes.push({
-          node_id: node.id, probe_name: probe.name, label: probe.label, category: probe.category, kind: "icmp", timestamp,
+          node_id: node.id, probe_name: probe.name, label: probe.label, category: probe.category, kind: probe.kind || "icmp", timestamp,
           latency_ms: missing ? null : Math.max(1, probe.base + Math.sin(cycle + probe.order) * Math.max(1.5, probe.base * 0.04) + burst),
-          packet_loss_percent: missing ? 100 : loss,
+          packet_loss_percent: probe.kind === "tcp" ? null : missing ? 100 : loss,
           sample_failure_percent: missing ? 100 : loss,
           success_percent: missing ? 0 : 100,
           rounds: 1,
@@ -141,7 +163,7 @@ function historyData(hours, selectedNode) {
   return {
     schema_version: 2, server_time: now, hours, bucket_seconds: bucket, selected_node: selectedNode || null,
     catalog: { nodes: nodeDefinitions.map((node, index) => ({ id: node.id, label: node.label, order: index + 1 })) },
-    metrics, probes,
+    metrics, probes, counters: selectedNode ? counters : [],
     annotations: selectedNode ? [
       { node_id: selectedNode, timestamp: now - Math.min(hours * 1800, 5 * 3600), severity: "INFO", title: "Agent 启动", detail: "监控进程完成一次正常重启" },
       { node_id: selectedNode, timestamp: now - Math.min(hours * 900, 2 * 3600), severity: "P2", title: "线路出现短时波动", detail: "连续采样后已恢复到正常范围" },

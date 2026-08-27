@@ -49,7 +49,7 @@ npm run setup
 npm run node:add
 ```
 
-基础节点只采集 CPU、RAM、磁盘、流量和主机状态。向导可附加只读 systemd unit 监测；ICMP 目标属于可选配置，字段与示例见[探针配置](probes.md)。
+基础节点只采集 CPU、RAM、磁盘、流量和主机状态。向导可附加只读 systemd unit、TCP 和 nftables 规则计数；ICMP 可按功能手册加入同一通用配置。所有可选数组均可保持为空而完全不运行。字段、适用场景和权限边界见[功能手册](probes.md)。
 
 提供 SSH 别名后，工具会：
 
@@ -89,6 +89,7 @@ npm run node:install -- NODE_ID --ssh SSH_ALIAS
 | `npm run doctor` | 检查本机部署依赖 |
 | `npm run monitor:status` | 显示后端、节点和在线健康检查，不显示密钥 |
 | `npm run node:add` | 新建节点、同步完整密钥映射并可立即安装 |
+| `npm run node:configure -- ID` | 修改该节点的可选 ICMP/TCP/nftables 观测配置 |
 | `npm run node:install -- ID --ssh ALIAS` | 安装已经创建但尚未部署的节点 |
 | `npm run node:sync` | 从私有状态重新提交完整 `NODE_KEYS` |
 
@@ -104,4 +105,5 @@ Cloudflare 无法回读 Secret，因此部署完成后应把 `.lume/state.json` 
 - 新节点未出现：等待 60 秒，再检查 `ssh ALIAS systemctl status vpsmon-agent.service`。
 - 新增节点时 Worker 鉴权失败：运行 `npm run node:sync`，它会提交完整映射而非单个节点。
 - 安装器提示目标已存在：说明 VPS 已有 Agent；不要强行覆盖，按[升级流程](deployment.md#9-upgrade-an-existing-agent)处理。
+- 修改已有节点可选观测：运行 `npm run node:configure -- ID` 生成候选私密配置，再按[升级流程](deployment.md#9-upgrade-an-existing-agent)部署；该命令不会静默连接 VPS。
 - 需要逐条执行或审计 Cloudflare 命令：改用[完整手工教程](getting-started.md)。

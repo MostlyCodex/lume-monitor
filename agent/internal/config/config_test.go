@@ -79,11 +79,66 @@ func TestValidateRequiresTargetNodeForNodeLink(t *testing.T) {
 }
 
 func TestValidateRejectsNonICMPProbeKinds(t *testing.T) {
-	for _, kind := range []string{"tcp", "tls"} {
+	for _, kind := range []string{"tls", "http", "exec"} {
 		cfg := baseConfig()
 		cfg.Probes = []Probe{{Name: "unsupported_probe", Kind: kind, Target: "peer.example"}}
 		if err := cfg.Validate(); err == nil {
 			t.Fatalf("expected %q probe kind to be rejected", kind)
+		}
+	}
+}
+
+func TestValidateAcceptsTCPProbeWithSafeDefaults(t *testing.T) {
+	cfg := baseConfig()
+	cfg.Probes = []Probe{{Name: "peer_tcp", Kind: "tcp", Target: "peer.example", Port: 443}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("TCP probe was rejected: %v", err)
+	}
+	probe := cfg.Probes[0]
+	if probe.Samples != 3 || probe.TimeoutSeconds != 3 || probe.ConnectTimeoutMS != 1000 {
+		t.Fatalf("unexpected TCP defaults: %+v", probe)
+	}
+}
+
+func TestValidateRejectsUnsafeTCPProbe(t *testing.T) {
+	for _, probe := range []Probe{
+		{Name: "peer_tcp", Kind: "tcp", Target: "peer.example", Port: 0},
+		{Name: "peer_tcp", Kind: "tcp", Target: "peer.example:443", Port: 443},
+		{Name: "peer_tcp", Kind: "tcp", Target: "peer.example", Port: 443, TimeoutSeconds: 1, Samples: 3, SampleIntervalMS: 250, ConnectTimeoutMS: 1000},
+	} {
+		cfg := baseConfig()
+		cfg.Probes = []Probe{probe}
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("expected unsafe TCP probe to be rejected: %+v", probe)
+		}
+	}
+}
+
+func TestValidateAcceptsNftablesCounterSelector(t *testing.T) {
+	cfg := baseConfig()
+	cfg.NftablesCounters = []NftablesCounter{{
+		Name: "relay_443", Family: "ip", Table: "relay_nat", Chain: "prerouting",
+		Protocol: "tcp", DestinationPort: 443,
+	}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("nftables counter was rejected: %v", err)
+	}
+	if cfg.NftablesCounters[0].Label != "relay_443" || cfg.NftablesCounters[0].DisplayOrder != 10 {
+		t.Fatalf("nftables counter defaults not applied: %+v", cfg.NftablesCounters[0])
+	}
+}
+
+func TestValidateRejectsUnsafeNftablesCounterSelector(t *testing.T) {
+	for _, counter := range []NftablesCounter{
+		{Name: "relay", Family: "bridge", Table: "relay_nat", Chain: "prerouting", Protocol: "tcp", DestinationPort: 443},
+		{Name: "relay", Family: "ip", Table: "relay nat", Chain: "prerouting", Protocol: "tcp", DestinationPort: 443},
+		{Name: "relay", Family: "ip", Table: "relay_nat", Chain: "prerouting", Protocol: "sctp", DestinationPort: 443},
+		{Name: "relay", Family: "ip", Table: "relay_nat", Chain: "prerouting", Protocol: "tcp", DestinationPort: 0},
+	} {
+		cfg := baseConfig()
+		cfg.NftablesCounters = []NftablesCounter{counter}
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("expected unsafe nftables selector to be rejected: %+v", counter)
 		}
 	}
 }

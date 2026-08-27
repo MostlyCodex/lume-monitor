@@ -20,6 +20,7 @@ var probeNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,79}$`)
 var categoryPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
 var markPattern = regexp.MustCompile(`^[A-Za-z0-9]{1,4}$`)
 var colorPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,23}$`)
+var nftIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
 type Node struct {
 	ID               string `json:"id"`
@@ -48,7 +49,9 @@ type Probe struct {
 	TargetNodeID           string  `json:"target_node_id,omitempty"`
 	Kind                   string  `json:"kind"`
 	Target                 string  `json:"target"`
+	Port                   int     `json:"port,omitempty"`
 	TimeoutSeconds         int     `json:"timeout_seconds"`
+	ConnectTimeoutMS       int     `json:"connect_timeout_ms,omitempty"`
 	Samples                int     `json:"samples,omitempty"`
 	SampleIntervalMS       int     `json:"sample_interval_ms,omitempty"`
 	WarningMS              float64 `json:"warning_ms,omitempty"`
@@ -60,16 +63,32 @@ type Probe struct {
 	Primary                bool    `json:"primary,omitempty"`
 }
 
+// NftablesCounter selects exactly one rule by chain and transport destination
+// port. The privileged snapshot helper reports only numeric counters; the
+// long-running Agent remains unprivileged and never receives rule contents.
+type NftablesCounter struct {
+	Name            string `json:"name"`
+	Label           string `json:"label"`
+	Family          string `json:"family"`
+	Table           string `json:"table"`
+	Chain           string `json:"chain"`
+	Protocol        string `json:"protocol"`
+	DestinationPort int    `json:"destination_port"`
+	RuleComment     string `json:"rule_comment,omitempty"`
+	DisplayOrder    int    `json:"display_order"`
+}
+
 type Config struct {
-	Node                  Node      `json:"node"`
-	Endpoint              string    `json:"endpoint"`
-	Secret                string    `json:"secret"`
-	ReportIntervalSeconds int       `json:"report_interval_seconds"`
-	ProbeIntervalSeconds  int       `json:"probe_interval_seconds"`
-	Services              []Service `json:"services"`
-	Probes                []Probe   `json:"probes"`
-	SpoolPath             string    `json:"spool_path"`
-	AllowHTTPForTests     bool      `json:"allow_http_for_tests,omitempty"`
+	Node                  Node              `json:"node"`
+	Endpoint              string            `json:"endpoint"`
+	Secret                string            `json:"secret"`
+	ReportIntervalSeconds int               `json:"report_interval_seconds"`
+	ProbeIntervalSeconds  int               `json:"probe_interval_seconds"`
+	Services              []Service         `json:"services"`
+	Probes                []Probe           `json:"probes"`
+	NftablesCounters      []NftablesCounter `json:"nftables_counters,omitempty"`
+	SpoolPath             string            `json:"spool_path"`
+	AllowHTTPForTests     bool              `json:"allow_http_for_tests,omitempty"`
 }
 
 func validSeverity(value string) bool {
@@ -201,8 +220,8 @@ func (c *Config) Validate() error {
 	if c.ProbeIntervalSeconds < c.ReportIntervalSeconds || c.ProbeIntervalSeconds > 3600 {
 		return errors.New("probe_interval_seconds must be between report interval and 3600")
 	}
-	if len(c.Services) > 16 || len(c.Probes) > 32 {
-		return errors.New("too many services or probes")
+	if len(c.Services) > 16 || len(c.Probes) > 32 || len(c.NftablesCounters) > 16 {
+		return errors.New("too many services, probes, or nftables counters")
 	}
 
 	seenServices := map[string]bool{}
@@ -252,20 +271,28 @@ func (c *Config) Validate() error {
 		if probe.Category == "node-link" && probe.TargetNodeID == "" {
 			return fmt.Errorf("probe %q requires target_node_id for node-link category", probe.Name)
 		}
-		if probe.Kind != "icmp" {
-			return fmt.Errorf("probe %q kind must be icmp", probe.Name)
+		if probe.Kind != "icmp" && probe.Kind != "tcp" {
+			return fmt.Errorf("probe %q kind must be icmp or tcp", probe.Name)
 		}
 		if !validProbeHost(probe.Target) {
-			return fmt.Errorf("probe %q ICMP target must be a hostname or IP address without a port", probe.Name)
+			return fmt.Errorf("probe %q target must be a hostname or IP address without a port", probe.Name)
 		}
 		if probe.TimeoutSeconds == 0 {
-			probe.TimeoutSeconds = 4
+			if probe.Kind == "tcp" {
+				probe.TimeoutSeconds = 3
+			} else {
+				probe.TimeoutSeconds = 4
+			}
 		}
 		if probe.TimeoutSeconds < 1 || probe.TimeoutSeconds > 15 {
 			return fmt.Errorf("probe %q timeout must be between 1 and 15 seconds", probe.Name)
 		}
 		if probe.Samples == 0 {
-			probe.Samples = 5
+			if probe.Kind == "tcp" {
+				probe.Samples = 3
+			} else {
+				probe.Samples = 5
+			}
 		}
 		if probe.Samples < 1 || probe.Samples > 10 {
 			return fmt.Errorf("probe %q samples must be between 1 and 10", probe.Name)
@@ -273,9 +300,27 @@ func (c *Config) Validate() error {
 		if probe.SampleIntervalMS == 0 {
 			probe.SampleIntervalMS = 250
 		}
-		if probe.SampleIntervalMS < 100 || probe.SampleIntervalMS > 5000 ||
-			(probe.Samples-1)*probe.SampleIntervalMS >= probe.TimeoutSeconds*1000 {
-			return fmt.Errorf("probe %q sample interval must be 100-5000ms and allow every sample before timeout", probe.Name)
+		if probe.SampleIntervalMS < 100 || probe.SampleIntervalMS > 5000 {
+			return fmt.Errorf("probe %q sample interval must be between 100 and 5000ms", probe.Name)
+		}
+		if probe.Kind == "icmp" {
+			if probe.Port != 0 || probe.ConnectTimeoutMS != 0 {
+				return fmt.Errorf("probe %q ICMP probes must not configure a port or connect timeout", probe.Name)
+			}
+			if (probe.Samples-1)*probe.SampleIntervalMS >= probe.TimeoutSeconds*1000 {
+				return fmt.Errorf("probe %q sample schedule does not fit inside the round timeout", probe.Name)
+			}
+		} else {
+			if probe.Port < 1 || probe.Port > 65535 {
+				return fmt.Errorf("probe %q TCP port must be between 1 and 65535", probe.Name)
+			}
+			if probe.ConnectTimeoutMS == 0 {
+				probe.ConnectTimeoutMS = 1000
+			}
+			if probe.ConnectTimeoutMS < 100 || probe.ConnectTimeoutMS > 5000 ||
+				(probe.Samples-1)*probe.SampleIntervalMS+probe.ConnectTimeoutMS > probe.TimeoutSeconds*1000 {
+				return fmt.Errorf("probe %q TCP connect timeout and sample schedule must fit inside the round timeout", probe.Name)
+			}
 		}
 		if probe.WarningMS < 0 || probe.CriticalMS < 0 || probe.WarningMS > 120000 || probe.CriticalMS > 120000 ||
 			(probe.WarningMS > 0 && probe.CriticalMS > 0 && probe.WarningMS > probe.CriticalMS) {
@@ -285,7 +330,40 @@ func (c *Config) Validate() error {
 			probe.WarningFailurePercent > 100 || probe.CriticalFailurePercent > 100 ||
 			(probe.WarningFailurePercent > 0 && probe.CriticalFailurePercent > 0 &&
 				probe.WarningFailurePercent > probe.CriticalFailurePercent) {
-			return fmt.Errorf("probe %q packet-loss thresholds are invalid", probe.Name)
+			return fmt.Errorf("probe %q failure-rate thresholds are invalid", probe.Name)
+		}
+	}
+
+	seenCounters := map[string]bool{}
+	for index := range c.NftablesCounters {
+		counter := &c.NftablesCounters[index]
+		if !probeNamePattern.MatchString(counter.Name) || seenCounters[counter.Name] {
+			return fmt.Errorf("invalid or duplicate nftables counter name %q", counter.Name)
+		}
+		seenCounters[counter.Name] = true
+		if counter.Label == "" {
+			counter.Label = counter.Name
+		}
+		if counter.DisplayOrder == 0 {
+			counter.DisplayOrder = (index + 1) * 10
+		}
+		if !validText(counter.Label, 80) || counter.DisplayOrder < 1 || counter.DisplayOrder > 10000 {
+			return fmt.Errorf("invalid nftables counter metadata for %q", counter.Name)
+		}
+		if counter.Family != "ip" && counter.Family != "ip6" && counter.Family != "inet" {
+			return fmt.Errorf("nftables counter %q family must be ip, ip6, or inet", counter.Name)
+		}
+		if !nftIdentifierPattern.MatchString(counter.Table) || !nftIdentifierPattern.MatchString(counter.Chain) {
+			return fmt.Errorf("nftables counter %q table and chain names are invalid", counter.Name)
+		}
+		if counter.Protocol != "tcp" && counter.Protocol != "udp" {
+			return fmt.Errorf("nftables counter %q protocol must be tcp or udp", counter.Name)
+		}
+		if counter.DestinationPort < 1 || counter.DestinationPort > 65535 {
+			return fmt.Errorf("nftables counter %q destination_port must be between 1 and 65535", counter.Name)
+		}
+		if counter.RuleComment != "" && !validText(counter.RuleComment, 80) {
+			return fmt.Errorf("nftables counter %q rule_comment is invalid", counter.Name)
 		}
 	}
 	if c.SpoolPath == "" {

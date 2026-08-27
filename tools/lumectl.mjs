@@ -121,7 +121,19 @@ export function createWranglerConfig({ workerName, databaseName, databaseId, das
   };
 }
 
-export function createAgentConfig({ id, displayName, shortMark, role, region, displayOrder, endpoint, secret, services = [], probes = [] }) {
+export function createAgentConfig({
+  id,
+  displayName,
+  shortMark,
+  role,
+  region,
+  displayOrder,
+  endpoint,
+  secret,
+  services = [],
+  probes = [],
+  nftablesCounters = [],
+}) {
   if (!validateNodeId(id)) fail("节点 ID 必须匹配 [a-z0-9][a-z0-9_-]{0,31}");
   if (typeof secret !== "string" || secret.length < 32) fail("节点密钥无效");
   const mark = (shortMark || id.replace(/[-_]/g, "").slice(0, 3)).toUpperCase();
@@ -149,6 +161,7 @@ export function createAgentConfig({ id, displayName, shortMark, role, region, di
     probe_interval_seconds: 60,
     services,
     probes,
+    nftables_counters: nftablesCounters,
     spool_path: "/var/lib/vpsmon/pending.json",
   };
 }
@@ -461,6 +474,94 @@ function parseServices(value) {
   return names.map((name) => ({ name, label: name.replace(/\.service$/, ""), severity: "P1" }));
 }
 
+function safeObserverName(value, label) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,79}$/.test(normalized)) fail(`${label}必须使用小写字母、数字、下划线或连字符`);
+  return normalized;
+}
+
+function safeProbeTarget(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized || normalized.length > 253 || /[\s/@?#\\]/.test(normalized)) {
+    fail("TCP 目标必须是单独的主机名或 IP，不能包含协议、端口、路径或空白");
+  }
+  return normalized;
+}
+
+function safeNftIdentifier(value, label) {
+  const normalized = String(value || "").trim();
+  if (!/^[A-Za-z0-9_.-]{1,64}$/.test(normalized)) fail(`${label}格式无效`);
+  return normalized;
+}
+
+async function promptOptionalObservers(prompt) {
+  const probes = [];
+  const nftablesCounters = [];
+  if (!(await prompt.yes("配置可选轻量观测（TCP 可达性 / nftables 计数）", false))) {
+    return { probes, nftablesCounters };
+  }
+  while (await prompt.yes("添加一个 TCP 端口可达性探测", probes.length === 0)) {
+    if (probes.length >= 16) fail("交互工具最多添加 16 个 TCP 探测；更多请按功能手册编辑配置");
+    const name = safeObserverName(await prompt.text("探测名称", `tcp_${probes.length + 1}`), "探测名称");
+    if (probes.some((probe) => probe.name === name)) fail(`探测名称重复：${name}`);
+    const label = await prompt.text("面板显示名", `TCP 可达性 ${probes.length + 1}`);
+    const target = safeProbeTarget(await prompt.text("目标主机名或 IP（不含端口）"));
+    const port = Number(await prompt.text("TCP 端口", "443"));
+    if (!Number.isInteger(port) || port < 1 || port > 65535) fail("TCP 端口必须是 1–65535 的整数");
+    const targetNodeIdValue = (await prompt.text("目标节点 ID（非节点间探测可留空）", "")).toLowerCase();
+    if (targetNodeIdValue && !validateNodeId(targetNodeIdValue)) fail("目标节点 ID 格式无效");
+    probes.push({
+      name,
+      label,
+      category: targetNodeIdValue ? "node-link" : "external",
+      ...(targetNodeIdValue ? { target_node_id: targetNodeIdValue } : {}),
+      kind: "tcp",
+      target,
+      port,
+      timeout_seconds: 3,
+      connect_timeout_ms: 1000,
+      samples: 3,
+      sample_interval_ms: 250,
+      warning_ms: 500,
+      critical_ms: 1500,
+      warning_failure_percent: 1,
+      critical_failure_percent: 60,
+      severity: "P2",
+      display_order: (probes.length + 1) * 10,
+    });
+    if (probes.length >= 16) break;
+  }
+  while (await prompt.yes("添加一个 nftables 规则计数观测", nftablesCounters.length === 0)) {
+    if (nftablesCounters.length >= 16) fail("最多添加 16 个 nftables 计数观测");
+    const name = safeObserverName(await prompt.text("计数器名称", `nft_counter_${nftablesCounters.length + 1}`), "计数器名称");
+    if (nftablesCounters.some((counter) => counter.name === name)) fail(`计数器名称重复：${name}`);
+    const label = await prompt.text("面板显示名", `转发规则 ${nftablesCounters.length + 1}`);
+    const family = (await prompt.text("nftables family（ip / ip6 / inet）", "ip")).toLowerCase();
+    if (!["ip", "ip6", "inet"].includes(family)) fail("family 只能是 ip、ip6 或 inet");
+    const table = safeNftIdentifier(await prompt.text("table 名称"), "table 名称");
+    const chain = safeNftIdentifier(await prompt.text("chain 名称"), "chain 名称");
+    const protocol = (await prompt.text("传输协议（tcp / udp）", "tcp")).toLowerCase();
+    if (!["tcp", "udp"].includes(protocol)) fail("传输协议只能是 tcp 或 udp");
+    const destinationPort = Number(await prompt.text("规则匹配的目标端口", "443"));
+    if (!Number.isInteger(destinationPort) || destinationPort < 1 || destinationPort > 65535) fail("目标端口必须是 1–65535 的整数");
+    const ruleComment = await prompt.text("唯一规则 comment（可留空；同链同端口多条规则时必填）", "");
+    if (ruleComment.length > 80 || /[\r\n\t]/.test(ruleComment)) fail("规则 comment 不能超过 80 个普通字符");
+    nftablesCounters.push({
+      name,
+      label,
+      family,
+      table,
+      chain,
+      protocol,
+      destination_port: destinationPort,
+      ...(ruleComment ? { rule_comment: ruleComment } : {}),
+      display_order: (nftablesCounters.length + 1) * 10,
+    });
+    if (nftablesCounters.length >= 16) break;
+  }
+  return { probes, nftablesCounters };
+}
+
 async function addNode(prompt) {
   const state = await loadState();
   if (state.stage !== "ready") fail("后端尚未部署完成，请先重新运行 npm run setup");
@@ -472,6 +573,7 @@ async function addNode(prompt) {
   const region = await prompt.text("国家 / 城市", "unspecified");
   const shortMark = await prompt.text("1–4 位短标记", id.replace(/[-_]/g, "").slice(0, 3).toUpperCase());
   const units = await prompt.text("只读监测的 systemd 服务（逗号分隔，可留空）", "");
+  const optionalObservers = await promptOptionalObservers(prompt);
   const secret = randomSecret();
   const config = createAgentConfig({
     id,
@@ -483,6 +585,8 @@ async function addNode(prompt) {
     endpoint: state.workerUrl,
     secret,
     services: parseServices(units),
+    probes: optionalObservers.probes,
+    nftablesCounters: optionalObservers.nftablesCounters,
   });
   state.nodeKeys[id] = secret;
   state.nodes[id] = { configPath: `${privateDirName}/nodes/${id}/config.json`, sshTarget: "", installed: false };
@@ -495,6 +599,29 @@ async function addNode(prompt) {
   const target = await prompt.text("SSH 主机或 ~/.ssh/config 别名（留空则稍后安装）", "");
   if (target) await installNode(id, target);
   else line(`稍后安装：cd worker && npm run node:install -- ${id} --ssh <SSH别名>`);
+}
+
+async function configureNodeObservers(prompt, id) {
+  if (!validateNodeId(id)) fail("节点 ID 格式无效");
+  const state = await loadState();
+  if (!state.nodes[id]) fail(`本地状态中没有节点 ${id}`);
+  const configPath = join(privateDir, "nodes", id, "config.json");
+  if (!(await exists(configPath))) fail(`节点配置不存在：${configPath}`);
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  assertPlainObject(config, "节点配置");
+  line(`将重新配置 ${id} 的可选 TCP 与 nftables 观测；基础资源、服务、密钥和上报地址保持不变。`);
+  if (!(await prompt.yes("继续并替换当前可选观测配置", false))) return;
+  const optionalObservers = await promptOptionalObservers(prompt);
+  const retainedProbes = Array.isArray(config.probes)
+    ? config.probes.filter((probe) => probe && probe.kind !== "tcp")
+    : [];
+  config.probes = [...retainedProbes, ...optionalObservers.probes];
+  config.nftables_counters = optionalObservers.nftablesCounters;
+  await writePrivateJson(configPath, config);
+  line(`✓ 已更新私密配置：${configPath}`);
+  line(state.nodes[id].installed
+    ? "节点已安装：请按功能手册的安全升级流程部署该配置；本工具不会静默改动运行中的 VPS。"
+    : `节点尚未安装：运行 npm run node:install -- ${id} --ssh <SSH别名>`);
 }
 
 async function download(url) {
@@ -567,11 +694,20 @@ async function installNode(id, target) {
 
   const localStage = await mkdtemp(join(tmpdir(), "lume-stage-"));
   const remoteStage = `/tmp/vpsmon-stage.${randomBytes(8).toString("hex")}`;
-  const payloads = ["vpsmon-agent", "config.json", "vpsmon-agent.service", "install-agent.sh"];
+  const payloads = [
+    "vpsmon-agent",
+    "config.json",
+    "vpsmon-agent.service",
+    "vpsmon-nftables-snapshot.service",
+    "vpsmon-nftables-snapshot.timer",
+    "install-agent.sh",
+  ];
   try {
     await obtainAgentBinary(version, architecture, join(localStage, "vpsmon-agent"));
     await writeFile(join(localStage, "config.json"), await readFile(configPath), { mode: 0o600 });
     await writeFile(join(localStage, "vpsmon-agent.service"), await readFile(join(deployDir, "vpsmon-agent.service")), { mode: 0o644 });
+    await writeFile(join(localStage, "vpsmon-nftables-snapshot.service"), await readFile(join(deployDir, "vpsmon-nftables-snapshot.service")), { mode: 0o644 });
+    await writeFile(join(localStage, "vpsmon-nftables-snapshot.timer"), await readFile(join(deployDir, "vpsmon-nftables-snapshot.timer")), { mode: 0o644 });
     await writeFile(join(localStage, "install-agent.sh"), await readFile(join(deployDir, "install-agent.sh")), { mode: 0o700 });
     const checksums = [];
     for (const payload of payloads) {
@@ -583,7 +719,7 @@ async function installNode(id, target) {
     line(`在 ${target} 创建受限临时目录并安装独立 Agent；若 sudo 需要密码，请在提示中输入。`);
     await run("ssh", [target, `umask 077 && mkdir ${remoteStage}`]);
     await run("scp", [...payloads.map((name) => join(localStage, name)), join(localStage, "checksums.sha256"), `${target}:${remoteStage}/`]);
-    await run("ssh", [target, `chmod 700 ${remoteStage} ${remoteStage}/vpsmon-agent ${remoteStage}/install-agent.sh && chmod 600 ${remoteStage}/config.json ${remoteStage}/checksums.sha256 && chmod 644 ${remoteStage}/vpsmon-agent.service`]);
+    await run("ssh", [target, `chmod 700 ${remoteStage} ${remoteStage}/vpsmon-agent ${remoteStage}/install-agent.sh && chmod 600 ${remoteStage}/config.json ${remoteStage}/checksums.sha256 && chmod 644 ${remoteStage}/vpsmon-agent.service ${remoteStage}/vpsmon-nftables-snapshot.service ${remoteStage}/vpsmon-nftables-snapshot.timer`]);
     await run("ssh", ["-t", target, `sudo sh ${remoteStage}/install-agent.sh ${remoteStage}`], { interactive: true });
     const active = await run("ssh", [target, "systemctl is-active vpsmon-agent.service"], { capture: true });
     if (active.stdout.trim() !== "active") fail("Agent 安装后未处于 active 状态");
@@ -628,6 +764,7 @@ function usage() {
   node tools/lumectl.mjs setup [--yes]
   node tools/lumectl.mjs status
   node tools/lumectl.mjs node add
+  node tools/lumectl.mjs node configure <NODE_ID>
   node tools/lumectl.mjs node install <NODE_ID> --ssh <SSH别名>
   node tools/lumectl.mjs node sync-keys
 
@@ -649,6 +786,10 @@ async function main() {
   try {
     if (command === "setup") return await setup(prompt, args.includes("--yes"));
     if (command === "node" && args[1] === "add") return await addNode(prompt);
+    if (command === "node" && args[1] === "configure") {
+      if (!args[2]) fail("用法：node configure <NODE_ID>");
+      return await configureNodeObservers(prompt, args[2]);
+    }
     if (command === "node" && args[1] === "sync-keys") return await syncKeys();
     if (command === "node" && args[1] === "install") {
       const id = args[2];

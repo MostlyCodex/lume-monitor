@@ -1,0 +1,37 @@
+[Unit]
+Description=Lume nftables counter snapshot
+Documentation=https://github.com/MostlyCodex/lume-monitor
+ConditionPathExists=/etc/vpsmon/config.json
+After=network-pre.target
+
+[Service]
+Type=oneshot
+User=vpsmon
+Group=vpsmon
+ExecStart=/opt/vpsmon/vpsmon-agent --config /etc/vpsmon/config.json --snapshot-nftables /var/lib/vpsmon/nftables-counters.json
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+UMask=0027
+ReadOnlyPaths=/etc/vpsmon /opt/vpsmon
+ReadWritePaths=/var/lib/vpsmon
+MemoryMax=32M
+CPUQuota=10%
+TasksMax=16

@@ -16,7 +16,8 @@ go vet ./...
 go test -run '^$' -bench Benchmark -benchmem -count 3 ./...
 ```
 
-The normal tests cover configuration, signing, spool and ICMP result semantics.
+The normal tests cover configuration, signing, spool, ICMP/TCP result semantics,
+nftables JSON selection and counter-delta tracking.
 The benchmarks measure representative report serialization, HMAC signing and,
 on Linux, one host collection pass.
 
@@ -45,11 +46,13 @@ The runner creates isolated temporary local D1 databases and then:
 1. loads a sanitized pre-`0006` schema fixture and applies every
    `migrations-v3` production-upgrade migration;
 2. verifies that legacy node and latest-state rows survive and obsolete probe
-   kinds do not;
+   kinds do not, while the terminal schema accepts only ICMP/TCP probes and the
+   reviewed local-counter catalog;
 3. creates a completely empty database and applies every fresh migration;
 4. starts a local Wrangler Worker on an unused loopback port;
 5. exercises health, signed reports, invalid signatures, replay rejection,
-   legacy-envelope compatibility, catalogs, current state, history, rollups,
+   legacy-envelope compatibility, optional-observer enable/disable, catalogs,
+   current state, history, rollups,
    scheduled handlers, dashboard assets and authentication boundaries.
 
 ### Real-browser visual contract
@@ -63,8 +66,9 @@ npm run test:browser
 
 The browser suite serves deterministic fictional data and renders the actual
 dashboard HTML, CSS, JavaScript and uPlot bundle. It checks dark/light glass
-materials, charts, color keys, keyboard focus, touch targets, Japanese flag
-rendering and horizontal overflow at 1440, 1024, 768 and 390 pixel viewports.
+materials, ICMP/TCP/counter charts, color keys, keyboard focus, touch targets,
+Japanese flag rendering and horizontal overflow at 1440, 1024, 768 and 390
+pixel viewports.
 It never opens the production Worker or D1. Screenshots, traces and the HTML
 report are ignored locally; CI uploads them for 14 days on every run.
 
@@ -103,7 +107,7 @@ The release workflow is deliberately tag-only and never deploys an Agent to a
 VPS. For a new reviewed version:
 
 1. ensure CI is green on the commit to release;
-2. use an immutable semantic-version tag such as `v1.0.1`;
+2. use an immutable semantic-version tag such as `v1.2.0`;
 3. push the tag;
 4. wait for `.github/workflows/release.yml` to rerun the full Agent and Worker
    checks;
@@ -119,7 +123,7 @@ to point at a different commit.
 Download an explicit version without installing or restarting anything:
 
 ```bash
-sh deploy/fetch-release-agent.sh v1.0.1 /tmp/vpsmon-agent
+sh deploy/fetch-release-agent.sh v1.2.0 /tmp/vpsmon-agent
 /tmp/vpsmon-agent --version
 ```
 

@@ -155,13 +155,69 @@ describe("report validation", () => {
     });
   });
 
-  it("rejects non-ICMP probe kinds", () => {
-    for (const kind of ["tcp", "tls"]) {
+  it("accepts TCP reachability without mislabeling failures as packet loss", () => {
+    const report = validReport();
+    const probe = (report.probes as Array<Record<string, unknown>>)[0];
+    Object.assign(probe, {
+      name: "peer_tcp_443",
+      kind: "tcp",
+      port: 443,
+      samples: 3,
+      attempted_samples: 3,
+      successful_samples: 2,
+      sample_failure_percent: 100 / 3,
+      complete: true,
+      success: true,
+    });
+    delete probe.packet_loss_percent;
+    const parsed = validateReport(report).probes[0];
+    expect(parsed).toMatchObject({ kind: "tcp", port: 443, successful_samples: 2 });
+    expect(parsed.packet_loss_percent).toBeUndefined();
+  });
+
+  it("rejects dormant or ambiguous probe kinds", () => {
+    for (const kind of ["tls", "http", "exec"]) {
       const report = validReport();
       const probe = (report.probes as Array<Record<string, unknown>>)[0];
       probe.kind = kind;
-      expect(() => validateReport(report)).toThrow(/kind must be icmp/);
+      expect(() => validateReport(report)).toThrow(/kind must be icmp or tcp/);
     }
+  });
+
+  it("validates optional numeric nftables counter observations", () => {
+    const report = validReport();
+    report.counters = [{
+      name: "relay_443",
+      label: "443 转发规则",
+      kind: "nftables-rule",
+      unit: "matches",
+      display_order: 10,
+      complete: true,
+      delta: 12,
+      interval_seconds: 60,
+      rate_per_minute: 12,
+      observed_at: 1_800_000_000,
+    }];
+    expect(validateReport(report).counters[0]).toMatchObject({ name: "relay_443", delta: 12 });
+  });
+
+  it("rejects counter rates that lack a valid observation interval", () => {
+    const report = validReport();
+    report.counters = [{
+      name: "relay_443", label: "Relay", kind: "nftables-rule", unit: "matches",
+      display_order: 10, complete: true, delta: 1, rate_per_minute: 1, observed_at: 1_800_000_000,
+    }];
+    expect(() => validateReport(report)).toThrow(/missing delta or rate/);
+  });
+
+  it("rejects a counter rate inconsistent with its numeric delta", () => {
+    const report = validReport();
+    report.counters = [{
+      name: "relay_443", label: "Relay", kind: "nftables-rule", unit: "matches",
+      display_order: 10, complete: true, delta: 10, interval_seconds: 60,
+      rate_per_minute: 99, observed_at: 1_800_000_000,
+    }];
+    expect(() => validateReport(report)).toThrow(/inconsistent with delta and interval/);
   });
 
   it("rejects inconsistent probe counts and round status", () => {

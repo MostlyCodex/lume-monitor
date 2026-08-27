@@ -720,6 +720,18 @@ html[data-theme="light"] .probe-picker-actions button { box-shadow: 0 6px 18px r
 .network-chart-toolbar > p { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 0; color: var(--muted); font-size: 11px; }
 .network-chart-toolbar > p .legend-line { color: var(--primary); }
 .network-chart-toolbar > p .legend-bars { margin-left: 6px; color: var(--amber); }
+.counter-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.counter-observer { --counter-tone: var(--green); display: grid; min-width: 0; gap: 8px; padding: 14px 15px; border: 1px solid var(--glass-border); border-radius: 9px; background: var(--glass-control-bg); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08); backdrop-filter: var(--glass-filter-compact); -webkit-backdrop-filter: var(--glass-filter-compact); }
+.counter-observer.is-warning { --counter-tone: var(--amber); }
+.counter-observer.is-critical { --counter-tone: var(--red); }
+.counter-observer.is-neutral { --counter-tone: var(--muted); }
+.counter-observer > div { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.counter-observer > div i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--counter-tone); box-shadow: 0 0 10px color-mix(in srgb, var(--counter-tone) 50%, transparent); }
+.counter-observer > div strong { overflow: hidden; color: var(--text-soft); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.counter-observer > div span { margin-left: auto; color: var(--counter-tone); font-size: 11px; font-weight: 750; white-space: nowrap; }
+.counter-observer > b { color: var(--text); font-family: var(--mono); font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -0.04em; }
+.counter-observer > small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.counter-chart-card .plot-host { height: 280px; }
 .detail-chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .detail-chart-grid.is-single { grid-template-columns: minmax(0, 1fr); }
 .chart-card, .info-card { min-width: 0; border-radius: var(--radius-lg); }
@@ -874,6 +886,7 @@ html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-
 @media (max-width: 1260px) {
   .node-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .detail-probe-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .counter-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 980px) {
@@ -943,6 +956,8 @@ html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-
   .detail-probe-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; padding: 0 1px 3px; }
   .detail-probe-card { min-height: 44px; grid-template-columns: 8px minmax(0, 1fr); gap: 8px; padding: 8px 10px; }
   .detail-probe-card > span:not(.detail-probe-label) { display: none; }
+  .counter-summary { grid-template-columns: 1fr; }
+  .counter-observer > b { font-size: 20px; }
   .network-chart-toolbar { align-items: flex-start; flex-direction: column; gap: 8px; margin-bottom: 9px; }
   .network-chart-toolbar > p { justify-content: flex-start; flex-wrap: wrap; font-size: 10px; }
   .network-layer-switch { width: 100%; }

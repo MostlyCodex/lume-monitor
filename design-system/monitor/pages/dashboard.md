@@ -57,3 +57,15 @@ project-specific interpretation of the generated glassmorphism direction.
   views. The 1-minute
   detail series replaces that preview in the background and remains cached for the session.
 - Do not prefetch every node: perceived speed must not increase D1 reads or transfer volume.
+
+## Optional observer disclosure
+
+- Fleet cards remain the ICMP-first daily overview. TCP series and nftables counters must not
+  add permanent card density.
+- An enabled TCP probe joins the existing detail selector and chart. Use “建连失败” rather
+  than “丢包”, and retain both a text label and the series color cue.
+- The “转发活动” section is absent from the DOM flow when no counter is configured. When
+  present, use compact glass cards for current rate/state and one responsive line chart for
+  history; do not add decorative animation or another dashboard dependency.
+- Observer errors, baseline and reset states require visible text in addition to color. Charts
+  retain exact-value tooltips, empty states, keyboard-reachable controls and mobile reflow.

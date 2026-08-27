@@ -411,6 +411,39 @@ function catalogStatements(env: Env, report: AgentReport, now: number): D1Prepar
         (probeNames.length > 0 ? ` AND probe_name NOT IN (${probePlaceholders})` : ""),
     ).bind(now, node.id, ...probeNames),
   );
+  for (const counter of report.counters) {
+    statements.push(
+      env.DB.prepare(
+        "INSERT INTO counter_catalog(" +
+          "node_id, counter_name, public_id, display_name, kind, unit, display_order, enabled, updated_at" +
+          ") VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?) ON CONFLICT(node_id, counter_name) DO UPDATE SET " +
+          "display_name=excluded.display_name, kind=excluded.kind, unit=excluded.unit, " +
+          "display_order=excluded.display_order, enabled=1, updated_at=excluded.updated_at " +
+          "WHERE counter_catalog.display_name IS NOT excluded.display_name " +
+          "OR counter_catalog.kind IS NOT excluded.kind " +
+          "OR counter_catalog.unit IS NOT excluded.unit " +
+          "OR counter_catalog.display_order IS NOT excluded.display_order " +
+          "OR counter_catalog.enabled IS NOT 1",
+      ).bind(
+        node.id,
+        counter.name,
+        counter.name,
+        counter.label,
+        counter.kind,
+        counter.unit,
+        counter.display_order,
+        now,
+      ),
+    );
+  }
+  const counterNames = report.counters.map((counter) => counter.name);
+  const counterPlaceholders = counterNames.map(() => "?").join(", ");
+  statements.push(
+    env.DB.prepare(
+      "UPDATE counter_catalog SET enabled = 0, updated_at = ? WHERE node_id = ? AND enabled = 1" +
+        (counterNames.length > 0 ? ` AND counter_name NOT IN (${counterPlaceholders})` : ""),
+    ).bind(now, node.id, ...counterNames),
+  );
   const routePlaceholders = activeRouteKeys.map(() => "?").join(", ");
   statements.push(
     env.DB.prepare(

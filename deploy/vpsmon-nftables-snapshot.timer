@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh Lume nftables counters every minute
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=60s
+AccuracySec=1s
+RandomizedDelaySec=2s
+Unit=vpsmon-nftables-snapshot.service
+
+[Install]
+WantedBy=timers.target

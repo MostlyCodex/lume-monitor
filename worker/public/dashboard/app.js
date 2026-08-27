@@ -167,6 +167,7 @@
       selected_node: nodeId,
       metrics: (history.metrics || []).filter((row) => row.node_id === nodeId && Number(row.timestamp) >= since),
       probes: (history.probes || []).filter((row) => row.node_id === nodeId && Number(row.timestamp) >= since),
+      counters: [],
       probe_summaries: [],
       annotations: (history.annotations || []).filter((event) => event.node_id === nodeId && Number(event.timestamp) >= since),
     };
@@ -339,12 +340,20 @@
   }
 
   function displayProbes(node) {
+    return allProbes(node).filter((probe) => probe.kind === "icmp").slice(0, 4);
+  }
+
+  function allProbes(node) {
     return (node?.probes || [])
+      .slice()
       .sort((left, right) => {
         const categoryDelta = Number(left.category === "node-link") - Number(right.category === "node-link");
         return categoryDelta || Number(left.order || 999) - Number(right.order || 999);
-      })
-      .slice(0, 4);
+      });
+  }
+
+  function detailProbes(node) {
+    return allProbes(node);
   }
 
   function serviceStateText(value) {
@@ -444,7 +453,7 @@
   function nodeSeverity(node) {
     if (!node?.online || node.data_error) return "offline";
     const service = serviceSummary(node).severity;
-    const probeSeverities = displayProbes(node).map((probe) => currentProbeSeverity(probe, node.id));
+    const probeSeverities = allProbes(node).map((probe) => currentProbeSeverity(probe, node.id));
     return [service, ...probeSeverities].reduce((worst, current) =>
       (severityRank[current] || 0) > (severityRank[worst] || 0) ? current : worst, "healthy");
   }
@@ -674,12 +683,12 @@
   function renderSummary() {
     const nodes = catalogNodes().map(nodeFromCatalog);
     const online = nodes.filter((node) => node.online && !node.data_error).length;
-    const allProbes = nodes.flatMap((node) => displayProbes(node).map((probe) => ({ node, probe })));
-    const healthyProbes = allProbes.filter(({ node, probe }) => currentProbeSeverity(probe, node.id) === "healthy").length;
+    const checks = nodes.flatMap((node) => allProbes(node).map((probe) => ({ node, probe })));
+    const healthyProbes = checks.filter(({ node, probe }) => currentProbeSeverity(probe, node.id) === "healthy").length;
     const attention = nodes.filter((node) => nodeSeverity(node) !== "healthy").length;
     $("summary-strip").innerHTML = [
       ["在线节点", `${online}/${nodes.length}`, online < nodes.length ? "critical" : ""],
-      ["线路正常", `${healthyProbes}/${allProbes.length}`, healthyProbes < allProbes.length ? "warning" : ""],
+      ["探测正常", `${healthyProbes}/${checks.length}`, healthyProbes < checks.length ? "warning" : ""],
       ["需关注", `${attention}`, attention ? "warning" : ""],
       ["探针周期", formatInterval(state.latest?.cadence?.probes_seconds ?? 60), ""],
     ].map(([label, value, tone]) => `<div class="summary-item ${tone ? `is-${tone}` : ""}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
@@ -832,27 +841,77 @@
     ].join("");
   }
 
+  function formatCounterRate(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return "—";
+    if (numeric >= 1000) return `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 }).format(numeric)} 次/分`;
+    return `${numeric.toFixed(numeric < 10 ? 1 : 0)} 次/分`;
+  }
+
+  function counterState(counter) {
+    if (!counter.complete) return { tone: "critical", label: "读取失败", detail: counter.error || "快照不可用" };
+    if (counter.reset) return { tone: "warning", label: "已重置", detail: "正在重新建立基线" };
+    if (counter.baseline || counter.rate_per_minute === null) return { tone: "neutral", label: "建立基线", detail: "下一轮显示变化速率" };
+    return {
+      tone: "healthy",
+      label: "观测正常",
+      detail: `${Number(counter.interval_seconds || 0)} 秒内增加 ${Number(counter.delta || 0)} 次`,
+    };
+  }
+
+  function renderCounterSummary() {
+    const node = getNode(state.selectedNode);
+    const counters = Array.isArray(node?.counters) ? node.counters : [];
+    $("counter-section").classList.toggle("is-hidden", counters.length === 0);
+    if (!counters.length) {
+      $("counter-summary").replaceChildren();
+      destroyPlot("counter-plot");
+      return;
+    }
+    $("counter-summary").innerHTML = counters.map((counter) => {
+      const status = counterState(counter);
+      return `<article class="counter-observer is-${status.tone}">
+        <div><i aria-hidden="true"></i><strong>${escapeHtml(counter.label || counter.name)}</strong><span>${escapeHtml(status.label)}</span></div>
+        <b>${escapeHtml(formatCounterRate(counter.rate_per_minute))}</b>
+        <small>${escapeHtml(status.detail)}</small>
+      </article>`;
+    }).join("");
+  }
+
   function renderDetailProbeSummary() {
     const node = getNode(state.selectedNode);
     if (!node) return;
-    const probes = displayProbes(node);
+    const probes = detailProbes(node);
+    const hasTcp = probes.some((probe) => probe.kind === "tcp");
+    $("network-section-title").textContent = hasTcp ? "延迟与可达性" : "延迟与丢包";
+    $("network-failure-layer-label").textContent = hasTcp ? "失败事件" : "丢包事件";
+    $("network-failure-legend").textContent = hasTcp
+      ? "竖条 = 丢包或建连失败；颜色越实，比例越高"
+      : "竖条 = 丢包；颜色越实，比例越高";
+    $("network-chart-subtitle").textContent = hasTcp
+      ? "Latency line · ICMP loss / TCP connect failure"
+      : "Latency line · Packet-loss event";
     const summaries = new Map((state.detailHistory?.probe_summaries || []).map((summary) => [summary.probe_name, summary]));
     $("detail-probe-summary").innerHTML = probes.length ? probes.map((probe) => {
       const severity = currentProbeSeverity(probe, node.id);
       const tone = probeColorTone(probe);
       const latency = probe.success ? `${Math.round(Number(probe.duration_ms) || 0)} ms` : "— ms";
-      const loss = formatLoss(probe.packet_loss_percent ?? probe.sample_failure_percent ?? 100);
+      const isTcp = probe.kind === "tcp";
+      const failure = formatLoss(probe.packet_loss_percent ?? probe.sample_failure_percent ?? 100);
       const summary = summaries.get(probe.name);
       const average = Number.isFinite(Number(summary?.latency_average_ms)) ? `${Math.round(Number(summary.latency_average_ms))} ms` : latency;
-      const historyLoss = summary?.packet_loss_percent === null || summary?.packet_loss_percent === undefined ? loss : formatLoss(summary.packet_loss_percent);
+      const summaryFailure = summary?.sample_failure_percent === null || summary?.sample_failure_percent === undefined
+        ? failure
+        : formatLoss(summary.sample_failure_percent);
       const selected = state.detailProbeSelection.has(probe.name);
-      return `<button type="button" class="detail-probe-card probe-tone-${tone} is-${severity} ${selected ? "is-active" : ""}" data-detail-probe="${escapeHtml(probe.name)}" aria-pressed="${selected}" aria-label="${escapeHtml(`${displayProbeLabel(probe)}，平均延迟 ${average}，区间丢包 ${historyLoss}`)}">
+      const failureLabel = isTcp ? "建连失败" : "区间丢包";
+      return `<button type="button" class="detail-probe-card probe-tone-${tone} is-${severity} ${selected ? "is-active" : ""}" data-detail-probe="${escapeHtml(probe.name)}" aria-pressed="${selected}" aria-label="${escapeHtml(`${displayProbeLabel(probe)}，平均延迟 ${average}，${failureLabel} ${summaryFailure}`)}">
         <i class="detail-probe-swatch" aria-hidden="true"></i>
         <span class="detail-probe-label"><strong>${escapeHtml(displayProbeLabel(probe))}</strong></span>
         <span title="平均延迟">${escapeHtml(average)}</span>
-        <span title="区间丢包">${escapeHtml(historyLoss)}</span>
+        <span title="${failureLabel}">${escapeHtml(summaryFailure)}</span>
       </button>`;
-    }).join("") : '<div class="probe-empty">此节点未配置 ICMP 延迟与丢包探测</div>';
+    }).join("") : '<div class="probe-empty">此节点未配置通信探测</div>';
     document.querySelectorAll("#detail-probe-actions button[data-probe-action]").forEach((button) => {
       const allSelected = probes.length > 0 && probes.every((probe) => state.detailProbeSelection.has(probe.name));
       const noneSelected = probes.every((probe) => !state.detailProbeSelection.has(probe.name));
@@ -1142,7 +1201,7 @@
             return `<div class="plot-tooltip-row">
               <span class="plot-tooltip-target"><i style="--tooltip-color:${escapeHtml(series.color)}"></i><b>${escapeHtml(series.label)}</b></span>
               <span><em>延迟</em><b>${Number.isFinite(latency) ? `${Math.round(latency)} ms` : "—"}</b></span>
-              <span><em>丢包</em><b>${Number.isFinite(loss) ? formatLoss(loss) : "—"}</b></span>
+              <span><em>${escapeHtml(series.failureLabel || "丢包")}</em><b>${Number.isFinite(loss) ? formatLoss(loss) : "—"}</b></span>
             </div>`;
           }).join("");
           tooltip.innerHTML = `<time>${escapeHtml(formatTime(timestamp, true))}</time><div class="plot-tooltip-list">${rows}</div>`;
@@ -1232,21 +1291,38 @@
     const history = state.detailHistory;
     const node = getNode(state.selectedNode);
     if (!history || !node) return;
-    const probes = displayProbes(node).filter((probe) => state.detailProbeSelection.has(probe.name));
+    const probes = detailProbes(node).filter((probe) => state.detailProbeSelection.has(probe.name));
     const probeRows = (history.probes || []).filter((row) => row.node_id === node.id);
     const networkSeries = probes.map((probe) => {
       const rows = probeRows.filter((row) => row.probe_name === probe.name);
       return {
         label: displayProbeLabel(probe),
         color: probeColor(probe),
+        failureLabel: probe.kind === "tcp" ? "建连失败" : "丢包",
         points: rows.map((row) => ({ x: Number(row.timestamp), y: row.latency_ms === null ? null : Number(row.latency_ms) })),
-        lossPoints: rows.map((row) => ({ x: Number(row.timestamp), y: row.packet_loss_percent === null ? null : Number(row.packet_loss_percent) })),
+        lossPoints: rows.map((row) => ({
+          x: Number(row.timestamp),
+          y: probe.kind === "tcp"
+            ? (row.sample_failure_percent === null ? null : Number(row.sample_failure_percent))
+            : (row.packet_loss_percent === null ? null : Number(row.packet_loss_percent)),
+        })),
       };
     });
     const totalSamples = probeRows.length;
     const selectedCount = probes.length;
     $("network-chart-state").textContent = `${selectedCount} 条线路 · ${totalSamples} 个区间采样`;
     renderNetworkPlot("network-plot", "network-empty", networkSeries);
+
+    const counterRows = history.counters || [];
+    const counterCatalog = node.counters || [];
+    const counterColors = ["--cyan", "--amber", "--probe-link", "--probe-telecom", "--probe-unicom"];
+    renderPlot("counter-plot", "counter-empty", counterCatalog.map((counter, index) => ({
+      label: counter.label || counter.name,
+      color: cssColor(counterColors[index % counterColors.length]),
+      points: counterRows
+        .filter((row) => row.counter_name === counter.name)
+        .map((row) => ({ x: Number(row.timestamp), y: row.rate_per_minute === null ? null : Number(row.rate_per_minute) })),
+    })), { kind: "counter", formatter: formatCounterRate });
 
     const metrics = history.metrics || [];
     renderPlot("traffic-plot", "traffic-empty", [
@@ -1267,6 +1343,7 @@
     renderDetailHero();
     renderDetailFacts();
     renderDetailProbeSummary();
+    renderCounterSummary();
     if (state.detailHistory) {
       renderDetailEvents();
       requestAnimationFrame(renderDetailCharts);
@@ -1276,7 +1353,7 @@
   function openNode(id, updateUrl = true) {
     if (!getNode(id)) { showToast("未找到该节点", true); return; }
     state.selectedNode = id;
-    state.detailProbeSelection = new Set(displayProbes(getNode(id)).map((probe) => probe.name));
+    state.detailProbeSelection = new Set(detailProbes(getNode(id)).map((probe) => probe.name));
     state.detailHistory = availableDetailHistory(id, state.detailHours);
     $("fleet-view").classList.add("is-hidden");
     $("node-detail").classList.remove("is-hidden");
@@ -1459,7 +1536,7 @@
     $("detail-probe-actions").addEventListener("click", (event) => {
       const button = event.target.closest("button[data-probe-action]");
       if (!button) return;
-      const probes = displayProbes(getNode(state.selectedNode));
+      const probes = detailProbes(getNode(state.selectedNode));
       state.detailProbeSelection = button.dataset.probeAction === "all"
         ? new Set(probes.map((probe) => probe.name))
         : new Set();

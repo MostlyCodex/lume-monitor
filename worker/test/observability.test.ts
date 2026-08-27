@@ -49,6 +49,7 @@ function report(generatedAt: number, bootId: string, rx: number, tx: number): Ag
     },
     services: [],
     probes: [],
+    counters: [],
     agent: { queue_depth: 0, collect_errors: 0, send_errors: 0, started_at: 1 },
   };
 }
@@ -135,5 +136,21 @@ describe("observability statistics", () => {
     expect(summary.packet_loss_percent).toBeCloseTo(100 / 3);
     expect(summary.sample_failure_percent).toBeCloseTo(100 / 3);
     expect(summary.sample_coverage_percent).toBe(60);
+  });
+
+  it("never presents TCP connect failures as packet loss", () => {
+    const degraded = {
+      ...probe(1, 14),
+      probe_name: "peer_tcp",
+      samples: 3,
+      attempted_samples: 3,
+      successful_samples: 2,
+      sample_failure_percent: 100 / 3,
+      packet_loss_percent: null,
+    };
+    const summary = summarizeRoute([degraded], 30, 50, 20, 60, "tcp");
+    expect(summary.packet_loss_percent).toBeNull();
+    expect(summary.sample_failure_percent).toBeCloseTo(100 / 3);
+    expect(summary.anomalies[0]).toMatchObject({ severity: "warning", reason: "建连失败率 33.3%" });
   });
 });

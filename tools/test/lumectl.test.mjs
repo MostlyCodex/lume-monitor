@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -44,7 +45,7 @@ test("generated Worker config contains only generic deployment values", () => {
     databaseId: "00000000-0000-0000-0000-000000000000",
     dashboardUrl: "https://lume-monitor-demo.example.workers.dev",
     botUsername: "demo_monitor_bot",
-    version: "1.1.0",
+    version: "1.2.0",
   });
   assert.equal(config.name, "lume-monitor-demo");
   assert.equal(config.d1_databases[0].binding, "DB");
@@ -67,5 +68,47 @@ test("generated Agent config is pure-host monitoring by default", () => {
   assert.equal(config.report_interval_seconds, 60);
   assert.deepEqual(config.services, []);
   assert.deepEqual(config.probes, []);
+  assert.deepEqual(config.nftables_counters, []);
   assert.equal(config.secret.length, 64);
+});
+
+test("generated Agent config composes optional observers without private defaults", () => {
+  const tcpProbe = {
+    name: "peer_tcp",
+    label: "Peer TCP",
+    category: "node-link",
+    target_node_id: "peer-node",
+    kind: "tcp",
+    target: "peer.example",
+    port: 443,
+    samples: 3,
+  };
+  const nftCounter = {
+    name: "forward_hits",
+    label: "Forward hits",
+    family: "inet",
+    table: "filter",
+    chain: "forward",
+    protocol: "tcp",
+    destination_port: 443,
+  };
+  const config = createAgentConfig({
+    id: "tokyo-edge",
+    endpoint: "https://monitor.example.workers.dev",
+    secret: "d".repeat(64),
+    probes: [tcpProbe],
+    nftablesCounters: [nftCounter],
+  });
+  assert.deepEqual(config.probes, [tcpProbe]);
+  assert.deepEqual(config.nftables_counters, [nftCounter]);
+});
+
+test("nftables snapshot helper is short-lived and does not run as root", async () => {
+  const unit = await readFile(new URL("../../deploy/vpsmon-nftables-snapshot.service", import.meta.url), "utf8");
+  assert.match(unit, /^Type=oneshot$/m);
+  assert.match(unit, /^User=vpsmon$/m);
+  assert.match(unit, /^NoNewPrivileges=true$/m);
+  assert.match(unit, /^CapabilityBoundingSet=CAP_NET_ADMIN$/m);
+  assert.match(unit, /^AmbientCapabilities=CAP_NET_ADMIN$/m);
+  assert.doesNotMatch(unit, /^User=root$/m);
 });

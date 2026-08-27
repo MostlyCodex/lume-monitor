@@ -11,9 +11,15 @@ if [ "${1:-}" != "--confirm" ]; then
 fi
 
 systemctl disable --now vpsmon-agent.service >/dev/null 2>&1 || true
-rm -f -- /etc/systemd/system/vpsmon-agent.service /etc/vpsmon/config.json /opt/vpsmon/vpsmon-agent
+systemctl disable --now vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
+systemctl stop vpsmon-nftables-snapshot.service >/dev/null 2>&1 || true
+rm -f -- /etc/systemd/system/vpsmon-agent.service \
+  /etc/systemd/system/vpsmon-nftables-snapshot.service \
+  /etc/systemd/system/vpsmon-nftables-snapshot.timer \
+  /etc/vpsmon/config.json /opt/vpsmon/vpsmon-agent \
+  /var/lib/vpsmon/nftables-counters.json
 rmdir -- /etc/vpsmon /opt/vpsmon >/dev/null 2>&1 || true
 systemctl daemon-reload
 
-echo "monitor service and its configuration removed"
+echo "monitor services, optional snapshot helper, and configuration removed"
 echo "vpsmon user and /var/lib/vpsmon were retained for recoverability"

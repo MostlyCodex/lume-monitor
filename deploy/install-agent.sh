@@ -19,7 +19,8 @@ case "$stage" in
   *) echo "refusing stage path outside /tmp/vpsmon-stage.*" >&2; exit 2 ;;
 esac
 
-for required in vpsmon-agent config.json vpsmon-agent.service checksums.sha256; do
+for required in vpsmon-agent config.json vpsmon-agent.service \
+  vpsmon-nftables-snapshot.service vpsmon-nftables-snapshot.timer checksums.sha256; do
   if [ ! -f "$stage/$required" ] || [ -L "$stage/$required" ]; then
     echo "missing or unsafe staged file: $required" >&2
     exit 2
@@ -31,7 +32,10 @@ done
   sha256sum -c checksums.sha256
 )
 
-for target in /opt/vpsmon/vpsmon-agent /etc/vpsmon/config.json /etc/systemd/system/vpsmon-agent.service; do
+for target in /opt/vpsmon/vpsmon-agent /etc/vpsmon/config.json \
+  /etc/systemd/system/vpsmon-agent.service \
+  /etc/systemd/system/vpsmon-nftables-snapshot.service \
+  /etc/systemd/system/vpsmon-nftables-snapshot.timer; do
   if [ -e "$target" ] || [ -L "$target" ]; then
     echo "refusing to overwrite existing path: $target" >&2
     exit 3
@@ -62,13 +66,21 @@ install -d -o root -g vpsmon -m 0750 /etc/vpsmon
 install -o root -g root -m 0755 "$stage/vpsmon-agent" /opt/vpsmon/vpsmon-agent
 install -o root -g vpsmon -m 0640 "$stage/config.json" /etc/vpsmon/config.json
 install -o root -g root -m 0644 "$stage/vpsmon-agent.service" /etc/systemd/system/vpsmon-agent.service
+install -o root -g root -m 0644 "$stage/vpsmon-nftables-snapshot.service" /etc/systemd/system/vpsmon-nftables-snapshot.service
+install -o root -g root -m 0644 "$stage/vpsmon-nftables-snapshot.timer" /etc/systemd/system/vpsmon-nftables-snapshot.timer
 
 configured_services=$(/opt/vpsmon/vpsmon-agent --config /etc/vpsmon/config.json --list-services)
 before_services=$(printf '%s\n' "$configured_services" | configured_service_fingerprints)
 
 rollback() {
   systemctl disable --now vpsmon-agent.service >/dev/null 2>&1 || true
-  rm -f -- /etc/systemd/system/vpsmon-agent.service /etc/vpsmon/config.json /opt/vpsmon/vpsmon-agent
+  systemctl disable --now vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
+  systemctl stop vpsmon-nftables-snapshot.service >/dev/null 2>&1 || true
+  rm -f -- /etc/systemd/system/vpsmon-agent.service \
+    /etc/systemd/system/vpsmon-nftables-snapshot.service \
+    /etc/systemd/system/vpsmon-nftables-snapshot.timer \
+    /etc/vpsmon/config.json /opt/vpsmon/vpsmon-agent \
+    /var/lib/vpsmon/nftables-counters.json
   rmdir -- /etc/vpsmon /opt/vpsmon >/dev/null 2>&1 || true
   systemctl daemon-reload >/dev/null 2>&1 || true
 }
@@ -80,7 +92,10 @@ if ! /opt/vpsmon/vpsmon-agent --config /etc/vpsmon/config.json --dry-run >/dev/n
 fi
 
 if command -v systemd-analyze >/dev/null 2>&1; then
-  if ! systemd-analyze verify /etc/systemd/system/vpsmon-agent.service >/dev/null 2>&1; then
+  if ! systemd-analyze verify \
+    /etc/systemd/system/vpsmon-agent.service \
+    /etc/systemd/system/vpsmon-nftables-snapshot.service \
+    /etc/systemd/system/vpsmon-nftables-snapshot.timer >/dev/null 2>&1; then
     echo "systemd unit verification failed; rolling back" >&2
     rollback
     exit 4
@@ -88,6 +103,25 @@ if command -v systemd-analyze >/dev/null 2>&1; then
 fi
 
 systemctl daemon-reload
+configured_counters=$(/opt/vpsmon/vpsmon-agent --config /etc/vpsmon/config.json --list-nftables-counters)
+if [ -n "$configured_counters" ]; then
+  if ! command -v nft >/dev/null 2>&1; then
+    echo "nftables counters are configured but nft is not installed; rolling back" >&2
+    rollback
+    exit 5
+  fi
+  if ! systemctl enable --now vpsmon-nftables-snapshot.timer >/dev/null ||
+     ! systemctl start vpsmon-nftables-snapshot.service; then
+    echo "nftables snapshot helper failed; rolling back" >&2
+    rollback
+    exit 5
+  fi
+else
+  systemctl disable --now vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
+  systemctl stop vpsmon-nftables-snapshot.service >/dev/null 2>&1 || true
+  rm -f -- /var/lib/vpsmon/nftables-counters.json
+fi
+
 if ! systemctl enable --now vpsmon-agent.service; then
   echo "new monitor service failed to start; rolling back" >&2
   rollback
@@ -113,3 +147,4 @@ rm -f -- "$stage/config.json"
 echo "vpsmon-agent installed successfully"
 echo "protected service fingerprints unchanged"
 echo "agent_state=$(systemctl is-active vpsmon-agent.service)"
+echo "nftables_counter_timer=$(systemctl is-active vpsmon-nftables-snapshot.timer 2>/dev/null || true)"

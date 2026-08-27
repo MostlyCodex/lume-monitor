@@ -10,7 +10,9 @@ describe("dashboard presentation hierarchy", () => {
   it("keeps the fleet home focused on node cards and current network quality", () => {
     expect(html).toContain('id="fleet-view"');
     expect(html).toContain('id="node-grid"');
-    expect(app).not.toContain('.filter((probe) => probe.kind === "icmp")');
+    expect(app).toContain('.filter((probe) => probe.kind === "icmp")');
+    expect(app).toContain("function detailProbes(node)");
+    expect(app).toContain("const probeSeverities = allProbes(node)");
     expect(app).toContain("probe.packet_loss_percent");
     expect(app).toContain('metricEnergyStrip(node.id, probe, metric');
     expect(app).toContain("const ENERGY_LOSS_WARNING_PERCENT = 2");
@@ -181,7 +183,7 @@ describe("dashboard presentation hierarchy", () => {
     expect(styles).toContain(".probe-picker-actions button { min-height: 34px;");
     expect(styles).toContain(".detail-probe-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible;");
     expect(styles).toContain(".detail-probe-card > span:not(.detail-probe-label) { display: none; }");
-    expect(html).toContain("<h2>延迟与丢包</h2>");
+    expect(html).toContain('<h2 id="network-section-title">延迟与丢包</h2>');
     expect(html).not.toContain("延迟与丢包趋势");
     expect(html).not.toContain("点击目标卡片显示或隐藏");
     expect(html).not.toContain("资源与网络速率仅在详情中展示历史");
@@ -193,6 +195,9 @@ describe("dashboard presentation hierarchy", () => {
     expect(styles).toContain('html[data-theme="light"] .range-switch');
     expect(styles).toContain('.detail-probe-card.is-active');
     expect(styles).toContain('html[data-theme="light"] .detail-probe-card');
+    expect(html).toContain('id="counter-section" class="detail-section is-hidden"');
+    expect(app).toContain('$("counter-section").classList.toggle("is-hidden", counters.length === 0)');
+    expect(app).toContain('failureLabel: probe.kind === "tcp" ? "建连失败" : "丢包"');
   });
 
   it("uses one compact glass edge for cards, search and time controls", () => {
@@ -209,8 +214,8 @@ describe("dashboard presentation hierarchy", () => {
   });
 
   it("loads the pinned chart library locally instead of from a CDN", () => {
-    expect(html).toContain('/dashboard/styles.css?v=1.1.0&amp;b=stable-scene-v2');
-    expect(html).toContain('/dashboard/app.js?v=1.1.0&amp;b=stable-scene-v2');
+    expect(html).toContain('/dashboard/styles.css?v=1.2.0&amp;b=optional-observers');
+    expect(html).toContain('/dashboard/app.js?v=1.2.0&amp;b=optional-observers');
     expect(html).toContain('/dashboard/vendor/uPlot.iife.min.js');
     expect(html).toContain('/dashboard/vendor/uPlot.min.css');
     expect(html).not.toMatch(/https?:\/\/[^\s"']+u[Pp]lot/);

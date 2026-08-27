@@ -17,6 +17,7 @@ import (
 	"github.com/MostlyCodex/lume-monitor/agent/internal/collect"
 	"github.com/MostlyCodex/lume-monitor/agent/internal/config"
 	"github.com/MostlyCodex/lume-monitor/agent/internal/model"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/nftobserve"
 	"github.com/MostlyCodex/lume-monitor/agent/internal/probe"
 	"github.com/MostlyCodex/lume-monitor/agent/internal/sender"
 	"github.com/MostlyCodex/lume-monitor/agent/internal/spool"
@@ -25,14 +26,15 @@ import (
 var version = "dev"
 
 type application struct {
-	config        config.Config
-	collector     *collect.Collector
-	sender        *sender.Sender
-	startedAt     int64
-	collectErrors atomic.Uint64
-	sendErrors    atomic.Uint64
-	lastProbeAt   time.Time
-	lastProbes    []model.ProbeResult
+	config         config.Config
+	collector      *collect.Collector
+	sender         *sender.Sender
+	startedAt      int64
+	collectErrors  atomic.Uint64
+	sendErrors     atomic.Uint64
+	lastProbeAt    time.Time
+	lastProbes     []model.ProbeResult
+	counterTracker *nftobserve.Tracker
 }
 
 func (a *application) runOnce(parent context.Context, dryRun bool) error {
@@ -64,6 +66,8 @@ func (a *application) runOnce(parent context.Context, dryRun bool) error {
 		a.lastProbeAt = time.Now()
 		a.lastProbes = probe.Run(ctx, a.config.Probes)
 	}
+	counterMaxAge := time.Duration(max(120, a.config.ProbeIntervalSeconds*3)) * time.Second
+	counters := a.counterTracker.Collect(a.config.NftablesCounters, nftobserve.SnapshotPath, counterMaxAge)
 	report := model.Report{
 		SchemaVersion: 2,
 		AgentVersion:  version,
@@ -85,6 +89,7 @@ func (a *application) runOnce(parent context.Context, dryRun bool) error {
 		System:      system,
 		Services:    services,
 		Probes:      a.lastProbes,
+		Counters:    counters,
 		Agent: model.AgentHealth{
 			QueueDepth:    queueDepth,
 			CollectErrors: a.collectErrors.Load(),
@@ -121,6 +126,8 @@ func main() {
 	once := flag.Bool("once", false, "collect and send one report, then exit")
 	dryRun := flag.Bool("dry-run", false, "collect one report and print it without sending")
 	listServices := flag.Bool("list-services", false, "print configured systemd service names and exit")
+	listNftablesCounters := flag.Bool("list-nftables-counters", false, "print configured nftables counter names and exit")
+	snapshotNftables := flag.String("snapshot-nftables", "", "write a privileged nftables counter snapshot and exit")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 	if *showVersion {
@@ -137,11 +144,29 @@ func main() {
 		}
 		return
 	}
+	if *listNftablesCounters {
+		for _, counter := range cfg.NftablesCounters {
+			fmt.Println(counter.Name)
+		}
+		return
+	}
+	if *snapshotNftables != "" {
+		if *snapshotNftables != nftobserve.SnapshotPath {
+			log.Fatalf("nftables snapshot path must be %s", nftobserve.SnapshotPath)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := nftobserve.Capture(ctx, cfg.NftablesCounters, *snapshotNftables); err != nil {
+			log.Fatalf("nftables snapshot failed: %v", err)
+		}
+		return
+	}
 	app := &application{
-		config:    cfg,
-		collector: collect.New(),
-		sender:    sender.New(cfg.Endpoint, cfg.Node.ID, cfg.Secret, version),
-		startedAt: time.Now().Unix(),
+		config:         cfg,
+		collector:      collect.New(),
+		sender:         sender.New(cfg.Endpoint, cfg.Node.ID, cfg.Secret, version),
+		startedAt:      time.Now().Unix(),
+		counterTracker: nftobserve.NewTracker(),
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

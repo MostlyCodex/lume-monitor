@@ -32,6 +32,9 @@ function nodeStatusIcon(
   const unhealthyServices = report.services.filter((service) => service.state !== "active");
   if (unhealthyServices.some((service) => service.severity === "P1")) return "🔴";
   if (unhealthyServices.length > 0) return "🟡";
+  const failedProbes = report.probes.filter((probe) => !probe.complete || !probe.success);
+  if (failedProbes.some((probe) => probe.severity === "P1")) return "🔴";
+  if (failedProbes.length > 0 || (report.counters ?? []).some((counter) => !counter.complete)) return "🟡";
   return "🟢";
 }
 
@@ -47,11 +50,22 @@ function resourceLine(report: AgentReport): string {
 }
 
 function probeLine(probe: ProbeResult): string {
-  const label = probe.label.replace(/\s*·\s*ICMP\s*$/i, "").trim();
+  const label = probe.label.replace(/\s*·\s*(ICMP|TCP(?:\s*\d+)?)\s*$/i, "").trim();
+  const failureLabel = probe.kind === "tcp" ? "建连失败" : "丢包";
   if (!probe.complete) return `${label} · 采样 ${probe.attempted_samples}/${probe.samples}`;
   const failurePercent = probe.packet_loss_percent ?? probe.sample_failure_percent;
-  if (!probe.success) return `${label} · 不可达 · 丢包 ${Math.round(failurePercent)}%`;
-  return `${label} · ${Math.round(probe.duration_ms)} ms · 丢包 ${Math.round(failurePercent)}%`;
+  if (!probe.success) return `${label} · ${probe.kind === "tcp" ? "建连失败" : "不可达"} · ${failureLabel} ${Math.round(failurePercent)}%`;
+  return `${label} · ${Math.round(probe.duration_ms)} ms · ${failureLabel} ${Math.round(failurePercent)}%`;
+}
+
+function counterLine(report: AgentReport): string | null {
+  const entries = (report.counters ?? []).slice().sort((left, right) => left.display_order - right.display_order).slice(0, 2);
+  if (entries.length === 0) return null;
+  return entries.map((counter) => {
+    if (!counter.complete) return `${counter.label} 读取失败`;
+    if (counter.baseline || counter.reset || counter.rate_per_minute === undefined) return `${counter.label} 建立基线`;
+    return `${counter.label} ${counter.rate_per_minute.toFixed(counter.rate_per_minute < 10 ? 1 : 0)}次/分`;
+  }).join(" · ");
 }
 
 function updateTimestamp(now: number): string {
@@ -112,9 +126,11 @@ export function formatTelegramStatusMessage(
       .slice(0, 4)
       .map(probeLine);
     if (probes.length > 0) {
-      block.push("   线路");
+      block.push("   探测");
       probes.forEach((probe, index) => block.push(`   ${index === probes.length - 1 ? "└" : "├"} ${probe}`));
     }
+    const counters = counterLine(report);
+    if (counters) block.push(`   转发  ${counters}`);
     blocks.push(block);
   }
 

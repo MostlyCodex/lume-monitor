@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +31,7 @@ func cleanError(err error) string {
 func resultMetadata(cfg config.Probe) model.ProbeResult {
 	return model.ProbeResult{
 		Name: cfg.Name, Label: cfg.Label, Category: cfg.Category, TargetNodeID: cfg.TargetNodeID,
-		Kind: cfg.Kind, Target: cfg.Target, WarningMS: cfg.WarningMS, CriticalMS: cfg.CriticalMS,
+		Kind: cfg.Kind, Target: cfg.Target, Port: cfg.Port, WarningMS: cfg.WarningMS, CriticalMS: cfg.CriticalMS,
 		WarningFailurePercent: cfg.WarningFailurePercent, CriticalFailurePercent: cfg.CriticalFailurePercent,
 		Severity: cfg.Severity, DisplayOrder: cfg.DisplayOrder, Primary: cfg.Primary,
 	}
@@ -65,8 +67,10 @@ func finishResult(
 	} else {
 		result.SampleFailurePercent = 100
 	}
-	packetLoss := result.SampleFailurePercent
-	result.PacketLossPercent = &packetLoss
+	if result.Kind == "icmp" {
+		packetLoss := result.SampleFailurePercent
+		result.PacketLossPercent = &packetLoss
+	}
 	result.Success = result.Complete && len(durations) > requested/2
 
 	if len(durations) > 0 {
@@ -101,6 +105,70 @@ func finishResult(
 		))
 	}
 	return result
+}
+
+type tcpSample struct {
+	durationMS float64
+	remoteIP   string
+	attempted  bool
+	err        error
+}
+
+func runTCP(parent context.Context, cfg config.Probe) model.ProbeResult {
+	result := resultMetadata(cfg)
+	result.CheckedAt = time.Now().Unix()
+	round, cancel := context.WithTimeout(parent, time.Duration(cfg.TimeoutSeconds)*time.Second)
+	defer cancel()
+
+	samples := make(chan tcpSample, cfg.Samples)
+	address := net.JoinHostPort(cfg.Target, strconv.Itoa(cfg.Port))
+	for index := 0; index < cfg.Samples; index++ {
+		delay := time.Duration(index*cfg.SampleIntervalMS) * time.Millisecond
+		go func() {
+			timer := time.NewTimer(delay)
+			defer timer.Stop()
+			select {
+			case <-round.Done():
+				samples <- tcpSample{err: round.Err()}
+				return
+			case <-timer.C:
+			}
+
+			started := time.Now()
+			dialer := net.Dialer{Timeout: time.Duration(cfg.ConnectTimeoutMS) * time.Millisecond}
+			connection, err := dialer.DialContext(round, "tcp", address)
+			if err != nil {
+				samples <- tcpSample{attempted: true, err: err}
+				return
+			}
+			duration := float64(time.Since(started).Microseconds()) / 1000
+			remoteIP := ""
+			if host, _, splitErr := net.SplitHostPort(connection.RemoteAddr().String()); splitErr == nil {
+				remoteIP = host
+			}
+			_ = connection.Close()
+			samples <- tcpSample{durationMS: duration, remoteIP: remoteIP, attempted: true}
+		}()
+	}
+
+	durations := make([]float64, 0, cfg.Samples)
+	attempted := 0
+	lastError := ""
+	for index := 0; index < cfg.Samples; index++ {
+		sample := <-samples
+		if sample.attempted {
+			attempted++
+		}
+		if sample.err != nil {
+			lastError = cleanError(sample.err)
+			continue
+		}
+		durations = append(durations, sample.durationMS)
+		if result.RemoteIP == "" {
+			result.RemoteIP = sample.remoteIP
+		}
+	}
+	return finishResult(result, durations, attempted, cfg.Samples, lastError)
 }
 
 func runICMP(parent context.Context, cfg config.Probe) model.ProbeResult {
@@ -147,7 +215,11 @@ func Run(parent context.Context, probes []config.Probe) []model.ProbeResult {
 			defer wait.Done()
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
-			results[index] = runICMP(parent, cfg)
+			if cfg.Kind == "tcp" {
+				results[index] = runTCP(parent, cfg)
+			} else {
+				results[index] = runICMP(parent, cfg)
+			}
 		}()
 	}
 	wait.Wait()

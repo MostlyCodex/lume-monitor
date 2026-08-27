@@ -1,5 +1,6 @@
 import type {
   AgentReport,
+  CounterResult,
   NodeMetadata,
   ProbeResult,
   ServiceStatus,
@@ -157,7 +158,13 @@ function probes(value: unknown): ProbeResult[] {
     if (names.has(name)) throw new Error("probe names must be unique");
     names.add(name);
     const kind = stringValue(v.kind, `probes[${index}].kind`, 16);
-    if (kind !== "icmp") throw new Error("probe kind must be icmp");
+    if (kind !== "icmp" && kind !== "tcp") throw new Error("probe kind must be icmp or tcp");
+    const port = kind === "tcp"
+      ? integerValue(v.port, `probes[${index}].port`, 1, 65535)
+      : undefined;
+    if (kind === "icmp" && v.port !== undefined) {
+      throw new Error(`probes[${index}].port is only valid for TCP probes`);
+    }
     if (typeof v.success !== "boolean") throw new Error(`probes[${index}].success must be boolean`);
     if (v.primary !== undefined && typeof v.primary !== "boolean") throw new Error(`probes[${index}].primary must be boolean`);
     const warning = optionalNumber(v.warning_ms, `probes[${index}].warning_ms`, 0, 120000);
@@ -202,11 +209,16 @@ function probes(value: unknown): ProbeResult[] {
     if (Math.abs(sampleFailure - derivedFailure) > 0.011) {
       throw new Error(`probes[${index}].sample_failure_percent is inconsistent with sample counts`);
     }
-    const packetLoss = v.packet_loss_percent === undefined
-      ? sampleFailure
-      : numberValue(v.packet_loss_percent, `probes[${index}].packet_loss_percent`, 0, 100);
-    if (Math.abs(packetLoss - sampleFailure) > 0.011) {
-      throw new Error(`probes[${index}].packet_loss_percent is inconsistent with ICMP samples`);
+    let packetLoss: number | undefined;
+    if (kind === "icmp") {
+      packetLoss = v.packet_loss_percent === undefined
+        ? sampleFailure
+        : numberValue(v.packet_loss_percent, `probes[${index}].packet_loss_percent`, 0, 100);
+      if (Math.abs(packetLoss - sampleFailure) > 0.011) {
+        throw new Error(`probes[${index}].packet_loss_percent is inconsistent with ICMP samples`);
+      }
+    } else if (v.packet_loss_percent !== undefined) {
+      throw new Error(`probes[${index}].packet_loss_percent is not valid for TCP probes`);
     }
     const result: ProbeResult = {
       name,
@@ -230,7 +242,8 @@ function probes(value: unknown): ProbeResult[] {
       sample_failure_percent: sampleFailure,
       checked_at: integerValue(v.checked_at, `probes[${index}].checked_at`, 1),
     };
-    result.packet_loss_percent = packetLoss;
+    if (port !== undefined) result.port = port;
+    if (packetLoss !== undefined) result.packet_loss_percent = packetLoss;
     if (v.target_node_id !== undefined) {
       result.target_node_id = patternValue(v.target_node_id, `probes[${index}].target_node_id`, NODE_ID, 32);
     }
@@ -245,6 +258,58 @@ function probes(value: unknown): ProbeResult[] {
     if (v.jitter_ms !== undefined) result.jitter_ms = numberValue(v.jitter_ms, `probes[${index}].jitter_ms`, 0, 120000);
     if (v.remote_ip !== undefined) result.remote_ip = stringValue(v.remote_ip, `probes[${index}].remote_ip`, 64);
     if (v.error !== undefined) result.error = cleanDiagnostic(stringValue(v.error, `probes[${index}].error`, 160));
+    return result;
+  });
+}
+
+function counters(value: unknown): CounterResult[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 16) throw new Error("counters must be an array up to 16 entries");
+  const names = new Set<string>();
+  return value.map((entry, index) => {
+    const v = record(entry, `counters[${index}]`);
+    const name = patternValue(v.name, `counters[${index}].name`, PROBE_NAME, 80);
+    if (names.has(name)) throw new Error("counter names must be unique");
+    names.add(name);
+    if (v.kind !== "nftables-rule") throw new Error(`counters[${index}].kind is invalid`);
+    if (v.unit !== "matches") throw new Error(`counters[${index}].unit is invalid`);
+    if (typeof v.complete !== "boolean") throw new Error(`counters[${index}].complete must be boolean`);
+    if (v.baseline !== undefined && typeof v.baseline !== "boolean") throw new Error(`counters[${index}].baseline must be boolean`);
+    if (v.reset !== undefined && typeof v.reset !== "boolean") throw new Error(`counters[${index}].reset must be boolean`);
+    const baseline = v.baseline === true;
+    const reset = v.reset === true;
+    if (baseline && reset) throw new Error(`counters[${index}] cannot be both baseline and reset`);
+    const result: CounterResult = {
+      name,
+      label: stringValue(v.label, `counters[${index}].label`, 80),
+      kind: "nftables-rule",
+      unit: "matches",
+      display_order: integerValue(v.display_order, `counters[${index}].display_order`, 1, 10000),
+      complete: v.complete,
+      baseline,
+      reset,
+      observed_at: integerValue(v.observed_at, `counters[${index}].observed_at`, 1),
+    };
+    if (v.delta !== undefined) result.delta = integerValue(v.delta, `counters[${index}].delta`);
+    if (v.interval_seconds !== undefined) {
+      result.interval_seconds = integerValue(v.interval_seconds, `counters[${index}].interval_seconds`, 1, 3600);
+    }
+    if (v.rate_per_minute !== undefined) {
+      result.rate_per_minute = numberValue(v.rate_per_minute, `counters[${index}].rate_per_minute`, 0, 1_000_000_000);
+    }
+    if (!result.complete || baseline || reset) {
+      if (result.delta !== undefined || result.interval_seconds !== undefined || result.rate_per_minute !== undefined) {
+        throw new Error(`counters[${index}] must not include a rate while incomplete, baseline, or reset`);
+      }
+    } else if (result.delta === undefined || result.interval_seconds === undefined || result.rate_per_minute === undefined) {
+      throw new Error(`counters[${index}] is missing delta or rate data`);
+    } else {
+      const expectedRate = result.delta * 60 / result.interval_seconds;
+      if (Math.abs(result.rate_per_minute - expectedRate) > Math.max(0.011, expectedRate * 1e-9)) {
+        throw new Error(`counters[${index}].rate_per_minute is inconsistent with delta and interval`);
+      }
+    }
+    if (v.error !== undefined) result.error = cleanDiagnostic(stringValue(v.error, `counters[${index}].error`, 160));
     return result;
   });
 }
@@ -312,6 +377,7 @@ export function validateLegacyReport(value: unknown, metadata: LegacyReportMetad
     system: systemMetrics(v.system),
     services: legacyServices,
     probes: probes(enrichedProbes),
+    counters: [],
     agent: {
       queue_depth: integerValue(agent.queue_depth, "agent.queue_depth", 0, 10000),
       collect_errors: integerValue(agent.collect_errors, "agent.collect_errors"),
@@ -336,6 +402,7 @@ export function validateReport(value: unknown): AgentReport {
     system: systemMetrics(v.system),
     services: services(v.services),
     probes: probes(v.probes),
+    counters: counters(v.counters),
     agent: {
       queue_depth: integerValue(agent.queue_depth, "agent.queue_depth", 0, 10000),
       collect_errors: integerValue(agent.collect_errors, "agent.collect_errors"),

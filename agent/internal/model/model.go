@@ -55,6 +55,7 @@ type ProbeResult struct {
 	TargetNodeID           string   `json:"target_node_id,omitempty"`
 	Kind                   string   `json:"kind"`
 	Target                 string   `json:"target"`
+	Port                   int      `json:"port,omitempty"`
 	WarningMS              float64  `json:"warning_ms,omitempty"`
 	CriticalMS             float64  `json:"critical_ms,omitempty"`
 	WarningFailurePercent  float64  `json:"warning_failure_percent,omitempty"`
@@ -81,6 +82,22 @@ type ProbeResult struct {
 	CheckedAt              int64    `json:"checked_at"`
 }
 
+type CounterResult struct {
+	Name            string   `json:"name"`
+	Label           string   `json:"label"`
+	Kind            string   `json:"kind"`
+	Unit            string   `json:"unit"`
+	DisplayOrder    int      `json:"display_order"`
+	Complete        bool     `json:"complete"`
+	Baseline        bool     `json:"baseline,omitempty"`
+	Reset           bool     `json:"reset,omitempty"`
+	Delta           *uint64  `json:"delta,omitempty"`
+	IntervalSeconds *int64   `json:"interval_seconds,omitempty"`
+	RatePerMinute   *float64 `json:"rate_per_minute,omitempty"`
+	ObservedAt      int64    `json:"observed_at"`
+	Error           string   `json:"error,omitempty"`
+}
+
 type AgentHealth struct {
 	QueueDepth    int    `json:"queue_depth"`
 	CollectErrors uint64 `json:"collect_errors"`
@@ -97,5 +114,6 @@ type Report struct {
 	System        SystemMetrics   `json:"system"`
 	Services      []ServiceStatus `json:"services"`
 	Probes        []ProbeResult   `json:"probes"`
+	Counters      []CounterResult `json:"counters,omitempty"`
 	Agent         AgentHealth     `json:"agent"`
 }
