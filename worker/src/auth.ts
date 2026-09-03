@@ -1,4 +1,5 @@
 const encoder = new TextEncoder();
+const nodeIdPattern = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
 export function canonicalMessage(timestamp: string, nonce: string, body: string): string {
   return `${timestamp}\n${nonce}\n${body}`;
@@ -40,10 +41,30 @@ export function parseNodeKeys(raw: string | undefined): Record<string, string> {
   const entries = Object.entries(parsed);
   if (entries.length > 256) throw new Error("NODE_KEYS contains too many nodes");
   for (const [node, secret] of entries) {
-    if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(node) || typeof secret !== "string" || secret.length < 32 || secret.length > 256) {
+    if (!nodeIdPattern.test(node) || typeof secret !== "string" || secret.length < 32 || secret.length > 256) {
       throw new Error("NODE_KEYS contains an invalid node or secret");
     }
     result[node] = secret;
+  }
+  return result;
+}
+
+export function parseRevokedNodeIds(raw: string | undefined): Set<string> {
+  if (!raw) return new Set();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("REVOKED_NODE_IDS is not valid JSON");
+  }
+  if (!Array.isArray(parsed)) throw new Error("REVOKED_NODE_IDS must be a JSON array");
+  if (parsed.length > 256) throw new Error("REVOKED_NODE_IDS contains too many nodes");
+  const result = new Set<string>();
+  for (const node of parsed) {
+    if (typeof node !== "string" || !nodeIdPattern.test(node)) {
+      throw new Error("REVOKED_NODE_IDS contains an invalid node");
+    }
+    result.add(node);
   }
   return result;
 }

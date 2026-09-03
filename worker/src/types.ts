@@ -127,6 +127,7 @@ export interface Env {
   TELEGRAM_BOT_USERNAME: string;
   DASHBOARD_BASE_URL: string;
   NODE_KEYS?: string;
+  REVOKED_NODE_IDS?: string;
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
   TELEGRAM_BIND_CODE_HASH?: string;

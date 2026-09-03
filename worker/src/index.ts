@@ -1,4 +1,4 @@
-import { canonicalMessage, constantTimeEqual, hmacHex, parseNodeKeys } from "./auth";
+import { canonicalMessage, constantTimeEqual, hmacHex, parseNodeKeys, parseRevokedNodeIds } from "./auth";
 import { loadDashboardCatalog } from "./catalog";
 import {
   clearDashboardSessionCookie,
@@ -138,6 +138,13 @@ async function authenticateReport(
   if (report.generated_at > now + maxAge || report.generated_at < now - DAY_SECONDS) {
     return json({ error: "report generated_at outside allowed window", server_time: now }, 422);
   }
+  let revokedNodeIds: Set<string>;
+  try {
+    revokedNodeIds = parseRevokedNodeIds(env.REVOKED_NODE_IDS);
+  } catch {
+    return json({ error: "server authentication configuration invalid" }, 503);
+  }
+  if (revokedNodeIds.has(report.node_id)) return json({ error: "unknown node" }, 401);
   let keys: Record<string, string>;
   try {
     keys = parseNodeKeys(env.NODE_KEYS);

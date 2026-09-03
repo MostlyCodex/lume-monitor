@@ -12,7 +12,8 @@
     "TELEGRAM_BOT_USERNAME": "integration_test_bot",
     "DASHBOARD_BASE_URL": "http://127.0.0.1:8787",
     "ADMIN_TOKEN": "local-admin-token-with-32-characters",
-    "NODE_KEYS": "{\"alpha-vps\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"beta-vps\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}"
+    "NODE_KEYS": "{\"alpha-vps\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"beta-vps\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"revoked-vps\":\"cccccccccccccccccccccccccccccccc\"}",
+    "REVOKED_NODE_IDS": "[\"revoked-vps\"]"
   },
   "assets": {
     "directory": "./public",

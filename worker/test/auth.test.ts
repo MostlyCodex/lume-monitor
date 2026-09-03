@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalMessage, constantTimeEqual, hmacHex, parseNodeKeys } from "../src/auth";
+import { canonicalMessage, constantTimeEqual, hmacHex, parseNodeKeys, parseRevokedNodeIds } from "../src/auth";
 
 describe("report authentication", () => {
   it("uses a stable canonical message", () => {
@@ -26,5 +26,15 @@ describe("report authentication", () => {
     });
     expect(() => parseNodeKeys(JSON.stringify({ "Invalid Node": secret }))).toThrow();
     expect(() => parseNodeKeys(JSON.stringify({ "my-vps-01": "short" }))).toThrow();
+  });
+
+  it("parses a strict node revocation list", () => {
+    expect([...parseRevokedNodeIds('["retired-vps","old_node","retired-vps"]')]).toEqual([
+      "retired-vps",
+      "old_node",
+    ]);
+    expect(parseRevokedNodeIds(undefined).size).toBe(0);
+    expect(() => parseRevokedNodeIds('{"retired-vps":true}')).toThrow();
+    expect(() => parseRevokedNodeIds('["Invalid Node"]')).toThrow();
   });
 });

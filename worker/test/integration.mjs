@@ -4,6 +4,7 @@ const base = process.env.VPSMON_TEST_URL ?? "http://127.0.0.1:8787";
 const secrets = {
   "alpha-vps": "a".repeat(32),
   "beta-vps": "b".repeat(32),
+  "revoked-vps": "c".repeat(32),
 };
 
 // Keep the complete synthetic sequence at or before wall-clock now. History
@@ -157,6 +158,14 @@ function assert(condition, message) {
 
 const health = await fetch(`${base}/healthz`);
 assert(health.status === 200 && (await health.json()).ok === true, "healthz failed");
+
+const revokedReport = report("revoked-vps");
+const revokedBody = JSON.stringify(revokedReport);
+const revoked = await fetch(
+  `${base}/api/v1/report`,
+  signedRequest(revokedBody, randomBytes(18).toString("base64url"), true, "revoked-vps"),
+);
+assert(revoked.status === 401, `revoked node returned ${revoked.status}: ${await revoked.text()}`);
 
 const alphaReport = report();
 const body = JSON.stringify(alphaReport);

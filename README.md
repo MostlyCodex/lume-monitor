@@ -257,6 +257,15 @@ npx wrangler secret put NODE_KEYS
 
 Cloudflare Secret 不能读取明文；部署者必须在安全位置维护完整映射。不要只提交一个节点的局部 JSON，否则其他 Agent 会同时失去上报权限。密钥不得写入 Git、README、Issue 或构建日志。
 
+如果完整 `NODE_KEYS` 已经遗失、暂时无法安全重写，可把节点 ID 加入独立撤销列表，立即阻止旧密钥再次认证或重新创建目录：
+
+```bash
+cd worker
+npx wrangler secret put REVOKED_NODE_IDS
+```
+
+输入严格 JSON 数组，例如 `["retired-vps"]`。撤销列表在查找节点 HMAC 密钥前生效；恢复节点时必须先从该数组移除节点 ID。它是无法重写完整 `NODE_KEYS` 时的安全兜底，能够使旧密钥失效，但仍建议在取得其余活动节点密钥后重写 `NODE_KEYS`，物理移除旧映射。
+
 ### 3. 从活动目录移除
 
 将以下 `NODE_ID` 和数据库名替换为实际值：
