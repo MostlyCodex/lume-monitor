@@ -112,3 +112,11 @@ test("nftables snapshot helper is short-lived and does not run as root", async (
   assert.match(unit, /^AmbientCapabilities=CAP_NET_ADMIN$/m);
   assert.doesNotMatch(unit, /^User=root$/m);
 });
+
+test("fresh install creates the nftables snapshot state directory before starting the helper", async () => {
+  const installer = await readFile(new URL("../../deploy/install-agent.sh", import.meta.url), "utf8");
+  const createStateDirectory = installer.indexOf("install -d -o vpsmon -g vpsmon -m 0700 /var/lib/vpsmon");
+  const startSnapshotHelper = installer.indexOf("systemctl start vpsmon-nftables-snapshot.service");
+  assert.ok(createStateDirectory >= 0);
+  assert.ok(startSnapshotHelper > createStateDirectory);
+});

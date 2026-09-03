@@ -42,6 +42,7 @@ for target in /opt/vpsmon/vpsmon-agent /etc/vpsmon/config.json \
   fi
 done
 
+vpsmon_user_created=0
 if getent passwd vpsmon >/dev/null 2>&1; then
   existing_shell=$(getent passwd vpsmon | awk -F: '{print $7}')
   case "$existing_shell" in
@@ -50,6 +51,7 @@ if getent passwd vpsmon >/dev/null 2>&1; then
   esac
 else
   useradd --system --home-dir /var/lib/vpsmon --shell /usr/sbin/nologin --user-group vpsmon
+  vpsmon_user_created=1
 fi
 
 configured_service_fingerprints() {
@@ -63,6 +65,7 @@ configured_service_fingerprints() {
 
 install -d -o root -g root -m 0755 /opt/vpsmon
 install -d -o root -g vpsmon -m 0750 /etc/vpsmon
+install -d -o vpsmon -g vpsmon -m 0700 /var/lib/vpsmon
 install -o root -g root -m 0755 "$stage/vpsmon-agent" /opt/vpsmon/vpsmon-agent
 install -o root -g vpsmon -m 0640 "$stage/config.json" /etc/vpsmon/config.json
 install -o root -g root -m 0644 "$stage/vpsmon-agent.service" /etc/systemd/system/vpsmon-agent.service
@@ -82,6 +85,12 @@ rollback() {
     /etc/vpsmon/config.json /opt/vpsmon/vpsmon-agent \
     /var/lib/vpsmon/nftables-counters.json
   rmdir -- /etc/vpsmon /opt/vpsmon >/dev/null 2>&1 || true
+  if [ "$vpsmon_user_created" = "1" ]; then
+    rm -f -- /var/lib/vpsmon/pending.json
+    rmdir -- /var/lib/vpsmon >/dev/null 2>&1 || true
+    userdel vpsmon >/dev/null 2>&1 || true
+    groupdel vpsmon >/dev/null 2>&1 || true
+  fi
   systemctl daemon-reload >/dev/null 2>&1 || true
 }
 
