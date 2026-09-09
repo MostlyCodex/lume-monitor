@@ -1,10 +1,13 @@
 # Dependencies and build output
+node_modules/
 worker/node_modules/
 worker/.wrangler/
 worker/.private-backups/
 worker/dist/
 worker/dist-webhook/
+playwright-report/
 worker/playwright-report/
+test-results/
 worker/test-results/
 worker/blob-report/
 agent/bin/
@@ -28,6 +31,7 @@ worker/.dev.vars.*
 .env.*
 !.env.example
 **/.secrets*
+lume-secrets.json
 **/*.dpapi
 **/*.pem
 **/*.key

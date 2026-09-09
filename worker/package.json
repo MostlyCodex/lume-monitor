@@ -1,34 +1,30 @@
 {
   "name": "lume-worker",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
+  "description": "Cloudflare Worker, D1 schema and dashboard for Lume. Deploying needs Wrangler only; the test toolchain lives in the repository root package.",
   "scripts": {
+    "doctor": "node ../tools/lumectl.mjs doctor",
+    "setup": "node ../tools/lumectl.mjs setup",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "db:local": "wrangler d1 migrations apply lume --local",
+    "monitor:status": "node ../tools/lumectl.mjs status",
+    "node:add": "node ../tools/lumectl.mjs node add",
+    "node:configure": "node ../tools/lumectl.mjs node configure",
+    "node:install": "node ../tools/lumectl.mjs node install",
+    "node:remove": "node ../tools/lumectl.mjs node remove",
+    "node:revoke": "node ../tools/lumectl.mjs node revoke",
+    "node:sync": "node ../tools/lumectl.mjs node sync-keys",
+    "preview:dashboard": "node test/dashboard-preview-server.mjs",
     "check": "tsc --noEmit && node --check public/dashboard/app.js && node --check test/integration.mjs && node --check test/run-local-integration.mjs && node --test ../tools/test/lumectl.test.mjs && vitest run",
     "test": "vitest run",
     "test:integration": "node test/run-local-integration.mjs",
     "test:browser": "playwright test",
-    "test:ci": "npm run check && npm run test:integration && npm run test:browser",
-    "preview:dashboard": "node test/dashboard-preview-server.mjs",
-    "doctor": "node ../tools/lumectl.mjs doctor",
-    "setup": "node ../tools/lumectl.mjs setup",
-    "node:add": "node ../tools/lumectl.mjs node add",
-    "node:configure": "node ../tools/lumectl.mjs node configure",
-    "node:install": "node ../tools/lumectl.mjs node install",
-    "node:sync": "node ../tools/lumectl.mjs node sync-keys",
-    "monitor:status": "node ../tools/lumectl.mjs status",
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
-    "db:local": "wrangler d1 migrations apply lume --local"
+    "test:ci": "npm run check && npm run test:integration && npm run test:browser"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20260819.1",
-    "@playwright/test": "1.62.1",
-    "typescript": "7.0.2",
-    "vitest": "4.1.11",
     "wrangler": "4.124.0"
-  },
-  "dependencies": {
-    "uplot": "1.6.32"
   }
 }

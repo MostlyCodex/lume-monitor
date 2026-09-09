@@ -1,0 +1,21 @@
+{
+  "name": "lume",
+  "version": "1.3.0",
+  "private": true,
+  "type": "module",
+  "description": "Development and test toolchain for Lume. Deploying the Worker does not need any of it: run npm ci inside worker/ instead.",
+  "scripts": {
+    "check": "npm --prefix worker run check",
+    "test": "npm --prefix worker run test",
+    "test:integration": "npm --prefix worker run test:integration",
+    "test:browser": "npm --prefix worker run test:browser",
+    "test:ci": "npm --prefix worker run test:ci"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260819.1",
+    "@playwright/test": "1.62.1",
+    "typescript": "7.0.2",
+    "uplot": "1.6.32",
+    "vitest": "4.1.11"
+  }
+}

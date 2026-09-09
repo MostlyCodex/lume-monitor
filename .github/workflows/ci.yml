@@ -36,9 +36,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: worker/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            worker/package-lock.json
+      # The test toolchain lives in the repository root; worker/ installs Wrangler only.
+      - run: npm ci
+        working-directory: .
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+        working-directory: .
       - run: npm run test:ci
       - name: Upload browser visual report
         if: always()
