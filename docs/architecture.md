@@ -45,11 +45,16 @@ After authentication, the Worker:
 4. stores current state and history;
 5. exposes current state and historical trends to the dashboard and on-demand Telegram queries.
 
+Two pieces of state are deliberately **not** owned by the report path:
+
+- `node_catalog.retired_at` records an operator decision to decommission a node. Reports own `enabled` and re-enable whatever they still describe, which is what keeps the catalog self-healing; a single flag could not express both, so retiring a node used to be undone by the node's own next report — or by a peer that still reported a `node-link` probe toward it. `retired_at` is written only by `POST /api/v1/admin/nodes/{id}/retire` and cleared only by `/restore`, so retirement is order independent and idempotent. Catalog reads additionally drop probes and routes whose target is retired, which is what makes a decommission independent of when each peer configuration is redeployed.
+- `settings.dashboard_origin` records the origin the deployment actually answers on, written by an authenticated admin call. The panel login link uses the request origin, the scheduled webhook check uses the recorded value, and `DASHBOARD_BASE_URL` is only the fallback. A fresh deployment therefore never needs a second `wrangler deploy` to learn its own workers.dev hostname, and moving to a custom domain does not require a redeploy either.
+
 ### D1
 
 D1 contains no seeded node topology. Catalog tables are data-driven:
 
-- `node_catalog`: identity, display order, role, group, region and alert policy;
+- `node_catalog`: identity, display order, role, group, region, alert policy and operator retirement (`retired_at`);
 - `service_catalog`: zero or more services per node;
 - `probe_catalog`: zero or more ICMP/TCP probes per node;
 - `counter_catalog`: zero or more sanitized local counter series per node;

@@ -15,7 +15,7 @@ For a PowerShell-friendly, end-to-end first installation including Telegram bind
 
 - Cloudflare account with Workers and D1 access.
 - Node.js 22 or newer and npm.
-- Go 1.26 or newer for Agent builds.
+- Go 1.26 or newer only when building the Agent from source; released binaries are downloaded and checksum-verified instead.
 - Linux VPS hosts using systemd.
 - Optional Telegram Bot created through BotFather.
 
@@ -29,7 +29,7 @@ npx wrangler d1 create lume
 cp wrangler.example.jsonc wrangler.jsonc
 ```
 
-Edit `wrangler.jsonc` and set the returned D1 `database_id`, your Worker URL and optional Telegram Bot username. `worker/wrangler.jsonc` is ignored by Git.
+Edit `wrangler.jsonc` and set the returned D1 `database_id` and optional Telegram Bot username. `DASHBOARD_BASE_URL` is only a fallback and may stay a placeholder. `worker/wrangler.jsonc` is ignored by Git.
 
 Apply the generic schema:
 
@@ -52,19 +52,28 @@ Generate one independent random secret of at least 32 characters per node. `NODE
 }
 ```
 
-Enter secrets interactively so they are not stored in shell history:
+Submit every secret in one request. `wrangler secret bulk` reads JSON from stdin
+and applies up to 100 secrets at once; a separate `wrangler secret put` per secret
+creates a separate Worker version each time. A value of `null` deletes a secret.
 
 ```bash
-npx wrangler secret put NODE_KEYS
-npx wrangler secret put ADMIN_TOKEN
+npx wrangler secret bulk < secrets.json    # then shred secrets.json
 ```
 
-Deploy:
+`secrets.json` holds `NODE_KEYS` (as a JSON **string**), `ADMIN_TOKEN`, and the
+Telegram secrets from section 3. Keep the Bot token out of files and enter it
+interactively with `npx wrangler secret put TELEGRAM_BOT_TOKEN`.
+
+Deploy once:
 
 ```bash
-npm run check
-npm run deploy
+npx wrangler deploy
 ```
+
+`npm run check` is the full test suite and belongs to development, not to the
+deployment path; it needs the repository-root toolchain. The Worker records its
+own public origin from the first authenticated admin call, so `DASHBOARD_BASE_URL`
+never requires a corrective second deploy.
 
 ## 3. Optional Telegram integration
 
@@ -94,7 +103,7 @@ For a tagged release, the preferred path is to download an explicit version and
 verify its published SHA-256 before staging it:
 
 ```bash
-sh deploy/fetch-release-agent.sh v1.0.1 /tmp/vpsmon-agent
+sh deploy/fetch-release-agent.sh v1.3.0 /tmp/vpsmon-agent
 /tmp/vpsmon-agent --version
 ```
 
@@ -105,7 +114,7 @@ modify a VPS. The complete release and provenance process is documented in
 ```bash
 cd ../agent
 go test ./...
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=1.2.0" -o vpsmon-agent ./cmd/vpsmon-agent
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=1.3.0" -o vpsmon-agent ./cmd/vpsmon-agent
 ```
 
 The same binary is used on every VPS.
@@ -185,7 +194,7 @@ The first accepted report automatically creates the node, service and probe cata
 
 ## 7. Add another VPS later
 
-1. Add a new ID and a new secret to your securely retained **complete** `NODE_KEYS` JSON mapping, then write the complete mapping back with `wrangler secret put NODE_KEYS`. Cloudflare Secrets cannot be read back; submitting only the new entry revokes every omitted node.
+1. Add a new ID and a new secret to your securely retained **complete** `NODE_KEYS` JSON mapping, then write the complete mapping back with `wrangler secret bulk`. Cloudflare Secrets cannot be read back; submitting only the new entry revokes every omitted node.
 2. Copy `deploy/config.example.json` again and set the new metadata/secret.
 3. Reuse the same binary when the CPU architecture matches, then install it with the same unit and installer.
 4. Verify `vpsmon-agent.service`, `/status` and the dashboard after the first accepted report.
@@ -193,6 +202,29 @@ The first accepted report automatically creates the node, service and probe cata
 Do not reuse node IDs or secrets. No code or schema edit is needed.
 
 ## 8. Removal
+
+Retirement is an operator decision that the report path cannot undo. `node_catalog.enabled` is owned by reports: every accepted report re-enables the rows it still describes, which is what keeps the catalog self-healing. `node_catalog.retired_at` is owned by the operator and no report ever sets or clears it. Stopping the Agent and retiring the node can therefore happen in either order, and the command can be repeated safely.
+
+```bash
+cd worker
+npm run node:remove -- NODE_ID --ssh SSH_ALIAS               # disable the Agent and retire
+npm run node:remove -- NODE_ID --ssh SSH_ALIAS --uninstall   # also uninstall the Agent
+```
+
+The command disables the remote Agent, submits the complete `NODE_KEYS` map without that node, retires it through the admin API, rewrites the private configuration of every peer that still probes it, and removes the local private files.
+
+To do it by hand, use the admin API rather than raw SQL:
+
+```bash
+curl -X POST "https://<worker>.<subdomain>.workers.dev/api/v1/admin/nodes/NODE_ID/retire" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+One D1 batch disables the node, its services, probes and counters, **and every probe or route that targets it** — including ones owned by peers that keep reporting the link. `POST .../restore` clears the retirement flag only; services, probes and routes re-register from that node's next accepted report. `GET /api/v1/admin/nodes` lists the current state.
+
+Revoke the key separately by submitting the complete map without that node, or add the id to `REVOKED_NODE_IDS` (`npm run node:revoke -- NODE_ID`) when the complete map can no longer be rebuilt.
+
+The Worker hides links toward a retired node immediately, but a peer keeps sending packets until its own configuration is deployed. `node remove` writes the updated peer configurations; roll them out with section 9.
 
 ```bash
 sudo sh uninstall-agent.sh --confirm

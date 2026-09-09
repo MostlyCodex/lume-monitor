@@ -238,5 +238,12 @@ sudo cat /var/lib/vpsmon/nftables-counters.json
 它不会删除、修改或重载业务 nftables 规则。完整卸载 Agent 时，
 `deploy/uninstall-agent.sh --confirm` 也会删除可选 helper unit 与快照。
 
+### 下线一整台节点
+
+`npm run node:remove -- NODE_ID --ssh SSH别名` 会一并处理对端。Worker 立即隐藏
+所有指向该节点的探针与链路，命令同时重写受影响对端的私密配置，按升级流程
+部署后对端才真正停止发包。只改目标节点自己的配置是不够的：`node-link` 探针
+属于发起方，发起方的下一份上报会重新注册它。
+
 历史数据是被动记录，不会继续发包。原始样本按保留策略自然过期；为停止
 采集无需手工删除历史表。

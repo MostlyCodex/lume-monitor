@@ -12,9 +12,10 @@
 
 - Git；
 - Node.js 22 或更新版本；
-- Go 1.26 或更新版本；
 - 可执行 `ssh`、`scp` 的终端；
 - 一个可使用 Workers 和 D1 的 Cloudflare 账号。
+
+Go 1.26+ **不是必需的**。正式发布版本可以直接下载并校验对应架构的二进制（第 4 节），只有需要从当前源码自行构建时才安装 Go。
 
 被监控端需要：
 
@@ -59,18 +60,19 @@ cp wrangler.example.jsonc wrangler.jsonc
 1. `name`：改成你自己的唯一 Worker 名称；
 2. `database_id`：填入 `wrangler d1 create` 返回的 ID；
 3. `database_name`：与刚创建的 D1 名称保持一致；
-4. `DASHBOARD_BASE_URL`：填最终的 `https://<worker>.<subdomain>.workers.dev`；
+4. `DASHBOARD_BASE_URL`：兜底值，可以先留占位；
 5. `TELEGRAM_BOT_USERNAME`：填 Bot 用户名，可不带 `@`。
+
+`DASHBOARD_BASE_URL` 不再需要提前填对。Worker 会在第 3 节那次带鉴权的管理调用中记住自己的真实公开地址，并保存在 D1 的 `settings` 表；面板登录链接使用请求本身的来源，定时任务使用这个记录值，只有两者都不可用时才回落到该变量。换用自定义域名时同样不必重新部署。
 
 应用数据库迁移并首次部署：
 
 ```bash
 npx wrangler d1 migrations apply lume --remote
-npm run check
-npm run deploy
+npx wrangler deploy
 ```
 
-部署结果会显示真实 Worker URL。如果它与 `DASHBOARD_BASE_URL` 不同，修正配置并再次执行 `npm run deploy`。随后验证：
+部署只需要一次。`npm run check` 是完整测试套件（类型检查、单元测试、`lumectl` 测试），属于开发流程而不是部署前置条件，它依赖仓库根目录的开发工具链。部署结果会显示真实 Worker URL，随后验证：
 
 ```bash
 curl https://<worker>.<subdomain>.workers.dev/healthz
@@ -102,16 +104,23 @@ openssl rand -hex 32
 {"my-vps-01":"<NODE_SECRET_1>"}
 ```
 
-交互式写入 Cloudflare Secrets：
+写入 Cloudflare Secrets。逐个 `wrangler secret put` 每写一个都会创建一个新的 Worker 版本；`wrangler secret bulk` 从标准输入读取 JSON，单次请求最多写入 100 个（值为 `null` 表示删除）：
 
 ```bash
-npx wrangler secret put NODE_KEYS
-npx wrangler secret put ADMIN_TOKEN
+NODE_SECRET_1=<第一个随机值> ADMIN_TOKEN=<第二个随机值> \
+node -e 'process.stdout.write(JSON.stringify({
+  NODE_KEYS: JSON.stringify({ "my-vps-01": process.env.NODE_SECRET_1 }),
+  ADMIN_TOKEN: process.env.ADMIN_TOKEN,
+}))' | npx wrangler secret bulk
 ```
 
-- 在 `NODE_KEYS` 提示中粘贴完整 JSON；
-- 在 `ADMIN_TOKEN` 提示中粘贴第二个随机值；
-- Cloudflare 不提供 Secret 明文回读，因此必须在密码管理器中保留 **完整 `NODE_KEYS` 映射**。
+提交的 JSON 形如下面这样。注意 `NODE_KEYS` 的值本身是一个 **JSON 字符串**，不是嵌套对象：
+
+```json
+{"NODE_KEYS":"{\"my-vps-01\":\"<NODE_SECRET_1>\"}","ADMIN_TOKEN":"<ADMIN_TOKEN>"}
+```
+
+第 3 节的两个 Telegram Secret 可以并入同一个 JSON，实际操作中一次提交即可。Cloudflare 不提供 Secret 明文回读，因此必须在密码管理器中保留 **完整 `NODE_KEYS` 映射**。
 
 ## 3. 配置 Telegram 和面板登录
 
@@ -140,15 +149,13 @@ printf '%s\n' "$BIND_CODE"
 printf '%s' "$BIND_CODE" | sha256sum
 ```
 
-依次写入三个 Secret；`TELEGRAM_BIND_CODE_HASH` 填哈希，不填绑定码明文：
+把 `TELEGRAM_WEBHOOK_SECRET` 和 `TELEGRAM_BIND_CODE_HASH` 并入第 2 节的同一次 `secret bulk`；`TELEGRAM_BIND_CODE_HASH` 填哈希，不填绑定码明文。Bot Token 单独交互写入，避免它经过任何脚本或 shell 历史：
 
 ```bash
 npx wrangler secret put TELEGRAM_BOT_TOKEN
-npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
-npx wrangler secret put TELEGRAM_BIND_CODE_HASH
 ```
 
-调用一次 Webhook 配置接口。PowerShell：
+调用一次 Webhook 配置接口。**这次调用同时让 Worker 记住自己的公开地址**，因此必须用最终的真实 URL 访问它。PowerShell：
 
 ```powershell
 $workerUrl = "https://<worker>.<subdomain>.workers.dev"
@@ -166,6 +173,13 @@ read -rsp 'ADMIN_TOKEN: ' ADMIN_TOKEN; echo
 curl -X POST "https://<worker>.<subdomain>.workers.dev/api/v1/admin/configure-telegram-webhook" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 unset ADMIN_TOKEN
+```
+
+只使用 API、不配置 Telegram 时，改为调用同样需要 `ADMIN_TOKEN` 的地址记录接口：
+
+```bash
+curl -X POST "https://<worker>.<subdomain>.workers.dev/api/v1/admin/dashboard-origin" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
 最后在与 Bot 的**私聊**中发送：
@@ -187,7 +201,7 @@ unset ADMIN_TOKEN
 正式标签版本也可以直接下载并验证对应架构的发布二进制，不需要在本机安装 Go：
 
 ```bash
-sh deploy/fetch-release-agent.sh v1.0.1 /tmp/vpsmon-agent
+sh deploy/fetch-release-agent.sh v1.3.0 /tmp/vpsmon-agent
 /tmp/vpsmon-agent --version
 ```
 
@@ -207,7 +221,7 @@ $env:CGO_ENABLED = "0"
 $env:GOOS = "linux"
 $env:GOARCH = "amd64"
 go test ./...
-go build -trimpath -ldflags="-s -w -X main.version=1.2.0" -o bin/vpsmon-agent-linux-amd64 ./cmd/vpsmon-agent
+go build -trimpath -ldflags="-s -w -X main.version=1.3.0" -o bin/vpsmon-agent-linux-amd64 ./cmd/vpsmon-agent
 Remove-Item Env:CGO_ENABLED, Env:GOOS, Env:GOARCH
 Set-Location ..
 ```
@@ -219,7 +233,7 @@ cd agent
 mkdir -p bin
 go test ./...
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-  go build -trimpath -ldflags="-s -w -X main.version=1.2.0" \
+  go build -trimpath -ldflags="-s -w -X main.version=1.3.0" \
   -o bin/vpsmon-agent-linux-amd64 ./cmd/vpsmon-agent
 cd ..
 ```
@@ -290,7 +304,7 @@ ssh <ssh-user>@<vps-host> "systemctl is-active vpsmon-agent.service && sudo jour
 1. 选择新的唯一 ID，例如 `my-vps-02`；
 2. 生成一个新的独立随机密钥；
 3. 在密码管理器中把它加入原有完整映射；
-4. 再次执行 `npx wrangler secret put NODE_KEYS`，粘贴包含**所有旧节点和新节点**的完整 JSON；
+4. 用 `npx wrangler secret bulk` 提交包含**所有旧节点和新节点**的完整 JSON；
 5. 再复制一次 `deploy/config.example.json`，填写新 ID、展示信息、同一 Worker endpoint 和新密钥；
 6. CPU 架构相同则直接复用已有 Agent 二进制；
 7. 按第 6 节上传并安装；

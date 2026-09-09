@@ -23,10 +23,19 @@ on Linux, one host collection pass.
 
 ### Worker unit and presentation tests
 
-From `worker/`:
+The test toolchain (TypeScript, Vitest, Playwright) lives in the repository
+root package so that deploying a Worker installs Wrangler and nothing else.
+Install both once:
 
 ```bash
-npm ci
+npm ci                                        # repository root: test toolchain
+npx playwright install --with-deps chromium
+npm --prefix worker ci                        # worker: Wrangler only
+```
+
+Then from `worker/`:
+
+```bash
 npm run check
 ```
 
@@ -107,7 +116,7 @@ The release workflow is deliberately tag-only and never deploys an Agent to a
 VPS. For a new reviewed version:
 
 1. ensure CI is green on the commit to release;
-2. use an immutable semantic-version tag such as `v1.2.0`;
+2. use an immutable semantic-version tag such as `v1.3.0`;
 3. push the tag;
 4. wait for `.github/workflows/release.yml` to rerun the full Agent and Worker
    checks;
@@ -123,7 +132,7 @@ to point at a different commit.
 Download an explicit version without installing or restarting anything:
 
 ```bash
-sh deploy/fetch-release-agent.sh v1.2.0 /tmp/vpsmon-agent
+sh deploy/fetch-release-agent.sh v1.3.0 /tmp/vpsmon-agent
 /tmp/vpsmon-agent --version
 ```
 

@@ -10,9 +10,9 @@
 
 > PC 与移动端均为项目真实渲染截图；画面使用内置虚构演示数据，不包含生产凭据、主机地址或账号信息。
 
-## 10–15 分钟快速上线
+## 10 分钟快速上线
 
-准备一个 Cloudflare 账号、一个 Telegram Bot 和一台可用 SSH + sudo 登录的 systemd Linux VPS。VPS 无需安装 Node.js、Go、Docker 或数据库。
+准备一个 Cloudflare 账号、一个 Telegram Bot 和一台可用 SSH + sudo 登录的 systemd Linux VPS。VPS 无需安装 Node.js、Go、Docker 或数据库；本机只需要 Node.js 22+ 与 SSH，**不需要 Go**。
 
 ```bash
 git clone https://github.com/MostlyCodex/lume-monitor.git
@@ -22,7 +22,9 @@ npm run doctor
 npm run setup
 ```
 
-`setup` 会按顺序完成 D1、migrations、Worker、Secrets、Telegram Webhook 和健康检查，并可继续安装首台 Agent。它会自动生成每个节点的独立密钥，始终向 Cloudflare 提交完整 `NODE_KEYS`，避免新增节点时误覆盖旧密钥。一般只需准备：
+`worker/` 只依赖 Wrangler；测试工具链（TypeScript、Vitest、Playwright）在仓库根目录的独立 `package.json` 中，部署者不会安装它们。
+
+`setup` 会按顺序完成 D1、migrations、Worker、Secrets、Telegram Webhook 和健康检查，并可继续安装首台 Agent。它只部署一次 Worker，并把全部非交互 Secret 用一次 `wrangler secret bulk` 提交；Worker 随后从一次带鉴权的管理调用中记住自己的公开地址，因此不需要为了写回面板 URL 再部署一遍。节点密钥始终以完整 `NODE_KEYS` 映射提交，避免新增节点时误覆盖旧密钥。一般只需准备：
 
 - Cloudflare 登录授权；
 - Telegram Bot 用户名和 BotFather 给出的 Token；
@@ -61,6 +63,7 @@ npm run setup
 - Agent 使用 HMAC-SHA256 签名上报，带时间窗、nonce 和重放保护。
 - D1 保存最新状态、原始样本、长期聚合、运行事件和 IP 历史。
 - Telegram Webhook 仅向已绑定账号提供按需的 `/status`（查看实时状态）、`/panel`（打开监控面板）和 `/help`（查看命令说明）；状态按节点分组展示，不主动推送告警或日报。
+- 节点退役是一次显式的运维动作：`retired_at` 只由管理接口写入，上报路径永远不会清除它。因此下线与停机的先后顺序不再影响结果，也不会有对端在下一次上报时把已下线的链路重新点亮。
 - 一次性链接登录的自适应毛玻璃面板：首页以动态节点卡片展示 24 小时线路状态格和资源刻度，历史图表进入独立节点详情查看。
 - 顶部设置入口可在当前浏览器自定义面板名称、首页文案、节点卡片顺序、显示名、角色、国家和城市；设置不新增网络请求，也不修改监测数据。
 
@@ -113,7 +116,7 @@ Lume 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质量�
 
 ### 手工部署：从零到面板
 
-1. 准备 Git、Node.js 22+、Go 1.26+、Cloudflare 账号、Telegram Bot 和至少一台 systemd Linux VPS。
+1. 准备 Git、Node.js 22+、Cloudflare 账号、Telegram Bot 和至少一台 systemd Linux VPS。使用正式发布的 Agent 二进制时本机不需要 Go。
 2. 创建后端：
 
    ```bash
@@ -124,34 +127,61 @@ Lume 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质量�
    npx wrangler d1 create lume
    ```
 
-3. 将 `worker/wrangler.example.jsonc` 复制为被 Git 忽略的 `worker/wrangler.jsonc`，填写 Worker 名称、D1 `database_id`、最终 Worker URL 和 Bot 用户名，然后执行：
+3. 将 `worker/wrangler.example.jsonc` 复制为被 Git 忽略的 `worker/wrangler.jsonc`，填写 Worker 名称、D1 `database_id` 和 Bot 用户名，然后执行：
 
    ```bash
    npx wrangler d1 migrations apply lume --remote
-   npm run check
-   npm run deploy
+   npx wrangler deploy
    ```
 
-4. 为每台 VPS 生成独立随机密钥，以**完整 JSON 映射**写入 `NODE_KEYS`，再设置管理令牌：
+   `DASHBOARD_BASE_URL` 只是兜底值：Worker 会在第 5 步的管理调用中记住自己的真实地址，所以这里填错也不需要重新部署。
 
-   ```json
-   {"my-vps-01":"<NODE_SECRET_1>"}
-   ```
+4. 一次性提交全部 Secret。`wrangler secret bulk` 单次请求最多写入 100 个 Secret，而每个 `secret put` 都会产生一次新的 Worker 版本：
 
    ```bash
-   npx wrangler secret put NODE_KEYS
-   npx wrangler secret put ADMIN_TOKEN
+   node --input-type=module - <<'EOF' | npx wrangler secret bulk
+   import { createHash, randomBytes } from "node:crypto";
+   import { writeFileSync } from "node:fs";
+   const hex = (bytes) => randomBytes(bytes).toString("hex");
+   const bindCode = hex(24);
+   const secrets = {
+     NODE_KEYS: JSON.stringify({ "my-vps-01": hex(32) }),
+     ADMIN_TOKEN: hex(32),
+     TELEGRAM_WEBHOOK_SECRET: hex(32),
+     TELEGRAM_BIND_CODE_HASH: createHash("sha256").update(bindCode).digest("hex"),
+   };
+   writeFileSync("lume-secrets.json", JSON.stringify({ ...secrets, TELEGRAM_BIND_CODE: bindCode }, null, 2), { mode: 0o600 });
+   process.stderr.write("已写入 lume-secrets.json（权限 0600）；转存到密码管理器后请立即删除\n");
+   process.stdout.write(JSON.stringify(secrets));
+   EOF
+
+   npx wrangler secret put TELEGRAM_BOT_TOKEN
    ```
 
-5. 按[完整教程第 3 节](docs/getting-started.md#3-配置-telegram-和面板登录)设置 Telegram 的 Bot Token、Webhook Secret 和一次性绑定码哈希，然后在 Bot 私聊中发送 `/bind <code>`。内置网页面板使用 `/panel` 生成登录链接，不需要 Telegram 群组。
-6. 编译一次通用 Linux Agent：
+   Cloudflare 不提供 Secret 明文回读，因此必须把 `lume-secrets.json` 中的完整 `NODE_KEYS` 映射、`ADMIN_TOKEN` 和一次性绑定码转存到密码管理器，随后删除该文件（它已被 `.gitignore` 排除）。Bot Token 单独交互写入，不经过任何脚本。
+
+5. 让 Worker 记住自己的地址并配置 Telegram Webhook。同一个调用会同时完成两件事：
+
+   ```bash
+   curl -X POST "https://<worker>.<subdomain>.workers.dev/api/v1/admin/configure-telegram-webhook" \
+     -H "Authorization: Bearer $ADMIN_TOKEN"
+   ```
+
+   只用 API、不需要面板时改为调用 `/api/v1/admin/dashboard-origin`。随后在 Bot 私聊中发送 `/bind <一次性绑定码>`，用 `/panel` 生成登录链接，不需要 Telegram 群组。详见[完整教程第 3 节](docs/getting-started.md#3-配置-telegram-和面板登录)。
+6. 取得一次通用 Linux Agent。优先下载并校验正式发布的二进制，不需要本机安装 Go：
+
+   ```bash
+   sh deploy/fetch-release-agent.sh v1.3.0 /tmp/vpsmon-agent
+   ```
+
+   需要从当前源码自行构建时（此时才需要 Go 1.26+）：
 
    ```bash
    cd ../agent
    mkdir -p bin
    go test ./...
    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-     -ldflags="-s -w -X main.version=1.2.0" \
+     -ldflags="-s -w -X main.version=1.3.0" \
      -o bin/vpsmon-agent-linux-amd64 ./cmd/vpsmon-agent
    cd ..
    ```
@@ -176,15 +206,34 @@ Lume 不是哪吒或 Komari 的全功能替代品，而是更聚焦线路质量�
 
 ```bash
 cd worker
+
+# 交互式
 npm run node:add
+
+# 一条命令，全部参数直接给出
+npm run node:add -- --id hk-01 --name "HK 01" --role 中转 --region HK --ssh hk-01
+
+# 一次加多台：清单里的所有节点共用一次 NODE_KEYS 提交
+npm run node:add -- --from-file ../nodes.json
 ```
 
-管理工具会维护并同步完整 `NODE_KEYS`、生成私密节点配置，并可通过 SSH 安装已校验的 GitHub Release。手工流程如下：
+批量清单是 JSON 数组，每项至少包含 `id`：
+
+```json
+[
+  {"id": "hk-01", "name": "HK 01", "role": "中转", "region": "HK", "ssh": "hk-01"},
+  {"id": "sg-01", "name": "SG 01", "role": "落地", "region": "SG", "ssh": "sg-01"}
+]
+```
+
+管理工具会维护并同步完整 `NODE_KEYS`、生成私密节点配置，并通过 SSH 安装已校验的 GitHub Release。已校验的二进制会按版本和架构缓存在 `.lume/cache/`，同架构的后续节点直接复用，不再重复下载；每次复用前都会重新核对 SHA-256，校验失败就丢弃缓存重新获取。安装过程使用 4 次 SSH 连接（读取架构并建目录、传输、安装、校验并清理），装完会轮询管理接口直到 Worker 收到首份认证上报，通常几秒内即可确认，而不是等满一个上报周期。
+
+手工流程如下：
 
 1. 选一个新的唯一节点 ID；
 2. 生成新的独立密钥；
 3. 在安全保存的完整 `NODE_KEYS` JSON 中追加它；
-4. 重新执行 `npx wrangler secret put NODE_KEYS` 并粘贴**包含所有旧节点和新节点**的完整映射；
+4. 用 `npx wrangler secret bulk` 提交**包含所有旧节点和新节点**的完整映射；
 5. 再复制一份 `deploy/config.example.json`，填写新节点信息和新密钥；
 6. CPU 架构相同就复用已有 Agent 二进制；
 7. 用同一安装脚本部署；
@@ -231,66 +280,58 @@ sudo /opt/vpsmon/vpsmon-agent --config /tmp/config.next.json --dry-run
 
 可重复 `--remove` 一次删除多项。完成备份并安装新配置、仅重启 `vpsmon-agent` 后，下一份认证报告会自动把缺失探针和对应链路标为禁用。nftables 计数应从 `nftables_counters` 删除并通过升级器部署；数组变空时升级器会停用 timer 并删除数字快照。已有历史样本会按保留策略自然过期，不会继续发包或触发额外采集。完整步骤见[功能手册的干净停用章节](docs/probes.md#干净停用)。
 
-## 手动下线节点
-
-下线顺序很重要：**先停止 Agent，再停用目录**。正常报告会同步节点元数据并将目录项重新启用，如果先改数据库而 Agent 仍在运行，节点会在下一次上报时重新出现。
-
-### 1. 停止上报
-
-在待下线 VPS 上执行：
-
-```bash
-sudo systemctl disable --now vpsmon-agent.service vpsmon-nftables-snapshot.timer
-systemctl is-active vpsmon-agent.service
-```
-
-第二条命令应返回 `inactive`。这一步只停止监控，不影响 nftables、Xray、SSH 或其他业务服务。
-
-### 2. 撤销节点密钥
-
-从生产 `NODE_KEYS` JSON 的**完整映射**中删除该节点 ID，然后重新写入 Worker Secret：
+## 下线节点
 
 ```bash
 cd worker
-npx wrangler secret put NODE_KEYS
+npm run node:remove -- NODE_ID --ssh SSH别名          # 停用 Agent 并下线
+npm run node:remove -- NODE_ID --ssh SSH别名 --uninstall   # 同时卸载 Agent
 ```
 
-Cloudflare Secret 不能读取明文；部署者必须在安全位置维护完整映射。不要只提交一个节点的局部 JSON，否则其他 Agent 会同时失去上报权限。密钥不得写入 Git、README、Issue 或构建日志。
+一条命令按顺序完成：停止并停用远端 Agent（`--uninstall` 时改为运行卸载脚本）、从完整 `NODE_KEYS` 中移除该节点密钥并重新提交、在 Worker 上标记退役、重写所有指向它的对端私密配置、清理本地私密文件。
 
-如果完整 `NODE_KEYS` 已经遗失、暂时无法安全重写，可把节点 ID 加入独立撤销列表，立即阻止旧密钥再次认证或重新创建目录：
+### 退役是一个不会被覆盖的状态
+
+`node_catalog.enabled` 由上报路径拥有：每份被接受的报告都会重新启用它仍然描述的行，这正是目录能够自愈的原因，但也意味着它无法表达运维意图。`retired_at` 由运维拥有，任何上报都不会设置或清除它。因此：
+
+- 先改数据库还是先停 Agent 都可以，结果一致，命令也可以重复执行；
+- 对端节点即使还在上报指向它的 `node-link` 探针，该探针和对应链路也不会被重新点亮；
+- 已退役节点的历史样本、聚合和事件全部保留，按既有保留策略自然过期。
+
+### 手工下线
+
+需要逐条执行时使用管理接口，不必手写 SQL：
+
+```bash
+curl -X POST "https://<worker>.<subdomain>.workers.dev/api/v1/admin/nodes/NODE_ID/retire" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+它在一次 D1 批处理中停用该节点的目录项、服务、探针、计数器，以及**所有以它为目标**的探针与链路。恢复用 `/restore`；恢复只清除退役标记，服务、探针和链路由该节点的下一份上报重新注册。当前状态可用 `GET /api/v1/admin/nodes` 查看。
+
+密钥仍需单独撤销，从完整映射中删除该节点后重新提交：
+
+```bash
+npx wrangler secret bulk   # 粘贴不含该节点的完整 NODE_KEYS
+```
+
+如果完整 `NODE_KEYS` 已经遗失、暂时无法安全重写，可把节点 ID 加入独立撤销列表，立即阻止旧密钥再次认证：
 
 ```bash
 cd worker
-npx wrangler secret put REVOKED_NODE_IDS
+npm run node:revoke -- NODE_ID          # 加入 REVOKED_NODE_IDS
+npm run node:revoke -- NODE_ID --undo   # 恢复时先移除
 ```
 
-输入严格 JSON 数组，例如 `["retired-vps"]`。撤销列表在查找节点 HMAC 密钥前生效；恢复节点时必须先从该数组移除节点 ID。它是无法重写完整 `NODE_KEYS` 时的安全兜底，能够使旧密钥失效，但仍建议在取得其余活动节点密钥后重写 `NODE_KEYS`，物理移除旧映射。
+撤销列表在查找节点 HMAC 密钥前生效。它是无法重写完整 `NODE_KEYS` 时的安全兜底；取得其余活动节点密钥后仍建议重写 `NODE_KEYS`，物理移除旧映射。
 
-### 3. 从活动目录移除
+### 停止对端的无谓探测
 
-将以下 `NODE_ID` 和数据库名替换为实际值：
+Worker 会立即隐藏指向已退役节点的链路，但对端 Agent 在自己的配置更新前仍会继续发包。`node remove` 会自动重写受影响对端的私密配置并列出它们，随后按[升级流程](docs/deployment.md#9-upgrade-an-existing-agent)部署即可。
 
-```bash
-npx wrangler d1 execute YOUR_DATABASE --remote --command "UPDATE node_catalog SET enabled=0, updated_at=unixepoch() WHERE node_id='NODE_ID'; UPDATE service_catalog SET enabled=0, updated_at=unixepoch() WHERE node_id='NODE_ID'; UPDATE probe_catalog SET enabled=0, updated_at=unixepoch() WHERE node_id='NODE_ID' OR target_node_id='NODE_ID'; UPDATE counter_catalog SET enabled=0, updated_at=unixepoch() WHERE node_id='NODE_ID'; UPDATE business_routes SET enabled=0, updated_at=unixepoch() WHERE source_node_id='NODE_ID' OR target_node_id='NODE_ID';"
-```
+### 可选：卸载 Agent
 
-确认节点已停用：
-
-```bash
-npx wrangler d1 execute YOUR_DATABASE --remote --command "SELECT node_id, display_name, enabled FROM node_catalog WHERE node_id='NODE_ID';"
-```
-
-目录停用会让节点从网页面板和 Telegram `/status` 中消失，但保留 D1 历史样本、聚合和事件，以便审计或恢复。
-
-### 4. 可选：卸载 Agent
-
-确认不再恢复该节点后，将 `deploy/uninstall-agent.sh` 放到 VPS 上执行：
-
-```bash
-sudo sh uninstall-agent.sh --confirm
-```
-
-卸载脚本删除 Agent、配置、项目 systemd units 和 nftables 数字快照；保留 `vpsmon` 服务账号与报告 spool，避免不可逆地清除恢复资料。它不会修改 nftables 规则、Xray、SSH 或其他业务配置。
+确认不再恢复该节点后，`--uninstall` 会在 VPS 上运行 `deploy/uninstall-agent.sh`。它删除 Agent、配置、项目 systemd units 和 nftables 数字快照；保留 `vpsmon` 服务账号与报告 spool，避免不可逆地清除恢复资料。它不会修改 nftables 规则、Xray、SSH 或其他业务配置。
 
 ## 面板显示自定义
 
@@ -318,9 +359,10 @@ sudo sh uninstall-agent.sh --confirm
 | `agent/` | 通用 Linux Go Agent 与测试 |
 | `worker/` | Cloudflare Worker、通用 D1 schema、动态面板和测试 |
 | `deploy/` | 单一配置模板、安装/卸载脚本和 systemd unit |
-| `tools/` | `lumectl` 首次部署、节点密钥与 Agent 安装管理 |
+| `tools/` | `lumectl` 首次部署、节点上线/下线、密钥与 Agent 安装管理 |
 | `docs/` | 架构、探针和部署文档 |
 | `scripts/` | 可重复的开发与性能验证脚本 |
+| `package.json`（根） | 仅开发与测试工具链；部署 Worker 不需要安装 |
 
 ## 开发
 
@@ -328,7 +370,12 @@ sudo sh uninstall-agent.sh --confirm
 cd agent
 go test ./...
 
-cd ../worker
+# 测试工具链在仓库根目录，Worker 目录只装 Wrangler
+cd ..
+npm ci
+npx playwright install --with-deps chromium
+
+cd worker
 npm ci
 npm run test:ci
 
