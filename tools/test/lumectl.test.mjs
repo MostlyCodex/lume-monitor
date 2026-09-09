@@ -5,7 +5,10 @@ import test from "node:test";
 import {
   createAgentConfig,
   createWranglerConfig,
+  normalizeArchitecture,
+  normalizeNodeSpec,
   parseD1List,
+  parseFlags,
   parseReleaseChecksum,
   validateDatabaseName,
   validateNodeId,
@@ -119,4 +122,60 @@ test("fresh install creates the nftables snapshot state directory before startin
   const startSnapshotHelper = installer.indexOf("systemctl start vpsmon-nftables-snapshot.service");
   assert.ok(createStateDirectory >= 0);
   assert.ok(startSnapshotHelper > createStateDirectory);
+});
+
+test("flag parser accepts both spaced and inline values without swallowing flags", () => {
+  const { flags, positional } = parseFlags(["node", "add", "--id", "hk-01", "--name=HK 01", "--yes", "--ssh", "hk"]);
+  assert.deepEqual(positional, ["node", "add"]);
+  assert.equal(flags.get("id"), "hk-01");
+  assert.equal(flags.get("name"), "HK 01");
+  assert.equal(flags.get("yes"), true);
+  assert.equal(flags.get("ssh"), "hk");
+});
+
+test("valueless flags before another flag stay boolean", () => {
+  const { flags } = parseFlags(["node", "remove", "edge-01", "--uninstall", "--yes"]);
+  assert.equal(flags.get("uninstall"), true);
+  assert.equal(flags.get("yes"), true);
+});
+
+test("node specifications fill safe defaults and reject unusable input", () => {
+  const spec = normalizeNodeSpec({ id: "HK-01", ssh: "hk-01", services: ["nftables.service"] });
+  assert.equal(spec.id, "hk-01");
+  assert.equal(spec.displayName, "hk-01");
+  assert.equal(spec.role, "VPS");
+  assert.equal(spec.shortMark, "HK0");
+  assert.equal(spec.services, "nftables.service");
+  assert.throws(() => normalizeNodeSpec({ id: "Bad Id" }), /节点 ID 无效/);
+  assert.throws(() => normalizeNodeSpec({ id: "hk-01", ssh: "-oProxyCommand=bad" }), /SSH 目标格式无效/);
+});
+
+test("remote architecture mapping refuses anything it cannot ship a binary for", () => {
+  assert.equal(normalizeArchitecture("x86_64"), "amd64");
+  assert.equal(normalizeArchitecture("aarch64"), "arm64");
+  assert.throws(() => normalizeArchitecture("riscv64"), /暂不支持远端架构/);
+  assert.throws(() => normalizeArchitecture(""), /暂不支持远端架构/);
+});
+
+test("secrets are submitted in one bulk request rather than one deploy per secret", async () => {
+  const tool = await readFile(new URL("../lumectl.mjs", import.meta.url), "utf8");
+  assert.match(tool, /"secret", "bulk", "--config", wranglerConfigPath/);
+  // Only the Telegram bot token still uses an interactive single put, so that
+  // the token never passes through this tool.
+  const singlePuts = tool.match(/"secret", "put"/g) ?? [];
+  assert.equal(singlePuts.length, 2);
+});
+
+test("installing a node uses one connection to read the architecture and stage", async () => {
+  const tool = await readFile(new URL("../lumectl.mjs", import.meta.url), "utf8");
+  assert.match(tool, /uname -m && umask 077 && mkdir -m 700/);
+  // The stage directory is created 0700 before anything is copied into it.
+  assert.doesNotMatch(tool, /scp[\s\S]{0,400}?mkdir -m 700/);
+});
+
+test("uninstall keeps recoverable state and never touches monitored services", async () => {
+  const uninstaller = await readFile(new URL("../../deploy/uninstall-agent.sh", import.meta.url), "utf8");
+  assert.match(uninstaller, /vpsmon-agent\.service/);
+  assert.doesNotMatch(uninstaller, /nft\s+(add|delete|flush)/);
+  assert.doesNotMatch(uninstaller, /userdel/);
 });
