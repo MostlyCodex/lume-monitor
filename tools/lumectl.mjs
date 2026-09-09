@@ -2,28 +2,25 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
+import { Writable } from "node:stream";
+import { applyPending, keyProof, parseJsonc, restorePeerProbes, validateImportedConfig, verifyKeyInventory, workerOrigin } from "./management.mjs";
 
 const toolFile = fileURLToPath(import.meta.url);
 const repoRoot = resolve(dirname(toolFile), "..");
 const workerDir = join(repoRoot, "worker");
 const agentDir = join(repoRoot, "agent");
 const deployDir = join(repoRoot, "deploy");
-const lumePrivateDir = join(repoRoot, ".lume");
-const legacyPrivateDir = join(repoRoot, ".yuanshan");
-const privateDir = existsSync(join(legacyPrivateDir, "state.json")) && !existsSync(join(lumePrivateDir, "state.json"))
-  ? legacyPrivateDir
-  : lumePrivateDir;
+const privateDir = join(repoRoot, ".lume");
 const privateDirName = basename(privateDir);
 const statePath = join(privateDir, "state.json");
 const wranglerConfigPath = join(workerDir, "wrangler.jsonc");
 const wranglerBin = join(workerDir, "node_modules", "wrangler", "bin", "wrangler.js");
-const releaseRepository = process.env.LUME_RELEASE_REPOSITORY || process.env.AEGILUME_RELEASE_REPOSITORY || process.env.YUANSHAN_RELEASE_REPOSITORY || "MostlyCodex/lume-monitor";
+const releaseRepository = process.env.LUME_RELEASE_REPOSITORY || "MostlyCodex/lume-monitor";
 const maxDownloadBytes = 64 * 1024 * 1024;
 const cacheDir = join(privateDir, "cache");
 
@@ -221,7 +218,7 @@ async function writePrivateJson(path, value) {
 
 async function loadState(required = true) {
   if (!(await exists(statePath))) {
-    if (required) fail("尚未初始化，请先运行 npm run setup");
+    if (required) fail("未找到本地管理状态。已有线上部署请运行 npm run setup:adopt；首次部署请运行 npm run setup。");
     return null;
   }
   const info = await lstat(statePath);
@@ -302,14 +299,118 @@ async function secretBulk(secrets) {
 }
 
 async function publishNodeKeys(state) {
+  await assertServerInventory(state);
   await secretBulk({ NODE_KEYS: JSON.stringify(state.nodeKeys) });
+  state.keyInventory = { keys: Object.entries(state.nodeKeys).map(([node_id, secret]) => ({ node_id, proof: keyProof(node_id, secret) })), revoked_node_ids: state.keyInventory?.revoked_node_ids || [] };
+  await writePrivateJson(statePath, state);
 }
 
 async function publishRevokedNodeIds(state) {
+  await assertServerInventory(state);
   const revoked = Array.isArray(state.revokedNodeIds) ? state.revokedNodeIds : [];
   // An empty array rather than a delete: removing a secret that was never set
   // is an error, and an empty list is what the Worker already treats as none.
+  await writePrivateJson(statePath, state);
   await secretBulk({ REVOKED_NODE_IDS: JSON.stringify(revoked) });
+  if (state.keyInventory) state.keyInventory.revoked_node_ids = [...revoked];
+  await writePrivateJson(statePath, state);
+}
+
+function inventorySignature(inventory) {
+  return JSON.stringify({ keys: [...inventory.keys].sort((a, b) => a.node_id.localeCompare(b.node_id)), revoked_node_ids: [...inventory.revoked_node_ids].sort() });
+}
+
+async function getServerInventory(state) {
+  const result = await adminFetch(state, "/api/v1/admin/key-inventory");
+  if (!result.ok || !Array.isArray(result.body?.keys)) fail(`无法读取后端管理清单（HTTP ${result.status}）。先更新 Worker：npm run deploy，然后重试。`);
+  return result.body;
+}
+
+async function assertServerInventory(state) {
+  const inventory = await getServerInventory(state);
+  if (!state.keyInventory) {
+    verifyKeyInventory(state.nodeKeys, inventory);
+    state.keyInventory = inventory;
+    state.revokedNodeIds = inventory.revoked_node_ids;
+    await writePrivateJson(statePath, state);
+  } else if (inventorySignature(state.keyInventory) !== inventorySignature(inventory)) {
+    // A previous request may have succeeded even when its response was lost.
+    const intended = { keys: Object.entries(state.nodeKeys).map(([node_id, secret]) => ({ node_id, proof: keyProof(node_id, secret) })), revoked_node_ids: state.revokedNodeIds || [] };
+    if (inventorySignature(intended) !== inventorySignature(inventory)) fail("线上密钥清单已被其他操作修改，停止覆盖。请运行 npm run setup:adopt 核对并接管最新状态。");
+    state.keyInventory = inventory;
+    await writePrivateJson(statePath, state);
+  }
+}
+
+async function readNodeConfiguration(prompt, id, defaultTarget = "", rebuildOrigin = "") {
+  const source = await prompt.text(`${id} 配置来源：1 SSH 读取 / 2 本地配置文件${rebuildOrigin ? " / 3 重新配置" : ""}`, "1");
+  if (source === "3" && rebuildOrigin) {
+    const displayName = await prompt.text("节点显示名", id);
+    const role = await prompt.text("用途", "VPS");
+    const region = await prompt.text("地区", "unspecified");
+    const services = parseServices(await prompt.text("systemd 服务（逗号分隔，可留空）"));
+    const observers = await promptOptionalObservers(prompt);
+    const target = await prompt.text("SSH 别名", defaultTarget || id);
+    return { target, config: createAgentConfig({ id, displayName, role, region, endpoint: rebuildOrigin, secret: randomSecret(), services, probes: observers.probes, nftablesCounters: observers.nftablesCounters }) };
+  }
+  if (source === "2") {
+    const path = await prompt.text("配置文件路径（内容不会打印）");
+    return { config: JSON.parse((await readFile(resolve(path), "utf8")).replace(/^\uFEFF/, "")), target: await prompt.text("SSH 别名（用于后续管理）", defaultTarget || id) };
+  }
+  if (source !== "1") fail("请选择 1 或 2");
+  const target = await prompt.text(`${id} 的 SSH 别名`, defaultTarget || id);
+  if (!validateSshTarget(target)) fail("SSH 别名无效");
+  line("只读获取配置；需要 root 或免密码 sudo。若不可用，可重试并选择本地配置文件。");
+  const response = await run("ssh", [target, 'if [ "$(id -u)" -eq 0 ]; then cat /etc/vpsmon/config.json; else sudo -n cat /etc/vpsmon/config.json; fi'], { capture: true });
+  return { config: JSON.parse(response.stdout), target };
+}
+
+async function adoptDeployment(prompt) {
+  if (!(await exists(wranglerConfigPath))) fail("请先把现有 worker/wrangler.jsonc 放入本目录，再运行 npm run setup:adopt。");
+  const oldState = await loadState(false);
+  if (oldState && !(await prompt.yes("重新核对线上部署并替换本地管理记录（自动备份旧记录）", false))) return;
+  const config = parseJsonc(await readFile(wranglerConfigPath, "utf8"));
+  const binding = config.d1_databases?.find((entry) => entry.binding === "DB");
+  if (!validateWorkerName(config.name) || !binding?.database_id || !binding?.database_name) fail("现有 Wrangler 配置缺少 Worker 名称或 DB 绑定");
+  const origin = workerOrigin(await prompt.text("现有 Worker 的 HTTPS 根地址", oldState?.workerUrl || config.vars?.DASHBOARD_BASE_URL || ""));
+  const adminToken = await prompt.secret("现有 ADMIN_TOKEN");
+  if (!adminToken) fail("ADMIN_TOKEN 不能为空");
+  const state = { schemaVersion: 1, stage: "ready", workerName: config.name, databaseName: binding.database_name, databaseId: binding.database_id, workerUrl: origin, adminToken, nodeKeys: {}, nodes: {}, retiredNodes: {}, telegram: null };
+  let inventoryResponse = await adminFetch(state, "/api/v1/admin/key-inventory");
+  if (inventoryResponse.status === 404 || (inventoryResponse.ok && !inventoryResponse.body?.keys)) {
+    line("现有 Worker 尚无接管接口。需要部署当前 Worker 代码；保留现有 D1、变量和 Secrets。");
+    if (!(await prompt.yes("更新现有 Worker 管理接口", true))) return;
+    await ensureCloudflareLogin();
+    await wrangler(["deploy", "--keep-vars", "--config", wranglerConfigPath]);
+    inventoryResponse = await adminFetch(state, "/api/v1/admin/key-inventory");
+  }
+  if (!inventoryResponse.ok || !Array.isArray(inventoryResponse.body?.keys)) fail(`接管鉴权失败（HTTP ${inventoryResponse.status}），未修改本地管理状态`);
+  const inventory = inventoryResponse.body;
+  const remoteNodes = await adminNodeList(state);
+  if (!remoteNodes) fail("无法读取节点目录，接管已停止");
+  for (const node of remoteNodes.filter((entry) => entry.retired)) state.retiredNodes[node.node_id] = { retiredAt: node.retired_at, sshTarget: oldState?.retiredNodes?.[node.node_id]?.sshTarget || "" };
+  const imported = [];
+  line(`线上共有 ${inventory.keys.length} 份节点密钥，将逐一核对，包括尚未上报的节点。`);
+  for (const entry of inventory.keys) {
+    if (!validateNodeId(entry.node_id)) fail("线上清单包含无效节点 ID");
+    const { config: nodeConfig, target } = await readNodeConfiguration(prompt, entry.node_id, oldState?.nodes?.[entry.node_id]?.sshTarget);
+    if (!validateSshTarget(target)) fail("SSH 别名无效");
+    validateImportedConfig(nodeConfig, entry.node_id, origin);
+    state.nodeKeys[entry.node_id] = nodeConfig.secret;
+    const retired = Boolean(state.retiredNodes[entry.node_id]);
+    const nodePath = join(privateDir, retired ? "retired" : "nodes", entry.node_id, "config.json");
+    (retired ? state.retiredNodes : state.nodes)[entry.node_id] = { ...(state.retiredNodes[entry.node_id] || {}), configPath: nodePath, sshTarget: target, installed: true };
+    imported.push({ path: nodePath, config: nodeConfig });
+  }
+  verifyKeyInventory(state.nodeKeys, inventory);
+  // Recheck after user input: no stale snapshots during a long adoption session.
+  if (inventorySignature(inventory) !== inventorySignature(await getServerInventory(state))) fail("接管期间线上密钥发生变化，请重新接管");
+  state.keyInventory = inventory;
+  state.revokedNodeIds = inventory.revoked_node_ids;
+  if (oldState) await writePrivateJson(join(privateDir, "backups", `state-${Date.now()}.json`), oldState);
+  for (const entry of imported) await writePrivateJson(entry.path, entry.config);
+  await writePrivateJson(statePath, state);
+  line("✓ 已核对全部现有密钥并建立本地管理状态。现在可以新增、配置、下线或恢复节点。");
 }
 
 function sleep(milliseconds) {
@@ -354,13 +455,13 @@ async function adminNodeList(state) {
   return result.ok && Array.isArray(result.body?.nodes) ? result.body.nodes : null;
 }
 
-async function waitForFirstReport(state, id, timeoutSeconds = 90) {
+async function waitForFirstReport(state, id, timeoutSeconds = 90, since = 0) {
   const deadline = Date.now() + timeoutSeconds * 1000;
   while (Date.now() < deadline) {
     try {
       const nodes = await adminNodeList(state);
       const node = nodes?.find((entry) => entry.node_id === id);
-      if (node && node.last_report_at !== null) return node;
+      if (node && Number(node.last_report_at) >= since && node.last_report_at !== null) return node;
     } catch {
       // Keep polling; the node is what is being waited on, not the network.
     }
@@ -370,8 +471,16 @@ async function waitForFirstReport(state, id, timeoutSeconds = 90) {
 }
 
 function makePrompter() {
-  const interface_ = createInterface({ input: process.stdin, output: process.stdout });
+  let muted = false;
+  const output = new Writable({ write(chunk, encoding, done) { if (!muted) process.stdout.write(chunk, encoding); done(); } });
+  const interface_ = createInterface({ input: process.stdin, output, terminal: Boolean(process.stdin.isTTY) });
   return {
+    async secret(question) {
+      process.stdout.write(`${question}（输入不显示）: `);
+      muted = true;
+      try { return (await interface_.question("")).trim(); }
+      finally { muted = false; line(); }
+    },
     async text(question, fallback = "") {
       const suffix = fallback ? ` [${fallback}]` : "";
       const value = (await interface_.question(`${question}${suffix}: `)).trim();
@@ -404,7 +513,7 @@ async function doctor({ quiet = false } = {}) {
     line("Lume 环境检查");
     for (const check of checks) line(`${check.ok ? "✓" : "✗"} ${check.name.padEnd(14)} ${check.detail}`);
     line("");
-    line((await exists(statePath)) ? `本地部署状态：${statePath}` : "本地部署状态：尚未初始化");
+    line((await exists(statePath)) ? `本地管理状态：${statePath}` : "未找到本地管理记录（不代表线上未部署）");
   }
   return checks.every((check) => check.ok);
 }
@@ -492,7 +601,8 @@ async function setup(prompt, assumeYes) {
   let state = await loadState(false);
   if (!state) {
     if (await exists(wranglerConfigPath)) {
-      fail("检测到已有 worker/wrangler.jsonc，但没有部署管理状态。为避免覆盖现有部署，setup 已停止；已有手工部署请继续按原文档管理。");
+      line("检测到已有部署配置，将进入接管向导，保留线上资源和现有密钥。");
+      return adoptDeployment(prompt);
     }
     const defaultWorker = `lume-${randomBytes(3).toString("hex")}`;
     const workerName = (await prompt.text("Worker 名称", defaultWorker)).toLowerCase();
@@ -568,6 +678,8 @@ async function setup(prompt, assumeYes) {
   if (pendingTelegram) await configureTelegram(state);
   await verifyHealth(state.workerUrl);
   state.stage = "ready";
+  state.keyInventory = await getServerInventory(state);
+  state.revokedNodeIds = state.keyInventory.revoked_node_ids;
   await writePrivateJson(statePath, state);
 
   line("");
@@ -613,16 +725,18 @@ function safeNftIdentifier(value, label) {
 async function promptOptionalObservers(prompt) {
   const probes = [];
   const nftablesCounters = [];
-  if (!(await prompt.yes("配置可选轻量观测（TCP 可达性 / nftables 计数）", false))) {
+  if (!(await prompt.yes("配置可选观测（ICMP / TCP / nftables）", false))) {
     return { probes, nftablesCounters };
   }
-  while (await prompt.yes("添加一个 TCP 端口可达性探测", probes.length === 0)) {
+  while (await prompt.yes("添加一个通信探针", probes.length === 0)) {
     if (probes.length >= 16) fail("交互工具最多添加 16 个 TCP 探测；更多请按功能手册编辑配置");
-    const name = safeObserverName(await prompt.text("探测名称", `tcp_${probes.length + 1}`), "探测名称");
+    const kind = (await prompt.text("探针类型（icmp / tcp）", "icmp")).toLowerCase();
+    if (!["icmp", "tcp"].includes(kind)) fail("探针类型只能为 icmp 或 tcp");
+    const name = safeObserverName(await prompt.text("探测名称", `${kind}_${probes.length + 1}`), "探测名称");
     if (probes.some((probe) => probe.name === name)) fail(`探测名称重复：${name}`);
-    const label = await prompt.text("面板显示名", `TCP 可达性 ${probes.length + 1}`);
+    const label = await prompt.text("面板显示名", `${kind.toUpperCase()} ${probes.length + 1}`);
     const target = safeProbeTarget(await prompt.text("目标主机名或 IP（不含端口）"));
-    const port = Number(await prompt.text("TCP 端口", "443"));
+    const port = kind === "tcp" ? Number(await prompt.text("TCP 端口", "443")) : 443;
     if (!Number.isInteger(port) || port < 1 || port > 65535) fail("TCP 端口必须是 1–65535 的整数");
     const targetNodeIdValue = (await prompt.text("目标节点 ID（非节点间探测可留空）", "")).toLowerCase();
     if (targetNodeIdValue && !validateNodeId(targetNodeIdValue)) fail("目标节点 ID 格式无效");
@@ -631,12 +745,11 @@ async function promptOptionalObservers(prompt) {
       label,
       category: targetNodeIdValue ? "node-link" : "external",
       ...(targetNodeIdValue ? { target_node_id: targetNodeIdValue } : {}),
-      kind: "tcp",
+      kind,
       target,
-      port,
-      timeout_seconds: 3,
-      connect_timeout_ms: 1000,
-      samples: 3,
+      ...(kind === "tcp" ? { port, connect_timeout_ms: 1000 } : {}),
+      timeout_seconds: 4,
+      samples: kind === "icmp" ? 5 : 3,
       sample_interval_ms: 250,
       warning_ms: 500,
       critical_ms: 1500,
@@ -711,9 +824,11 @@ export function normalizeNodeSpec(spec) {
  * first and submits the complete map once instead of once per node.
  */
 async function createNodeRecords(state, specs) {
+  await assertServerInventory(state);
   const pending = [];
   for (const [offset, spec] of specs.entries()) {
     if (state.nodeKeys[spec.id]) fail(`节点 ${spec.id} 已存在；不会生成第二套同名密钥`);
+    if (state.retiredNodes?.[spec.id]) fail(`节点 ${spec.id} 已退役，请使用 npm run node:restore`);
     if (pending.some((entry) => entry.spec.id === spec.id)) fail(`清单中的节点 ID 重复：${spec.id}`);
     pending.push({
       spec,
@@ -740,6 +855,7 @@ async function createNodeRecords(state, specs) {
       configPath: `${privateDirName}/nodes/${entry.spec.id}/config.json`,
       sshTarget: entry.spec.ssh,
       installed: false,
+      pendingApply: true,
     };
     await writePrivateJson(join(privateDir, "nodes", entry.spec.id, "config.json"), config);
     line(`✓ 私密节点配置：${join(privateDir, "nodes", entry.spec.id, "config.json")}`);
@@ -814,19 +930,55 @@ async function configureNodeObservers(prompt, id) {
   if (!(await exists(configPath))) fail(`节点配置不存在：${configPath}`);
   const config = JSON.parse(await readFile(configPath, "utf8"));
   assertPlainObject(config, "节点配置");
-  line(`将重新配置 ${id} 的可选 TCP 与 nftables 观测；基础资源、服务、密钥和上报地址保持不变。`);
-  if (!(await prompt.yes("继续并替换当前可选观测配置", false))) return;
-  const optionalObservers = await promptOptionalObservers(prompt);
-  const retainedProbes = Array.isArray(config.probes)
-    ? config.probes.filter((probe) => probe && probe.kind !== "tcp")
-    : [];
-  config.probes = [...retainedProbes, ...optionalObservers.probes];
-  config.nftables_counters = optionalObservers.nftablesCounters;
+  const original = JSON.stringify(config);
+  line(`${id} 当前有 ${config.services.length} 个服务、${config.probes.length} 个探针和 ${config.nftables_counters?.length || 0} 个计数器。`);
+  if (await prompt.yes("修改 systemd 服务列表", false)) config.services = parseServices(await prompt.text("服务名（逗号分隔，留空清空）", ""));
+  const action = await prompt.text("通信探针和计数器：1 保留 / 2 追加 / 3 全部重设 / 4 删除指定项", "1");
+  if (!["1", "2", "3", "4"].includes(action)) fail("请选择 1–4");
+  if (action === "4") {
+    for (const key of ["probes", "nftables_counters"]) {
+      const entries = config[key] || [];
+      if (!entries.length) continue;
+      entries.forEach((entry, index) => line(`  ${index + 1}. ${entry.name} · ${entry.label || ""}`));
+      const selected = await prompt.text(`删除 ${key === "probes" ? "探针" : "计数器"} 的编号（逗号分隔，留空保留）`);
+      const indices = selected ? selected.split(",").map((value) => Number(value.trim()) - 1) : [];
+      if (indices.some((value) => !Number.isInteger(value) || value < 0 || value >= entries.length)) fail("删除编号不在列表中");
+      config[key] = entries.filter((_entry, index) => !indices.includes(index));
+    }
+  } else if (action !== "1") {
+    const observers = await promptOptionalObservers(prompt);
+    config.probes = action === "2" ? restorePeerProbes(config.probes, observers.probes) : observers.probes;
+    const counters = action === "2" ? [...(config.nftables_counters || []), ...observers.nftablesCounters] : observers.nftablesCounters;
+    if (new Set(counters.map((entry) => entry.name)).size !== counters.length) fail("计数器名称重复");
+    config.nftables_counters = counters;
+  }
+  if (JSON.stringify(config) === original) { line("配置没有变化。"); return; }
+  await writePrivateJson(join(privateDir, "backups", `${id}-config-${Date.now()}.json`), JSON.parse(original));
   await writePrivateJson(configPath, config);
+  state.nodes[id].pendingApply = true;
+  await writePrivateJson(statePath, state);
   line(`✓ 已更新私密配置：${configPath}`);
-  line(state.nodes[id].installed
-    ? "节点已安装：请按功能手册的安全升级流程部署该配置；本工具不会静默改动运行中的 VPS。"
-    : `节点尚未安装：运行 npm run node:install -- ${id} --ssh <SSH别名>`);
+  if (await prompt.yes("立即校验并部署到该 VPS", true)) await applyNodes(prompt, [id], state);
+  else line("已保存待部署状态。稍后运行 npm run node:apply。");
+}
+
+async function nodeTarget(prompt, state, id, target = "") {
+  const chosen = target || state.nodes[id]?.sshTarget || await prompt.text(`${id} 的 SSH 别名`, id);
+  if (!validateSshTarget(chosen)) fail("SSH 别名无效");
+  state.nodes[id].sshTarget = chosen;
+  return chosen;
+}
+
+async function applyNodes(prompt, ids, state = null) {
+  state ||= await loadState();
+  if (ids.some((id) => state.nodes[id]?.pendingRestore || state.nodes[id]?.pendingRetire)) fail("有节点正在下线或恢复，请重试对应操作完成后再部署配置");
+  await applyPending(state, ids, {
+    save: (value) => writePrivateJson(statePath, value),
+    deploy: async (id) => {
+      const target = await nodeTarget(prompt, state, id);
+      await installNode(id, target, { upgrade: Boolean(state.nodes[id].installed), reconcile: true, state });
+    },
+  });
 }
 
 async function download(url) {
@@ -930,13 +1082,15 @@ export function normalizeArchitecture(value) {
  * The stage is still created with mode 0700 before anything is copied into it,
  * so a staged configuration is never reachable by other local users.
  */
-async function installNode(id, target) {
+async function installNode(id, target, options = {}) {
   if (!validateSshTarget(target)) fail("SSH 目标格式无效；复杂端口请写入 ~/.ssh/config 后使用别名");
-  const state = await loadState();
+  const state = options.state || await loadState();
   if (!state.nodes[id] || !state.nodeKeys[id]) fail(`本地状态中没有节点 ${id}`);
   const configPath = join(privateDir, "nodes", id, "config.json");
   if (!(await exists(configPath))) fail(`节点配置不存在：${configPath}`);
   const version = await readVersion();
+  let installer = options.upgrade ? "upgrade-agent.sh" : "install-agent.sh";
+  const resuming = Boolean(state.nodes[id].deploymentStarted || options.reconcile);
 
   const localStage = await mkdtemp(join(tmpdir(), "lume-stage-"));
   const remoteStage = `/tmp/vpsmon-stage.${randomBytes(8).toString("hex")}`;
@@ -946,19 +1100,21 @@ async function installNode(id, target) {
     "vpsmon-agent.service",
     "vpsmon-nftables-snapshot.service",
     "vpsmon-nftables-snapshot.timer",
-    "install-agent.sh",
+    installer,
   ];
   let remoteStagePresent = false;
   try {
     line(`连接 ${target} 并创建受限临时目录…`);
     const bootstrap = await run("ssh", [
       target,
-      `uname -m && umask 077 && mkdir -m 700 ${remoteStage} && echo lume_stage_ready`,
+      `uname -m && umask 077 && mkdir -m 700 ${remoteStage} && echo lume_stage_ready && if [ -f /opt/vpsmon/vpsmon-agent ]; then echo lume_agent_present; fi`,
     ], { capture: true });
     const bootstrapLines = bootstrap.stdout.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
     if (!bootstrapLines.includes("lume_stage_ready")) fail("远端临时目录创建失败");
     remoteStagePresent = true;
     const architecture = normalizeArchitecture(bootstrapLines[0]);
+    if (resuming) installer = bootstrapLines.includes("lume_agent_present") ? "upgrade-agent.sh" : "install-agent.sh";
+    payloads[payloads.length - 1] = installer;
     line(`获取并校验 Lume v${version} linux/${architecture}…`);
 
     await obtainAgentBinary(version, architecture, join(localStage, "vpsmon-agent"));
@@ -966,7 +1122,7 @@ async function installNode(id, target) {
     for (const unit of ["vpsmon-agent.service", "vpsmon-nftables-snapshot.service", "vpsmon-nftables-snapshot.timer"]) {
       await writeFile(join(localStage, unit), await readFile(join(deployDir, unit)), { mode: 0o644 });
     }
-    await writeFile(join(localStage, "install-agent.sh"), await readFile(join(deployDir, "install-agent.sh")), { mode: 0o700 });
+    await writeFile(join(localStage, installer), await readFile(join(deployDir, installer)), { mode: 0o700 });
     const checksums = [];
     for (const payload of payloads) {
       const digest = createHash("sha256").update(await readFile(join(localStage, payload))).digest("hex");
@@ -980,12 +1136,16 @@ async function installNode(id, target) {
       `${target}:${remoteStage}/`,
     ]);
 
-    line("安装独立 Agent；若 sudo 需要密码，请在提示中输入。");
+    state.nodes[id].deploymentStarted = true;
+    await writePrivateJson(statePath, state);
+    line(`${installer === "upgrade-agent.sh" ? "备份并更新" : "安装"} Agent；若 sudo 需要密码，请在提示中输入。`);
+    const deployedAfter = Math.floor(Date.now() / 1000);
     await run("ssh", ["-t", target, [
-      `chmod 700 ${remoteStage}/vpsmon-agent ${remoteStage}/install-agent.sh`,
+      `chmod 700 ${remoteStage}/vpsmon-agent ${remoteStage}/${installer}`,
       `chmod 600 ${remoteStage}/config.json ${remoteStage}/checksums.sha256`,
       `chmod 644 ${remoteStage}/vpsmon-agent.service ${remoteStage}/vpsmon-nftables-snapshot.service ${remoteStage}/vpsmon-nftables-snapshot.timer`,
-      `sudo sh ${remoteStage}/install-agent.sh ${remoteStage}`,
+      `sudo sh ${remoteStage}/${installer} ${remoteStage}`,
+      ...(options.activate ? ["sudo systemctl enable --now vpsmon-agent.service"] : []),
     ].join(" && ")], { interactive: true });
 
     const verify = await run("ssh", [
@@ -994,19 +1154,32 @@ async function installNode(id, target) {
     ], { capture: true, allowFailure: true });
     const verifyLines = verify.stdout.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
     if (verifyLines.includes("lume_stage_removed")) remoteStagePresent = false;
-    if (!verifyLines.includes("active")) fail("Agent 安装后未处于 active 状态");
+    const active = verifyLines.includes("active");
+    if (!active && !(installer === "upgrade-agent.sh" && !options.activate && verifyLines.includes("inactive"))) fail("Agent 部署后的服务状态异常");
 
     state.nodes[id].sshTarget = target;
     state.nodes[id].installed = true;
     await writePrivateJson(statePath, state);
-    line(`✓ ${id} 已安装。`);
+    line(`✓ ${id} 已部署。`);
+    if (!active) {
+      delete state.nodes[id].deploymentStarted;
+      delete state.nodes[id].pendingApply;
+      await writePrivateJson(statePath, state);
+      line("Agent 原先已停用，配置已更新并保留停用状态。");
+      return;
+    }
 
     // The Agent sends its first report before starting the interval timer, so
     // this normally confirms in a few seconds rather than a full interval.
     line("等待首份认证上报…");
-    const reported = await waitForFirstReport(state, id);
-    if (reported) line(`✓ ${id} 已上线，Worker 已接受首份上报。`);
-    else line(`! 尚未收到 ${id} 的上报。检查：ssh ${target} journalctl -u vpsmon-agent.service -n 30 --no-pager`);
+    const reported = await waitForFirstReport(state, id, 90, deployedAfter);
+    if (reported) {
+      delete state.nodes[id].pendingApply;
+      delete state.nodes[id].deploymentStarted;
+      await writePrivateJson(statePath, state);
+      line(`✓ ${id} 已上线，Worker 已接受部署后的新上报。`);
+    }
+    else fail(`未收到 ${id} 部署后的新上报。检查 ssh ${target} journalctl -u vpsmon-agent.service -n 30 --no-pager，然后运行 npm run node:apply 重试。`);
   } finally {
     if (remoteStagePresent) {
       await run("ssh", [target, `rm -rf -- ${remoteStage}`], { capture: true, allowFailure: true }).catch(() => {});
@@ -1022,7 +1195,7 @@ async function uninstallRemoteAgent(target) {
     await run("ssh", [target, `umask 077 && mkdir -m 700 ${remoteStage}`]);
     await writeFile(join(localStage, "uninstall-agent.sh"), await readFile(join(deployDir, "uninstall-agent.sh")), { mode: 0o700 });
     await run("scp", [join(localStage, "uninstall-agent.sh"), `${target}:${remoteStage}/`]);
-    await run("ssh", ["-t", target, `sudo sh ${remoteStage}/uninstall-agent.sh --confirm; rm -rf -- ${remoteStage}`], { interactive: true });
+    await run("ssh", ["-t", target, `sudo sh ${remoteStage}/uninstall-agent.sh --confirm && rm -rf -- ${remoteStage}`], { interactive: true });
   } finally {
     await rm(localStage, { recursive: true, force: true });
   }
@@ -1058,6 +1231,23 @@ async function peersTargeting(state, id) {
 async function removeNode(prompt, id, options) {
   if (!validateNodeId(id)) fail("节点 ID 格式无效");
   const state = await loadState();
+  if (!state.nodes[id] && state.retiredNodes?.[id]) {
+    const pending = [];
+    for (const peerId of Object.keys(state.retiredNodes[id].peerProbes || {})) {
+      if (!state.nodes[peerId]) continue;
+      const path = join(privateDir, "nodes", peerId, "config.json");
+      const config = JSON.parse(await readFile(path, "utf8"));
+      const probes = config.probes.filter((probe) => probe.target_node_id !== id);
+      if (probes.length !== config.probes.length || state.nodes[peerId].pendingApply) {
+        config.probes = probes;
+        await writePrivateJson(path, config);
+        pending.push(peerId);
+      }
+    }
+    if (pending.length) await applyNodes(prompt, pending, state);
+    line(`✓ ${id} 已退役，对端配置已处理。`);
+    return;
+  }
   if (!state.nodes[id] && !state.nodeKeys[id]) fail(`本地状态中没有节点 ${id}`);
   const keyAlreadyRevoked = !state.nodeKeys[id];
   const assumeYes = options.get("yes") === true;
@@ -1074,10 +1264,19 @@ async function removeNode(prompt, id, options) {
   line("  2. 从完整 NODE_KEYS 中移除该节点密钥并重新提交");
   line("  3. 在 Worker 上标记退役，隐藏该节点及所有指向它的探针与链路");
   if (peers.length > 0) {
-    line(`  4. 重写 ${peers.length} 个对端的私密配置，删除指向它的探针（随后按升级流程部署）`);
+      line(`  4. 自动更新并部署 ${peers.length} 个对端配置，停止指向它的探测`);
   }
   line("D1 历史样本会保留，按既有保留策略自然过期；退役标记不会被后续上报覆盖，因此顺序不影响结果。");
   if (!assumeYes && !(await prompt.yes("确认下线", false))) return;
+  await assertServerInventory(state);
+  state.retiredNodes ||= {};
+  if (!state.retiredNodes[id]) {
+    const archivedPath = join(privateDir, "retired", id, "config.json");
+    const currentConfig = JSON.parse(await readFile(join(privateDir, "nodes", id, "config.json"), "utf8"));
+    await writePrivateJson(archivedPath, currentConfig);
+    state.retiredNodes[id] = { configPath: archivedPath, sshTarget: target, uninstalled: uninstall, peerProbes: Object.fromEntries(peers.map((peer) => [peer.peerId, peer.config.probes.filter((probe) => probe.target_node_id === id)])) };
+    await writePrivateJson(statePath, state);
+  }
 
   if (target) {
     if (uninstall) {
@@ -1106,7 +1305,7 @@ async function removeNode(prompt, id, options) {
   delete state.nodes[id];
   state.retiredNodes = {
     ...(state.retiredNodes ?? {}),
-    [id]: { retiredAt: Math.floor(Date.now() / 1000), sshTarget: target },
+    [id]: { ...state.retiredNodes[id], retiredAt: Math.floor(Date.now() / 1000), sshTarget: target, uninstalled: uninstall },
   };
   await writePrivateJson(statePath, state);
   line("✓ 已在 Worker 标记退役：面板、/status 以及所有指向它的链路立即隐藏");
@@ -1114,11 +1313,66 @@ async function removeNode(prompt, id, options) {
   for (const peer of peers) {
     peer.config.probes = peer.config.probes.filter((probe) => probe.target_node_id !== id);
     await writePrivateJson(peer.peerConfigPath, peer.config);
-    line(`✓ 已更新对端配置 ${peer.peerId}（移除 ${peer.names.join("、")}）：请按升级流程部署，停止无谓探测`);
+    state.nodes[peer.peerId].pendingApply = true;
+    line(`✓ 已更新对端配置 ${peer.peerId}（移除 ${peer.names.join("、")}），即将部署。`);
   }
+  await writePrivateJson(statePath, state);
 
   await rm(join(privateDir, "nodes", id), { recursive: true, force: true });
   line(`✓ 已删除本地私密配置：${privateDirName}/nodes/${id}/`);
+  await applyNodes(prompt, peers.map((peer) => peer.peerId), state);
+}
+
+async function restoreNode(prompt, id, options) {
+  if (!validateNodeId(id)) fail("节点 ID 格式无效");
+  const state = await loadState();
+  const archived = state.retiredNodes?.[id];
+  if (!archived) fail(`节点 ${id} 不在退役记录中`);
+  if (!(options.get("yes") === true) && !(await prompt.yes(`恢复 ${id} 并自动恢复相关对端探针`, true))) return;
+  await assertServerInventory(state);
+  if (!state.nodes[id]?.pendingRestore) {
+    let config, target = options.get("ssh") || archived.sshTarget;
+    const archivedPath = join(privateDir, "retired", id, "config.json");
+    if (await exists(archivedPath)) config = JSON.parse(await readFile(archivedPath, "utf8"));
+    else {
+      const imported = await readNodeConfiguration(prompt, id, target, state.workerUrl);
+      config = imported.config;
+      target = imported.target;
+    }
+    validateImportedConfig(config, id, state.workerUrl);
+    if (!target) target = await prompt.text("SSH 别名", id);
+    if (!validateSshTarget(target)) fail("SSH 别名无效");
+    config.secret = randomSecret();
+    state.nodeKeys[id] = config.secret;
+    state.nodes[id] = { sshTarget: target, installed: !archived.uninstalled, pendingRestore: true, pendingApply: true };
+    await writePrivateJson(join(privateDir, "nodes", id, "config.json"), config);
+    await writePrivateJson(statePath, state);
+  }
+  if (typeof options.get("ssh") === "string") state.nodes[id].sshTarget = options.get("ssh");
+  await publishNodeKeys(state);
+  if ((state.revokedNodeIds || []).includes(id)) {
+    state.revokedNodeIds = state.revokedNodeIds.filter((entry) => entry !== id);
+    await publishRevokedNodeIds(state);
+  }
+  await installNode(id, await nodeTarget(prompt, state, id), { upgrade: state.nodes[id].installed, reconcile: true, activate: true, state });
+  const result = await adminFetch(state, `/api/v1/admin/nodes/${id}/restore`, { method: "POST" });
+  if (!result.ok) fail(`恢复目录失败（HTTP ${result.status}），重试 npm run node:restore -- ${id}`);
+  const peers = [];
+  for (const [peerId, probes] of Object.entries(archived.peerProbes || {})) {
+    if (!state.nodes[peerId]) continue;
+    const path = join(privateDir, "nodes", peerId, "config.json");
+    const config = JSON.parse(await readFile(path, "utf8"));
+    config.probes = restorePeerProbes(config.probes, probes);
+    await writePrivateJson(path, config);
+    peers.push(peerId);
+  }
+  await applyNodes(prompt, peers, state);
+  delete state.nodes[id].pendingRestore;
+  delete state.nodes[id].pendingApply;
+  delete state.retiredNodes[id];
+  await writePrivateJson(statePath, state);
+  await rm(join(privateDir, "retired", id), { recursive: true, force: true });
+  line(`✓ ${id} 已恢复，密钥已轮换，Agent 和相关对端配置已上线。`);
 }
 
 /**
@@ -1129,6 +1383,7 @@ async function removeNode(prompt, id, options) {
 async function revokeNode(id, options) {
   if (!validateNodeId(id)) fail("节点 ID 格式无效");
   const state = await loadState();
+  await assertServerInventory(state);
   const revoked = new Set(Array.isArray(state.revokedNodeIds) ? state.revokedNodeIds : []);
   const undo = options.get("undo") === true;
   if (undo) revoked.delete(id);
@@ -1151,7 +1406,10 @@ async function syncKeys() {
 async function showStatus() {
   const state = await loadState(false);
   if (!state) {
-    line("尚未初始化。运行：cd worker && npm ci && npm run setup");
+    line("未找到本地部署管理状态，尚未检查线上服务。");
+    line((await exists(wranglerConfigPath))
+      ? "检测到已有 Worker 配置。运行 npm run setup:adopt 接管现有部署。"
+      : "首次部署：npm run setup；已有线上部署：npm run setup:adopt。");
     return;
   }
   line(`Worker  ${state.workerName}`);
@@ -1176,7 +1434,7 @@ async function showStatus() {
       : reported === null
         ? "尚未上报"
         : `${reported} 秒前上报`;
-    line(`  ${node.installed ? "✓" : "·"} ${id}${node.sshTarget ? `  (${node.sshTarget})` : ""}  ${detail}`);
+    line(`  ${node.installed ? "✓" : "·"} ${id}${node.sshTarget ? `  (${node.sshTarget})` : ""}  ${detail}${node.pendingApply ? " · 配置待部署" : ""}${node.pendingRestore ? " · 恢复待完成" : ""}`);
   }
   const retiredLocal = Object.keys(state.retiredNodes ?? {});
   if (retiredLocal.length > 0) line(`已下线  ${retiredLocal.join("、")}`);
@@ -1195,12 +1453,16 @@ function usage() {
   line(`Lume 部署管理工具
 
 用法：
+  node tools/lumectl.mjs manage
+  node tools/lumectl.mjs adopt
   node tools/lumectl.mjs doctor
   node tools/lumectl.mjs setup [--yes]
   node tools/lumectl.mjs status
   node tools/lumectl.mjs node add [--id ID --name 名称 --role 用途 --region 地区 --mark 标记 --services a,b --ssh 别名]
   node tools/lumectl.mjs node add --from-file nodes.json
   node tools/lumectl.mjs node configure <NODE_ID>
+  node tools/lumectl.mjs node apply [NODE_ID] [--pending]
+  node tools/lumectl.mjs node restore [NODE_ID] [--ssh 别名]
   node tools/lumectl.mjs node install <NODE_ID> --ssh <SSH别名>
   node tools/lumectl.mjs node remove <NODE_ID> [--ssh 别名] [--uninstall] [--yes]
   node tools/lumectl.mjs node revoke <NODE_ID> [--undo]
@@ -1215,9 +1477,39 @@ npm run node:install / npm run node:remove / npm run node:revoke
 安全说明：Secret 只写入 Cloudflare 和 ${privateDirName}/ 私有目录；该目录已被 Git 忽略。`);
 }
 
+async function pickNode(prompt, { retired = false } = {}) {
+  const state = await loadState();
+  const ids = Object.keys(retired ? state.retiredNodes || {} : state.nodes);
+  if (!ids.length) fail(retired ? "没有可恢复的退役节点" : "没有已登记节点，请先接管部署或新增节点");
+  ids.forEach((id, index) => line(`  ${index + 1}. ${id}`));
+  const choice = await prompt.text("选择节点编号或输入节点 ID", "1");
+  const id = /^\d+$/.test(choice) ? ids[Number(choice) - 1] : choice;
+  if (!ids.includes(id)) fail("请选择列表中的节点");
+  return id;
+}
+
+async function manage(prompt) {
+  while (true) {
+    line("\nLume 管理\n  1. 从零部署\n  2. 接管已有部署\n  3. 查看状态\n  4. 新增 VPS\n  5. 配置节点\n  6. 部署配置 / 更新 Agent\n  7. 下线节点\n  8. 恢复节点\n  9. 下线并卸载 Agent\n  0. 退出");
+    const choice = await prompt.text("选择操作", "0");
+    if (choice === "0") return;
+    try {
+      if (choice === "1") await setup(prompt, false);
+      else if (choice === "2") await adoptDeployment(prompt);
+      else if (choice === "3") await showStatus();
+      else if (choice === "4") await addNode(prompt, new Map());
+      else if (choice === "5") await configureNodeObservers(prompt, await pickNode(prompt));
+      else if (choice === "6") await applyNodes(prompt, [await pickNode(prompt)]);
+      else if (choice === "7" || choice === "9") await removeNode(prompt, await pickNode(prompt), new Map(choice === "9" ? [["uninstall", true]] : []));
+      else if (choice === "8") await restoreNode(prompt, await pickNode(prompt, { retired: true }), new Map());
+      else line("请输入 0–9。");
+    } catch (error) { line(`操作未完成：${error.message}`); }
+  }
+}
+
 async function main() {
   const argv = process.argv.slice(2);
-  const command = argv[0] || "help";
+  const command = argv[0] || "manage";
   if (command === "help" || command === "--help" || command === "-h") return usage();
   if (command === "doctor") {
     if (!(await doctor())) process.exitCode = 1;
@@ -1227,6 +1519,8 @@ async function main() {
   const { flags, positional } = parseFlags(argv);
   const prompt = makePrompter();
   try {
+    if (command === "manage") return await manage(prompt);
+    if (command === "adopt") return await adoptDeployment(prompt);
     if (command === "setup") return await setup(prompt, flags.get("yes") === true);
     if (command === "node") {
       const action = positional[1];
@@ -1234,17 +1528,26 @@ async function main() {
       if (action === "add") return await addNode(prompt, flags);
       if (action === "sync-keys") return await syncKeys();
       if (action === "configure") {
-        if (!nodeId) fail("用法：node configure <NODE_ID>");
-        return await configureNodeObservers(prompt, nodeId);
+        return await configureNodeObservers(prompt, nodeId || await pickNode(prompt));
       }
+      if (action === "apply") {
+        const state = await loadState();
+        const ids = flags.get("pending") === true
+          ? Object.keys(state.nodes).filter((id) => state.nodes[id].pendingApply && !state.nodes[id].pendingRestore)
+          : [nodeId || await pickNode(prompt)];
+        if (!ids.length) { line("没有待部署的配置。"); return; }
+        if (ids.some((id) => state.nodes[id]?.pendingRestore)) fail("节点恢复尚未完成，请运行 npm run node:restore");
+        if (typeof flags.get("ssh") === "string") for (const id of ids) await nodeTarget(prompt, state, id, flags.get("ssh"));
+        return await applyNodes(prompt, ids, state);
+      }
+      if (action === "restore") return await restoreNode(prompt, nodeId || await pickNode(prompt, { retired: true }), flags);
       if (action === "install") {
-        const target = flags.get("ssh");
-        if (!nodeId || typeof target !== "string") fail("用法：node install <NODE_ID> --ssh <SSH别名>");
-        return await installNode(nodeId, target);
+        const id = nodeId || await pickNode(prompt);
+        const state = await loadState();
+        return await installNode(id, await nodeTarget(prompt, state, id, flags.get("ssh")), { state });
       }
       if (action === "remove") {
-        if (!nodeId) fail("用法：node remove <NODE_ID> [--ssh 别名] [--uninstall] [--yes]");
-        return await removeNode(prompt, nodeId, flags);
+        return await removeNode(prompt, nodeId || await pickNode(prompt), flags);
       }
       if (action === "revoke") {
         if (!nodeId) fail("用法：node revoke <NODE_ID> [--undo]");

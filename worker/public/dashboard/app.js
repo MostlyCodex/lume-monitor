@@ -21,8 +21,10 @@
     SG: `<svg viewBox="0 0 36 24" aria-hidden="true" focusable="false"><rect width="36" height="24" fill="#fff"/><rect width="36" height="12" fill="#ef3340"/><path fill="#fff" fill-rule="evenodd" d="M9.5 2.05a4.95 4.95 0 1 0 0 7.9 4.15 4.15 0 1 1 0-7.9Z"/><g fill="#fff"><circle cx="11.6" cy="3" r=".65"/><circle cx="13.6" cy="4.4" r=".65"/><circle cx="12.85" cy="6.75" r=".65"/><circle cx="10.35" cy="6.75" r=".65"/><circle cx="9.6" cy="4.4" r=".65"/></g></svg>`,
   });
   const severityRank = { healthy: 0, warning: 1, critical: 2, offline: 3 };
-  const DASHBOARD_LAYOUT_KEY = "vpsmon-dashboard-layout-v1";
-  const LEGACY_DEFAULT_BRANDS = new Set(["Wesley VPS Monitor", "远山Monitor", "Aegilume"]);
+  const DEMO_MODE = document.documentElement.dataset.demo === "true";
+  const DASHBOARD_HOME = DEMO_MODE ? new URL("./", location.href).pathname : "/dashboard/";
+  const DASHBOARD_LAYOUT_KEY = DEMO_MODE ? "lume-demo-layout-v1" : "vpsmon-dashboard-layout-v1";
+  let demoData;
   const DEFAULT_DASHBOARD_LAYOUT = Object.freeze({
     brand: "Lume",
     order: [],
@@ -135,7 +137,7 @@
       : [];
     const configuredBrand = layoutText(source.brand, 48);
     return {
-      brand: !configuredBrand || LEGACY_DEFAULT_BRANDS.has(configuredBrand) ? DEFAULT_DASHBOARD_LAYOUT.brand : configuredBrand,
+      brand: configuredBrand || DEFAULT_DASHBOARD_LAYOUT.brand,
       order,
       nodes,
     };
@@ -147,6 +149,17 @@
   }
 
   async function fetchJson(url) {
+    if (DEMO_MODE) {
+      demoData ||= import(new URL("data.js", location.href).href).then(({ createDemoData }) => createDemoData());
+      const data = await demoData;
+      const request = new URL(url, location.origin);
+      if (request.pathname === "/api/v1/dashboard/latest") return data.latestData();
+      if (request.pathname === "/api/v1/dashboard/history") {
+        const hours = Number(request.searchParams.get("hours")) || 24;
+        return data.historyData([6, 24, 168, 720, 2160].includes(hours) ? hours : 24, request.searchParams.get("node"));
+      }
+      throw new Error("Unknown demo view");
+    }
     const response = await fetch(url, { credentials: "same-origin", headers: { accept: "application/json" } });
     if (response.status === 401) throw new AuthError("authentication required");
     if (!response.ok) throw new Error(`request failed: ${response.status}`);
@@ -1377,7 +1390,7 @@
     setDetailLoading("");
     $("node-detail").classList.add("is-hidden");
     $("fleet-view").classList.remove("is-hidden");
-    if (updateUrl) history.pushState(null, "", "/dashboard/");
+    if (updateUrl) history.pushState(null, "", DASHBOARD_HOME);
     scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -1499,6 +1512,7 @@
       if (event.target === $("settings-dialog")) closeSettings();
     });
     $("logout-button").addEventListener("click", async () => {
+      if (DEMO_MODE) return;
       try { await fetch("/auth/logout", { method: "POST", credentials: "same-origin" }); }
       finally {
         state.latest = null;
@@ -1507,7 +1521,7 @@
         state.detailHistoryCache.clear();
         state.detailHistoryRequests.clear();
         state.selectedNode = null;
-        history.replaceState(null, "", "/dashboard/");
+        history.replaceState(null, "", DASHBOARD_HOME);
         showAuth();
       }
     });

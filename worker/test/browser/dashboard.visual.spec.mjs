@@ -16,6 +16,33 @@ test.afterAll(async () => {
   await new Promise((resolve) => previewServer.close(resolve));
 });
 
+test("public demo works without authentication or telemetry requests", async ({ page }) => {
+  const sensitiveRequests = [];
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route(/\/(api|auth)\//, async (route) => {
+    sensitiveRequests.push(route.request().url());
+    await route.abort();
+  });
+  await page.goto(`${previewOrigin}/demo/`, { waitUntil: "networkidle" });
+  await expect(page.locator(".node-card")).toHaveCount(6);
+  await expect(page.locator(".demo-notice")).toContainText("虚构数据");
+  await page.locator('.node-card[data-node="transit-la"]').click();
+  await expect(page.locator("#node-detail")).toBeVisible();
+  await expect(page.locator("#network-plot .uplot")).toBeVisible();
+  await page.locator('#detail-range-switch button[data-hours="168"]').click();
+  await expect(page.locator("#network-plot .uplot")).toBeVisible();
+  await page.locator("#detail-back").click();
+  expect(new URL(page.url()).pathname).toBe("/demo/");
+  await page.locator("#theme-button").click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expectNoHorizontalOverflow(page);
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.locator(".node-card")).toHaveCount(6);
+  expect(sensitiveRequests).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 async function openDashboard(page) {
   await page.clock.install({ time: FIXED_TIME });
   await page.goto(`${previewOrigin}/dashboard/`, { waitUntil: "networkidle" });

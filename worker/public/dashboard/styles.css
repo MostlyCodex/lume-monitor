@@ -1002,3 +1002,7 @@ html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-
   .loading-ridge-line { stroke-dashoffset: 0; }
   .loading-progress i { width: 100%; opacity: 0.56; transform: none; }
 }
+/* Public demo notice follows normal document flow on every viewport. */
+.demo-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 24px; font-size: 14px; line-height: 1.6; }
+.demo-notice a { color: inherit; min-height: 44px; display: inline-flex; align-items: center; text-underline-offset: 4px; }
+.demo-notice a:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }

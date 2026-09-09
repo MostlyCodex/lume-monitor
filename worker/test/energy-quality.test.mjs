@@ -12,6 +12,7 @@ function dashboardQualityInternals() {
   );
   const context = vm.createContext({
     URLSearchParams,
+    document: { documentElement: { dataset: {} } },
     location: { search: "" },
   });
   new vm.Script(instrumented, { filename: "dashboard/app.js" }).runInContext(context);

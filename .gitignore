@@ -25,8 +25,8 @@ worker/.dev.vars
 worker/.dev.vars.*
 
 # Secrets and machine-specific agent configuration
-.yuanshan/
 .lume/
+demo-dist/
 .env
 .env.*
 !.env.example

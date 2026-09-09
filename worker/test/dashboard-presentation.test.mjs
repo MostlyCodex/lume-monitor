@@ -234,7 +234,7 @@ describe("dashboard presentation hierarchy", () => {
     expect(html).toContain('id="settings-brand"');
     expect(html).not.toContain('id="settings-page-title"');
     expect(html).not.toContain('id="settings-page-subtitle"');
-    expect(app).toContain('const DASHBOARD_LAYOUT_KEY = "vpsmon-dashboard-layout-v1"');
+    expect(app).toContain('DEMO_MODE ? "lume-demo-layout-v1" : "vpsmon-dashboard-layout-v1"');
     expect(app).toContain("localStorage.setItem");
     expect(app).toContain("state.settingsDraftOrder");
     expect(app).toContain("applyNodeLayout");
@@ -243,7 +243,6 @@ describe("dashboard presentation hierarchy", () => {
 
   it("uses the Lume identity without the redundant fleet heading", () => {
     expect(html).toContain("<title>Lume</title>");
-    expect(html).not.toContain("远山不见我，而我见远山");
     expect(app).toContain('brand: "Lume"');
     expect(html).not.toContain("节点总览");
     expect(html).not.toContain("LIVE FLEET");

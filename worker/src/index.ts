@@ -1,5 +1,6 @@
 import { canonicalMessage, constantTimeEqual, hmacHex, parseNodeKeys, parseRevokedNodeIds } from "./auth";
 import { loadDashboardCatalog } from "./catalog";
+import { keyInventory } from "./key-inventory";
 import {
   clearDashboardSessionCookie,
   cleanupDashboardAuth,
@@ -994,6 +995,11 @@ export default {
       if (request.method === "GET") {
         return json({ ok: true, dashboard_origin: await resolveDashboardBaseUrl(env) });
       }
+    }
+    if (request.method === "GET" && url.pathname === "/api/v1/admin/key-inventory") {
+      if (!isAdmin(request, env)) return json({ error: "unauthorized" }, 401);
+      try { return json(await keyInventory(env)); }
+      catch { return json({ error: "key inventory unavailable" }, 503); }
     }
     if (request.method === "GET" && url.pathname === "/api/v1/admin/nodes") {
       if (!isAdmin(request, env)) return json({ error: "unauthorized" }, 401);
