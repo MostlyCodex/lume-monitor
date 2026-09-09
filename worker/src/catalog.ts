@@ -44,17 +44,6 @@ export interface ProbeCatalogRow {
   enabled: number;
 }
 
-export interface CounterCatalogRow {
-  node_id: NodeId;
-  counter_name: string;
-  public_id: string;
-  display_name: string;
-  kind: "nftables-rule";
-  unit: "matches";
-  display_order: number;
-  enabled: number;
-}
-
 export interface MetricCatalogRow {
   metric_key: string;
   display_name: string;
@@ -83,13 +72,12 @@ export interface DashboardCatalog {
   nodes: NodeCatalogRow[];
   services: ServiceCatalogRow[];
   probes: ProbeCatalogRow[];
-  counters: CounterCatalogRow[];
   metrics: MetricCatalogRow[];
   routes: BusinessRouteRow[];
 }
 
 export async function loadDashboardCatalog(env: Env): Promise<DashboardCatalog> {
-  const [nodes, retired, services, probes, counters, metrics, routes] = await Promise.all([
+  const [nodes, retired, services, probes, metrics, routes] = await Promise.all([
     env.DB.prepare(
       "SELECT node_id, public_id, display_name, short_mark, role_label, group_name, region_label, " +
         "stale_seconds, display_order, color_key, offline_severity, ip_change_severity, enabled, retired_at " +
@@ -108,10 +96,6 @@ export async function loadDashboardCatalog(env: Env): Promise<DashboardCatalog> 
         "severity, display_order, is_primary, enabled FROM probe_catalog WHERE enabled = 1 " +
         "ORDER BY node_id, display_order, display_name",
     ).all<ProbeCatalogRow>(),
-    env.DB.prepare(
-      "SELECT node_id, counter_name, public_id, display_name, kind, unit, display_order, enabled " +
-        "FROM counter_catalog WHERE enabled = 1 ORDER BY node_id, display_order, display_name",
-    ).all<CounterCatalogRow>(),
     env.DB.prepare(
       "SELECT metric_key, display_name, unit, category, warning_value, critical_value, " +
         "display_order, default_visible FROM metric_catalog ORDER BY display_order, display_name",
@@ -136,25 +120,10 @@ export async function loadDashboardCatalog(env: Env): Promise<DashboardCatalog> 
     probes: probes.results.filter(
       (probe) => visibleNode(probe.node_id) && visibleTarget(probe.target_node_id),
     ),
-    counters: counters.results.filter((counter) => visibleNode(counter.node_id)),
     metrics: metrics.results,
     routes: routes.results.filter(
       (route) => visibleNode(route.source_node_id) && visibleTarget(route.target_node_id),
     ),
-  };
-}
-
-export function publicCounterCatalogEntry(
-  counter: CounterCatalogRow,
-  nodePublicId: string,
-): Record<string, unknown> {
-  return {
-    node_id: nodePublicId,
-    name: counter.public_id,
-    label: counter.display_name,
-    kind: counter.kind,
-    unit: counter.unit,
-    order: counter.display_order,
   };
 }
 

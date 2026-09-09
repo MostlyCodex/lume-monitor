@@ -21,7 +21,7 @@ test("demo history is generated locally for both overview and node details", () 
   const detail = data.historyData(168, "transit-la");
   assert.ok(overview.probes.length > 0);
   assert.ok(detail.probes.every((probe) => probe.node_id === "transit-la"));
-  assert.ok(detail.counters.length > 0);
+  assert.equal(Object.hasOwn(detail, "counters"), false);
   assert.equal(detail.server_time, latest.server_time);
   assert.ok(!JSON.stringify(latest).includes('"secret"'));
 });

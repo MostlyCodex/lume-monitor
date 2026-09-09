@@ -20,7 +20,6 @@ var probeNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,79}$`)
 var categoryPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
 var markPattern = regexp.MustCompile(`^[A-Za-z0-9]{1,4}$`)
 var colorPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,23}$`)
-var nftIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
 type Node struct {
 	ID               string `json:"id"`
@@ -63,32 +62,16 @@ type Probe struct {
 	Primary                bool    `json:"primary,omitempty"`
 }
 
-// NftablesCounter selects exactly one rule by chain and transport destination
-// port. The privileged snapshot helper reports only numeric counters; the
-// long-running Agent remains unprivileged and never receives rule contents.
-type NftablesCounter struct {
-	Name            string `json:"name"`
-	Label           string `json:"label"`
-	Family          string `json:"family"`
-	Table           string `json:"table"`
-	Chain           string `json:"chain"`
-	Protocol        string `json:"protocol"`
-	DestinationPort int    `json:"destination_port"`
-	RuleComment     string `json:"rule_comment,omitempty"`
-	DisplayOrder    int    `json:"display_order"`
-}
-
 type Config struct {
-	Node                  Node              `json:"node"`
-	Endpoint              string            `json:"endpoint"`
-	Secret                string            `json:"secret"`
-	ReportIntervalSeconds int               `json:"report_interval_seconds"`
-	ProbeIntervalSeconds  int               `json:"probe_interval_seconds"`
-	Services              []Service         `json:"services"`
-	Probes                []Probe           `json:"probes"`
-	NftablesCounters      []NftablesCounter `json:"nftables_counters,omitempty"`
-	SpoolPath             string            `json:"spool_path"`
-	AllowHTTPForTests     bool              `json:"allow_http_for_tests,omitempty"`
+	Node                  Node      `json:"node"`
+	Endpoint              string    `json:"endpoint"`
+	Secret                string    `json:"secret"`
+	ReportIntervalSeconds int       `json:"report_interval_seconds"`
+	ProbeIntervalSeconds  int       `json:"probe_interval_seconds"`
+	Services              []Service `json:"services"`
+	Probes                []Probe   `json:"probes"`
+	SpoolPath             string    `json:"spool_path"`
+	AllowHTTPForTests     bool      `json:"allow_http_for_tests,omitempty"`
 }
 
 func validSeverity(value string) bool {
@@ -142,10 +125,16 @@ func Load(path string) (Config, error) {
 	defer file.Close()
 	decoder := json.NewDecoder(io.LimitReader(file, maxConfigBytes+1))
 	decoder.DisallowUnknownFields()
-	var cfg Config
-	if err := decoder.Decode(&cfg); err != nil {
+	// Accept the retired field when upgrading an existing configuration. It is
+	// discarded at this boundary and never reaches collection or serialization.
+	var document struct {
+		Config
+		RetiredCounters json.RawMessage `json:"nftables_counters"`
+	}
+	if err := decoder.Decode(&document); err != nil {
 		return Config{}, fmt.Errorf("decode config: %w", err)
 	}
+	cfg := document.Config
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -220,8 +209,8 @@ func (c *Config) Validate() error {
 	if c.ProbeIntervalSeconds < c.ReportIntervalSeconds || c.ProbeIntervalSeconds > 3600 {
 		return errors.New("probe_interval_seconds must be between report interval and 3600")
 	}
-	if len(c.Services) > 16 || len(c.Probes) > 32 || len(c.NftablesCounters) > 16 {
-		return errors.New("too many services, probes, or nftables counters")
+	if len(c.Services) > 16 || len(c.Probes) > 32 {
+		return errors.New("too many services or probes")
 	}
 
 	seenServices := map[string]bool{}
@@ -334,38 +323,6 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	seenCounters := map[string]bool{}
-	for index := range c.NftablesCounters {
-		counter := &c.NftablesCounters[index]
-		if !probeNamePattern.MatchString(counter.Name) || seenCounters[counter.Name] {
-			return fmt.Errorf("invalid or duplicate nftables counter name %q", counter.Name)
-		}
-		seenCounters[counter.Name] = true
-		if counter.Label == "" {
-			counter.Label = counter.Name
-		}
-		if counter.DisplayOrder == 0 {
-			counter.DisplayOrder = (index + 1) * 10
-		}
-		if !validText(counter.Label, 80) || counter.DisplayOrder < 1 || counter.DisplayOrder > 10000 {
-			return fmt.Errorf("invalid nftables counter metadata for %q", counter.Name)
-		}
-		if counter.Family != "ip" && counter.Family != "ip6" && counter.Family != "inet" {
-			return fmt.Errorf("nftables counter %q family must be ip, ip6, or inet", counter.Name)
-		}
-		if !nftIdentifierPattern.MatchString(counter.Table) || !nftIdentifierPattern.MatchString(counter.Chain) {
-			return fmt.Errorf("nftables counter %q table and chain names are invalid", counter.Name)
-		}
-		if counter.Protocol != "tcp" && counter.Protocol != "udp" {
-			return fmt.Errorf("nftables counter %q protocol must be tcp or udp", counter.Name)
-		}
-		if counter.DestinationPort < 1 || counter.DestinationPort > 65535 {
-			return fmt.Errorf("nftables counter %q destination_port must be between 1 and 65535", counter.Name)
-		}
-		if counter.RuleComment != "" && !validText(counter.RuleComment, 80) {
-			return fmt.Errorf("nftables counter %q rule_comment is invalid", counter.Name)
-		}
-	}
 	if c.SpoolPath == "" {
 		c.SpoolPath = "/var/lib/vpsmon/pending.json"
 	}

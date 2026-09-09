@@ -56,22 +56,6 @@ export interface ProbeResult {
   checked_at: number;
 }
 
-export interface CounterResult {
-  name: string;
-  label: string;
-  kind: "nftables-rule";
-  unit: "matches";
-  display_order: number;
-  complete: boolean;
-  baseline?: boolean;
-  reset?: boolean;
-  delta?: number;
-  interval_seconds?: number;
-  rate_per_minute?: number;
-  observed_at: number;
-  error?: string;
-}
-
 export interface SystemMetrics {
   hostname: string;
   os: string;
@@ -115,7 +99,6 @@ export interface AgentReport {
   system: SystemMetrics;
   services: ServiceStatus[];
   probes: ProbeResult[];
-  counters: CounterResult[];
   agent: AgentHealth;
 }
 

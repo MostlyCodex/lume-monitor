@@ -1,6 +1,58 @@
 package config
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
+	"testing"
+)
+
+func TestLoadDiscardsRetiredObserverAndStillRejectsUnknownFields(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Load requires Unix file permissions")
+	}
+	original := baseConfig()
+	original.Probes = []Probe{{Name: "reference", Kind: "icmp", Target: "192.0.2.1"}}
+	body, _ := json.Marshal(original)
+	var values map[string]any
+	if err := json.Unmarshal(body, &values); err != nil {
+		t.Fatal(err)
+	}
+	values["nftables_counters"] = []any{map[string]any{"name": "old-rule"}}
+	path := filepath.Join(t.TempDir(), "config.json")
+	write := func() {
+		t.Helper()
+		body, err := json.Marshal(values)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, body, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write()
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Probes) != 1 || cfg.Secret != original.Secret {
+		t.Fatal("upgrade lost current configuration")
+	}
+	body, _ = json.Marshal(cfg)
+	var current map[string]any
+	if err := json.Unmarshal(body, &current); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := current["nftables_counters"]; exists {
+		t.Fatal("retired field survived upgrade")
+	}
+	values["unknown_field"] = true
+	write()
+	if _, err := Load(path); err == nil {
+		t.Fatal("unknown fields must still be rejected")
+	}
+}
 
 func baseConfig() Config {
 	return Config{
@@ -110,35 +162,6 @@ func TestValidateRejectsUnsafeTCPProbe(t *testing.T) {
 		cfg.Probes = []Probe{probe}
 		if err := cfg.Validate(); err == nil {
 			t.Fatalf("expected unsafe TCP probe to be rejected: %+v", probe)
-		}
-	}
-}
-
-func TestValidateAcceptsNftablesCounterSelector(t *testing.T) {
-	cfg := baseConfig()
-	cfg.NftablesCounters = []NftablesCounter{{
-		Name: "relay_443", Family: "ip", Table: "relay_nat", Chain: "prerouting",
-		Protocol: "tcp", DestinationPort: 443,
-	}}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("nftables counter was rejected: %v", err)
-	}
-	if cfg.NftablesCounters[0].Label != "relay_443" || cfg.NftablesCounters[0].DisplayOrder != 10 {
-		t.Fatalf("nftables counter defaults not applied: %+v", cfg.NftablesCounters[0])
-	}
-}
-
-func TestValidateRejectsUnsafeNftablesCounterSelector(t *testing.T) {
-	for _, counter := range []NftablesCounter{
-		{Name: "relay", Family: "bridge", Table: "relay_nat", Chain: "prerouting", Protocol: "tcp", DestinationPort: 443},
-		{Name: "relay", Family: "ip", Table: "relay nat", Chain: "prerouting", Protocol: "tcp", DestinationPort: 443},
-		{Name: "relay", Family: "ip", Table: "relay_nat", Chain: "prerouting", Protocol: "sctp", DestinationPort: 443},
-		{Name: "relay", Family: "ip", Table: "relay_nat", Chain: "prerouting", Protocol: "tcp", DestinationPort: 0},
-	} {
-		cfg := baseConfig()
-		cfg.NftablesCounters = []NftablesCounter{counter}
-		if err := cfg.Validate(); err == nil {
-			t.Fatalf("expected unsafe nftables selector to be rejected: %+v", counter)
 		}
 	}
 }

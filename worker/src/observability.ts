@@ -136,23 +136,13 @@ export function metricSampleStatement(
   const swapUsedPercent = report.system.swap_total_bytes > 0
     ? (report.system.swap_used_bytes / report.system.swap_total_bytes) * 100
     : 0;
-  const packedCounters = report.counters.map((counter) => [
-    counter.name,
-    counter.observed_at,
-    counter.complete ? 1 : 0,
-    counter.baseline ? 1 : 0,
-    counter.reset ? 1 : 0,
-    counter.delta ?? null,
-    counter.interval_seconds ?? null,
-    counter.rate_per_minute ?? null,
-  ]);
   return env.DB.prepare(
     "INSERT OR IGNORE INTO metric_samples_v3(" +
       "reported_at, node_id, received_at, boot_id, cpu_percent, memory_used_percent, " +
       "disk_used_percent, inode_used_percent, load1, load5, load15, swap_used_percent, " +
       "network_rx_bytes, network_tx_bytes, network_rx_rate_bps, network_tx_rate_bps, " +
-      "network_rx_errors, network_tx_errors, network_rx_drops, network_tx_drops, local_counters_json" +
-      ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "network_rx_errors, network_tx_errors, network_rx_drops, network_tx_drops" +
+      ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).bind(
     report.generated_at,
     report.node_id,
@@ -174,7 +164,6 @@ export function metricSampleStatement(
     report.system.network_tx_errors,
     report.system.network_rx_drops,
     report.system.network_tx_drops,
-    JSON.stringify(packedCounters),
   );
 }
 

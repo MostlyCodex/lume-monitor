@@ -184,40 +184,13 @@ describe("report validation", () => {
     }
   });
 
-  it("validates optional numeric nftables counter observations", () => {
+  it("ignores retired counters from older Agents without discarding host or probe data", () => {
     const report = validReport();
-    report.counters = [{
-      name: "relay_443",
-      label: "443 转发规则",
-      kind: "nftables-rule",
-      unit: "matches",
-      display_order: 10,
-      complete: true,
-      delta: 12,
-      interval_seconds: 60,
-      rate_per_minute: 12,
-      observed_at: 1_800_000_000,
-    }];
-    expect(validateReport(report).counters[0]).toMatchObject({ name: "relay_443", delta: 12 });
-  });
-
-  it("rejects counter rates that lack a valid observation interval", () => {
-    const report = validReport();
-    report.counters = [{
-      name: "relay_443", label: "Relay", kind: "nftables-rule", unit: "matches",
-      display_order: 10, complete: true, delta: 1, rate_per_minute: 1, observed_at: 1_800_000_000,
-    }];
-    expect(() => validateReport(report)).toThrow(/missing delta or rate/);
-  });
-
-  it("rejects a counter rate inconsistent with its numeric delta", () => {
-    const report = validReport();
-    report.counters = [{
-      name: "relay_443", label: "Relay", kind: "nftables-rule", unit: "matches",
-      display_order: 10, complete: true, delta: 10, interval_seconds: 60,
-      rate_per_minute: 99, observed_at: 1_800_000_000,
-    }];
-    expect(() => validateReport(report)).toThrow(/inconsistent with delta and interval/);
+    report.counters = [{ name: "retired", complete: false, error: "snapshot unavailable" }];
+    const current = validateReport(report);
+    expect(current).not.toHaveProperty("counters");
+    expect(current.system).toEqual(validateReport(validReport()).system);
+    expect(current.probes).toEqual(validateReport(validReport()).probes);
   });
 
   it("rejects inconsistent probe counts and round status", () => {

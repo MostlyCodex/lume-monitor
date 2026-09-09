@@ -320,7 +320,7 @@ assert(dashboardBody.schema_version === 2, "dashboard schema version is incorrec
 assert(dashboardBody.catalog.nodes.length === 2, "node catalog is incomplete");
 assert(dashboardBody.catalog.services.length === 1, "service catalog is incomplete");
 assert(dashboardBody.catalog.routes.length === 2, "node-link routes were not registered");
-assert(dashboardBody.catalog.counters.length === 1, "optional counter catalog is incomplete");
+assert(!("counters" in dashboardBody.catalog), "retired counter catalog is still exposed");
 const alphaLatest = dashboardBody.nodes.find((node) => node.id === "alpha-vps");
 const betaLatest = dashboardBody.nodes.find((node) => node.id === "beta-vps");
 assert(alphaLatest.metrics.network_rx_rate_bps === 100, `network RX rate was not derived correctly: ${alphaLatest.metrics.network_rx_rate_bps}`);
@@ -329,7 +329,7 @@ assert(alphaLatest.probes.find((probe) => probe.name === "external_icmp")?.packe
 const tcpLatest = alphaLatest.probes.find((probe) => probe.name === "peer_tcp_443");
 assert(tcpLatest?.kind === "tcp" && tcpLatest.packet_loss_percent === null, "TCP failure was mislabeled as packet loss");
 assert(Math.round(tcpLatest?.sample_failure_percent) === 33, "TCP connect failure rate is missing");
-assert(alphaLatest.counters[0]?.rate_per_minute === 12, "latest nftables counter rate is missing");
+assert(!("counters" in alphaLatest), "retired counters are still exposed in latest reports");
 assert(betaLatest.services.length === 0 && betaLatest.probes.length === 0, "host-only node gained unwanted optional checks");
 
 const history = await fetch(`${base}/api/v1/dashboard/history?hours=24`, { headers: adminHeaders });
@@ -363,7 +363,7 @@ assert(detailBody.metrics.every((row) => row.node_id === "alpha-vps"), "node det
 assert(detailBody.probe_summaries.some((probe) => probe.probe_name === "peer_icmp"), "node probe summary is missing");
 const tcpSummary = detailBody.probe_summaries.find((probe) => probe.probe_name === "peer_tcp_443");
 assert(tcpSummary?.packet_loss_percent === null && Math.round(tcpSummary?.sample_failure_percent) === 33, "TCP detail semantics are incorrect");
-assert(detailBody.counters.some((counter) => counter.counter_name === "relay_443" && counter.rate_per_minute === 12), "counter history is missing");
+assert(!("counters" in detailBody), "retired counter history is still exposed");
 assert(detailBody.routes.length === 0, "node detail performed unused fleet route aggregation");
 
 for (const hours of [720, 2160]) {
@@ -406,8 +406,8 @@ assert(hostOnlyAccepted.status === 202, "removing optional checks rejected the b
 const hostOnlyDashboard = await fetch(`${base}/api/v1/dashboard/latest`, { headers: adminHeaders });
 const hostOnlyDashboardBody = await hostOnlyDashboard.json();
 const hostOnlyAlphaLatest = hostOnlyDashboardBody.nodes.find((node) => node.id === "alpha-vps");
-assert(hostOnlyAlphaLatest.services.length === 0 && hostOnlyAlphaLatest.probes.length === 0 && hostOnlyAlphaLatest.counters.length === 0, "removed optional checks remained on the node");
-assert(hostOnlyDashboardBody.catalog.services.length === 0 && hostOnlyDashboardBody.catalog.routes.length === 0 && hostOnlyDashboardBody.catalog.counters.length === 0, "removed optional catalogs remained enabled");
+assert(hostOnlyAlphaLatest.services.length === 0 && hostOnlyAlphaLatest.probes.length === 0, "removed optional checks remained on the node");
+assert(hostOnlyDashboardBody.catalog.services.length === 0 && hostOnlyDashboardBody.catalog.routes.length === 0, "removed optional catalogs remained enabled");
 assert(hostOnlyDashboardBody.mode === "passive" && hostOnlyDashboardBody.alerts.length === 0, "passive dashboard exposed alert state");
 const hostOnlyHistory = await fetch(`${base}/api/v1/dashboard/history?hours=24`, { headers: adminHeaders });
 const hostOnlyHistoryBody = await hostOnlyHistory.json();
@@ -419,7 +419,7 @@ const hostOnlyDetail = await fetch(`${base}/api/v1/dashboard/history?hours=24&no
 const hostOnlyDetailBody = await hostOnlyDetail.json();
 assert(hostOnlyDetailBody.probes.length === 0, "disabled probes remained in node detail history");
 assert(hostOnlyDetailBody.probe_summaries.length === 0, "disabled probes remained in node detail summaries");
-assert(hostOnlyDetailBody.counters.length === 0, "disabled counters remained in node detail history");
+assert(!("counters" in hostOnlyDetailBody), "retired counters remained in node detail history");
 
 // Retirement. The regression this guards: Beta is decommissioned while Alpha
 // still reports a node-link probe toward it. Before `retired_at` existed,

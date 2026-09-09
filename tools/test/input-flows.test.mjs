@@ -25,7 +25,7 @@ function dialog(steps) {
     questions.push(question);
     return step[1];
   };
-  return { text:(question)=>answer("text",question), yes:(question)=>answer("yes",question), questions, done:()=>assert.equal(pending.length,0) };
+  return { text:(question,_fallback,{hint}={})=>answer("text",hint?`${question}（${hint}）`:question), yes:(question)=>answer("yes",question), questions, done:()=>assert.equal(pending.length,0) };
 }
 
 function contextFor(names, dependencies = {}) {

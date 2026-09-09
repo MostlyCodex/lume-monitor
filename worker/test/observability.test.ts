@@ -49,7 +49,6 @@ function report(generatedAt: number, bootId: string, rx: number, tx: number): Ag
     },
     services: [],
     probes: [],
-    counters: [],
     agent: { queue_depth: 0, collect_errors: 0, send_errors: 0, started_at: 1 },
   };
 }

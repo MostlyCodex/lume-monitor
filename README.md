@@ -10,7 +10,7 @@
 
 - **主机资源**：CPU、内存、磁盘、流量、启动时间和 Agent 状态。
 - **线路质量**：ICMP 延迟与丢包、TCP 建连延迟与失败率、节点间链路。
-- **可选观测**：只读 systemd 服务状态、nftables 规则命中计数。
+- **服务状态**：只读监测所选 systemd 服务。
 - **历史与查询**：资源和线路历史、运行事件、IP 变化；Telegram `/status` 和 `/panel`。
 
 Agent 通过 HTTPS 主动上报，Cloudflare Worker 接收，D1 保存数据。VPS 不新增监听端口，也不需要 Docker、Node.js 或数据库。

@@ -37,7 +37,7 @@ not encryption.
 - The Agent systemd unit drops capabilities and applies filesystem, namespace, memory, CPU, and task limits.
 - ICMP probes use Linux unprivileged datagram ping sockets. The Agent does not request root or `CAP_NET_RAW`; an unavailable ping socket is reported as an explicit probe error.
 - TCP probes use ordinary outbound sockets, close immediately after the handshake and send no application data.
-- nftables counter observation is disabled by default. When configured, a timer-triggered oneshot holds only `CAP_NET_ADMIN`, reduces the selected existing rule to numeric counter data, and exits. The resident Agent remains unprivileged; neither process mutates firewall rules.
+- Agent upgrades remove the retired Lume snapshot helper; they never modify the host firewall rules. The resident Agent remains unprivileged.
 
 ## Deployment responsibility
 

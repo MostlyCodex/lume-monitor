@@ -100,7 +100,6 @@ function report(overrides: Partial<AgentReport> = {}): AgentReport {
     probes: [icmpProbe()],
     agent: { queue_depth: 0, collect_errors: 0, send_errors: 0, started_at: now - 1000 },
     ...overrides,
-    counters: overrides.counters ?? [],
   };
 }
 

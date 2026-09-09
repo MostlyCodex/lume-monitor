@@ -36,6 +36,7 @@ jobs:
         working-directory: agent
         run: |
           sh ../deploy/test-upgrade-retention.sh
+          sh ../deploy/test-agent-upgrade.sh
           go test ./...
           go vet ./...
       - name: Install development toolchain

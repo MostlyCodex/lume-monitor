@@ -195,8 +195,8 @@ describe("dashboard presentation hierarchy", () => {
     expect(styles).toContain('html[data-theme="light"] .range-switch');
     expect(styles).toContain('.detail-probe-card.is-active');
     expect(styles).toContain('html[data-theme="light"] .detail-probe-card');
-    expect(html).toContain('id="counter-section" class="detail-section is-hidden"');
-    expect(app).toContain('$("counter-section").classList.toggle("is-hidden", counters.length === 0)');
+    expect(html).not.toContain('id="counter-section"');
+    expect(app).not.toContain("renderCounterSummary");
     expect(app).toContain('failureLabel: probe.kind === "tcp" ? "建连失败" : "丢包"');
   });
 

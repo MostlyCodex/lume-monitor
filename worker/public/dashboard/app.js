@@ -180,7 +180,6 @@
       selected_node: nodeId,
       metrics: (history.metrics || []).filter((row) => row.node_id === nodeId && Number(row.timestamp) >= since),
       probes: (history.probes || []).filter((row) => row.node_id === nodeId && Number(row.timestamp) >= since),
-      counters: [],
       probe_summaries: [],
       annotations: (history.annotations || []).filter((event) => event.node_id === nodeId && Number(event.timestamp) >= since),
     };
@@ -854,43 +853,6 @@
     ].join("");
   }
 
-  function formatCounterRate(value) {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return "—";
-    if (numeric >= 1000) return `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 }).format(numeric)} 次/分`;
-    return `${numeric.toFixed(numeric < 10 ? 1 : 0)} 次/分`;
-  }
-
-  function counterState(counter) {
-    if (!counter.complete) return { tone: "critical", label: "读取失败", detail: counter.error || "快照不可用" };
-    if (counter.reset) return { tone: "warning", label: "已重置", detail: "正在重新建立基线" };
-    if (counter.baseline || counter.rate_per_minute === null) return { tone: "neutral", label: "建立基线", detail: "下一轮显示变化速率" };
-    return {
-      tone: "healthy",
-      label: "观测正常",
-      detail: `${Number(counter.interval_seconds || 0)} 秒内增加 ${Number(counter.delta || 0)} 次`,
-    };
-  }
-
-  function renderCounterSummary() {
-    const node = getNode(state.selectedNode);
-    const counters = Array.isArray(node?.counters) ? node.counters : [];
-    $("counter-section").classList.toggle("is-hidden", counters.length === 0);
-    if (!counters.length) {
-      $("counter-summary").replaceChildren();
-      destroyPlot("counter-plot");
-      return;
-    }
-    $("counter-summary").innerHTML = counters.map((counter) => {
-      const status = counterState(counter);
-      return `<article class="counter-observer is-${status.tone}">
-        <div><i aria-hidden="true"></i><strong>${escapeHtml(counter.label || counter.name)}</strong><span>${escapeHtml(status.label)}</span></div>
-        <b>${escapeHtml(formatCounterRate(counter.rate_per_minute))}</b>
-        <small>${escapeHtml(status.detail)}</small>
-      </article>`;
-    }).join("");
-  }
-
   function renderDetailProbeSummary() {
     const node = getNode(state.selectedNode);
     if (!node) return;
@@ -1326,17 +1288,6 @@
     $("network-chart-state").textContent = `${selectedCount} 条线路 · ${totalSamples} 个区间采样`;
     renderNetworkPlot("network-plot", "network-empty", networkSeries);
 
-    const counterRows = history.counters || [];
-    const counterCatalog = node.counters || [];
-    const counterColors = ["--cyan", "--amber", "--probe-link", "--probe-telecom", "--probe-unicom"];
-    renderPlot("counter-plot", "counter-empty", counterCatalog.map((counter, index) => ({
-      label: counter.label || counter.name,
-      color: cssColor(counterColors[index % counterColors.length]),
-      points: counterRows
-        .filter((row) => row.counter_name === counter.name)
-        .map((row) => ({ x: Number(row.timestamp), y: row.rate_per_minute === null ? null : Number(row.rate_per_minute) })),
-    })), { kind: "counter", formatter: formatCounterRate });
-
     const metrics = history.metrics || [];
     renderPlot("traffic-plot", "traffic-empty", [
       { label: "下载", color: cssColor("--cyan"), points: metrics.map((row) => ({ x: Number(row.timestamp), y: row.network_rx_rate_bps === null ? null : Number(row.network_rx_rate_bps) })) },
@@ -1356,7 +1307,6 @@
     renderDetailHero();
     renderDetailFacts();
     renderDetailProbeSummary();
-    renderCounterSummary();
     if (state.detailHistory) {
       renderDetailEvents();
       requestAnimationFrame(renderDetailCharts);

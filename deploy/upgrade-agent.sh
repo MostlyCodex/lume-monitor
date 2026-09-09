@@ -75,8 +75,7 @@ case "$stage" in
   *) echo "refusing stage path outside /tmp/vpsmon-stage.*" >&2; exit 2 ;;
 esac
 
-for required in vpsmon-agent config.json vpsmon-agent.service \
-  vpsmon-nftables-snapshot.service vpsmon-nftables-snapshot.timer checksums.sha256; do
+for required in vpsmon-agent config.json vpsmon-agent.service checksums.sha256; do
   if [ ! -f "$stage/$required" ] || [ -L "$stage/$required" ]; then
     echo "missing or unsafe staged file: $required" >&2
     exit 2
@@ -109,8 +108,6 @@ esac
 chmod 0755 "$stage/vpsmon-agent"
 chmod 0600 "$stage/config.json"
 chmod 0644 "$stage/vpsmon-agent.service"
-chmod 0644 "$stage/vpsmon-nftables-snapshot.service"
-chmod 0644 "$stage/vpsmon-nftables-snapshot.timer"
 
 if ! "$stage/vpsmon-agent" --config "$stage/config.json" --dry-run >/dev/null; then
   echo "staged agent preflight failed" >&2
@@ -119,9 +116,7 @@ fi
 
 if command -v systemd-analyze >/dev/null 2>&1; then
   if ! systemd-analyze verify \
-    "$stage/vpsmon-agent.service" \
-    "$stage/vpsmon-nftables-snapshot.service" \
-    "$stage/vpsmon-nftables-snapshot.timer" >/dev/null 2>&1; then
+    "$stage/vpsmon-agent.service" >/dev/null 2>&1; then
     echo "staged systemd unit verification failed" >&2
     exit 4
   fi
@@ -237,26 +232,19 @@ systemctl stop vpsmon-nftables-snapshot.service >/dev/null 2>&1 || true
 systemctl stop vpsmon-agent.service
 if ! install -o root -g root -m 0755 "$stage/vpsmon-agent" /opt/vpsmon/vpsmon-agent ||
    ! install -o root -g vpsmon -m 0640 "$stage/config.json" /etc/vpsmon/config.json ||
-   ! install -o root -g root -m 0644 "$stage/vpsmon-agent.service" /etc/systemd/system/vpsmon-agent.service ||
-   ! install -o root -g root -m 0644 "$stage/vpsmon-nftables-snapshot.service" /etc/systemd/system/vpsmon-nftables-snapshot.service ||
-   ! install -o root -g root -m 0644 "$stage/vpsmon-nftables-snapshot.timer" /etc/systemd/system/vpsmon-nftables-snapshot.timer; then
+   ! install -o root -g root -m 0644 "$stage/vpsmon-agent.service" /etc/systemd/system/vpsmon-agent.service; then
   rollback
   exit 5
 fi
 
-systemctl daemon-reload
-configured_counters=$("$stage/vpsmon-agent" --config "$stage/config.json" --list-nftables-counters)
-if [ -n "$configured_counters" ]; then
-  if ! command -v nft >/dev/null 2>&1 ||
-     ! systemctl enable --now vpsmon-nftables-snapshot.timer >/dev/null ||
-     ! systemctl start vpsmon-nftables-snapshot.service; then
-    rollback
-    exit 5
-  fi
-else
-  systemctl disable --now vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
-  systemctl stop vpsmon-nftables-snapshot.service >/dev/null 2>&1 || true
-  rm -f -- /var/lib/vpsmon/nftables-counters.json
+# Remove only Lume's retired snapshot helper. The host firewall is untouched.
+systemctl disable --now vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
+systemctl stop vpsmon-nftables-snapshot.service >/dev/null 2>&1 || true
+if ! rm -f -- /etc/systemd/system/vpsmon-nftables-snapshot.service \
+  /etc/systemd/system/vpsmon-nftables-snapshot.timer /var/lib/vpsmon/nftables-counters.json ||
+   ! systemctl daemon-reload; then
+  rollback
+  exit 5
 fi
 if [ "$was_enabled" = "enabled" ]; then
   if ! systemctl enable vpsmon-agent.service >/dev/null; then
@@ -299,4 +287,3 @@ echo "rollback_backup=$backup"
 echo "retained_upgrade_backups=$keep_upgrade_backups"
 echo "pruned_upgrade_backups=$pruned_backups"
 echo "agent_state=$(systemctl is-active vpsmon-agent.service 2>/dev/null || true)"
-echo "nftables_counter_timer=$(systemctl is-active vpsmon-nftables-snapshot.timer 2>/dev/null || true)"

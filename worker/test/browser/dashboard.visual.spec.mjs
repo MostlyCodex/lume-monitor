@@ -214,9 +214,7 @@ test("node detail renders charts, color keys and mobile controls", async ({ page
   await expect(page.locator("#traffic-plot .uplot")).toBeVisible();
   await expect(page.locator(".detail-probe-card")).toHaveCount(5);
   await expect(page.locator(".detail-probe-card").filter({ hasText: "TCP 443" })).toHaveAttribute("aria-label", /建连失败/);
-  await expect(page.locator("#counter-section")).toBeVisible();
-  await expect(page.locator(".counter-observer")).toHaveCount(1);
-  await expect(page.locator("#counter-plot .uplot")).toBeVisible();
+  await expect(page.locator("#counter-section")).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
   await expectGlassMaterial(page, ".chart-card");
   await expectCompactSingleEdge(page, "#detail-range-switch", 9);

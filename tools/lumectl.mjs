@@ -8,8 +8,8 @@ import { basename, dirname, join, resolve } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath } from "node:url";
 import { applyPending, keyProof, parseJsonc, restorePeerProbes, validateImportedConfig, verifyKeyInventory, workerOrigin } from "./management.mjs";
-import { editObserverEntries, externalProbes, parseServices, printObserverSummary, promptNetworkProbes, promptNftablesCounters, promptServices } from "./observers.mjs";
-import { InputError, choiceValue, displayValue, inputValue, makePrompter } from "./prompts.mjs";
+import { editObserverEntries, externalProbes, parseServices, printObserverSummary, promptNetworkProbes, promptServices } from "./observers.mjs";
+import { InputError, PromptCancelled, PromptClosed, choiceValue, displayValue, inputValue, makePrompter } from "./prompts.mjs";
 
 const toolFile = fileURLToPath(import.meta.url);
 const repoRoot = resolve(dirname(toolFile), "..");
@@ -172,7 +172,6 @@ export function createAgentConfig({
   secret,
   services = [],
   probes = [],
-  nftablesCounters = [],
 }) {
   if (!validateNodeId(id)) fail("节点 ID 必须匹配 [a-z0-9][a-z0-9_-]{0,31}");
   if (typeof secret !== "string" || secret.length < 32) fail("节点密钥无效");
@@ -201,7 +200,6 @@ export function createAgentConfig({
     probe_interval_seconds: 60,
     services,
     probes,
-    nftables_counters: nftablesCounters,
     spool_path: "/var/lib/vpsmon/pending.json",
   };
 }
@@ -367,7 +365,7 @@ async function readNodeConfiguration(prompt, id, defaultTarget = "", rebuildOrig
     const services = await promptServices(prompt, { line });
     const observers = await promptOptionalObservers(prompt, { excludeNodeId: id });
     const target = await promptSshTarget(prompt, "SSH 目标", defaultTarget || id);
-    return { target, config: createAgentConfig({ id, displayName, role, region, endpoint: rebuildOrigin, secret: randomSecret(), services, probes: observers.probes, nftablesCounters: observers.nftablesCounters }) };
+    return { target, config: createAgentConfig({ id, displayName, role, region, endpoint: rebuildOrigin, secret: randomSecret(), services, probes: observers.probes }) };
   }
   if (source === "2") {
     const config = await inputValue(prompt, "配置文件路径（内容不会打印）", {
@@ -750,8 +748,7 @@ async function promptOptionalObservers(prompt, { state, excludeNodeId = "" } = {
   state ||= await loadState(false);
   const sources = await availableProbeSources(state, excludeNodeId);
   const probes = await promptNetworkProbes(prompt, { sources, nodes: probeTargetNodes(state, excludeNodeId), line });
-  const nftablesCounters = await promptNftablesCounters(prompt, { line });
-  return { probes, nftablesCounters };
+  return { probes };
 }
 
 function nextDisplayOrder(state, offset) {
@@ -778,7 +775,6 @@ export function normalizeNodeSpec(spec) {
     services,
     ssh,
     probes: Array.isArray(spec.probes) ? spec.probes : [],
-    nftablesCounters: Array.isArray(spec.nftables_counters) ? spec.nftables_counters : [],
   };
 }
 
@@ -811,7 +807,6 @@ async function createNodeRecords(state, specs) {
       secret: entry.secret,
       services: parseServices(entry.spec.services),
       probes: entry.spec.probes,
-      nftablesCounters: entry.spec.nftablesCounters,
     });
     state.nodeKeys[entry.spec.id] = entry.secret;
     state.nodes[entry.spec.id] = {
@@ -876,7 +871,7 @@ async function addNode(prompt, options) {
     const services = await promptServices(prompt, { line });
     const optionalObservers = await promptOptionalObservers(prompt, { state, excludeNodeId: id });
     const target = await promptSshTarget(prompt, "SSH 部署目标", "", true);
-    printObserverSummary({ node: { id, display_name: displayName }, services, probes: optionalObservers.probes, nftables_counters: optionalObservers.nftablesCounters }, line);
+    printObserverSummary({ node: { id, display_name: displayName }, services, probes: optionalObservers.probes }, line);
     line(`  部署目标：${target || "暂不安装，稍后在管理菜单部署"}`);
     if (!(await prompt.yes("按以上配置新增节点并继续部署", true))) return;
     specs = [normalizeNodeSpec({
@@ -888,7 +883,6 @@ async function addNode(prompt, options) {
       services: services.map((service) => service.name),
       ssh: target,
       probes: optionalObservers.probes,
-      nftables_counters: optionalObservers.nftablesCounters,
     })];
   }
   await createNodeRecords(state, specs);
@@ -915,13 +909,8 @@ async function configureNodeObservers(prompt, id) {
     fallback: config.probes.length ? "1" : "2",
     create: async ({ existing }) => promptNetworkProbes(prompt, { sources: await availableProbeSources(state, id), nodes: probeTargetNodes(state, id), existing, line }),
   });
-  if (await prompt.yes("修改 nftables 规则计数器（与网络探针独立）", false)) {
-    config.nftables_counters = await editObserverEntries(prompt, {
-      label: "nftables 计数器", entries: config.nftables_counters || [], limit: 16, line,
-      fallback: config.nftables_counters?.length ? "1" : "2",
-      create: async ({ existing }) => promptNftablesCounters(prompt, { existing, line }),
-    });
-  }
+  // A saved configuration upgrade drops the retired observer field.
+  delete config.nftables_counters;
   const changed = JSON.stringify(config) !== original;
   if (changed) {
     printObserverSummary(config, line);
@@ -1073,8 +1062,6 @@ async function installNode(id, target, options = {}) {
     "vpsmon-agent",
     "config.json",
     "vpsmon-agent.service",
-    "vpsmon-nftables-snapshot.service",
-    "vpsmon-nftables-snapshot.timer",
     installer,
   ];
   let remoteStagePresent = false;
@@ -1093,8 +1080,11 @@ async function installNode(id, target, options = {}) {
     line(`获取并校验 Lume v${version} linux/${architecture}…`);
 
     await obtainAgentBinary(version, architecture, join(localStage, "vpsmon-agent"));
-    await writeFile(join(localStage, "config.json"), await readFile(configPath), { mode: 0o600 });
-    for (const unit of ["vpsmon-agent.service", "vpsmon-nftables-snapshot.service", "vpsmon-nftables-snapshot.timer"]) {
+    const originalConfig = await readFile(configPath, "utf8");
+    const stagedConfig = JSON.parse(originalConfig);
+    delete stagedConfig.nftables_counters;
+    await writeFile(join(localStage, "config.json"), `${JSON.stringify(stagedConfig, null, 2)}\n`, { mode: 0o600 });
+    for (const unit of ["vpsmon-agent.service"]) {
       await writeFile(join(localStage, unit), await readFile(join(deployDir, unit)), { mode: 0o644 });
     }
     await writeFile(join(localStage, installer), await readFile(join(deployDir, installer)), { mode: 0o700 });
@@ -1118,7 +1108,7 @@ async function installNode(id, target, options = {}) {
     await run("ssh", ["-t", target, [
       `chmod 700 ${remoteStage}/vpsmon-agent ${remoteStage}/${installer}`,
       `chmod 600 ${remoteStage}/config.json ${remoteStage}/checksums.sha256`,
-      `chmod 644 ${remoteStage}/vpsmon-agent.service ${remoteStage}/vpsmon-nftables-snapshot.service ${remoteStage}/vpsmon-nftables-snapshot.timer`,
+      `chmod 644 ${remoteStage}/vpsmon-agent.service`,
       `sudo sh ${remoteStage}/${installer} ${remoteStage}`,
       ...(options.activate ? ["sudo systemctl enable --now vpsmon-agent.service"] : []),
     ].join(" && ")], { interactive: true });
@@ -1132,6 +1122,12 @@ async function installNode(id, target, options = {}) {
     const active = verifyLines.includes("active");
     if (!active && !(installer === "upgrade-agent.sh" && !options.activate && verifyLines.includes("inactive"))) fail("Agent 部署后的服务状态异常");
 
+    // Only update the local copy after successful installation, and do not
+    // overwrite a configuration edited by another terminal during deployment.
+    if (await readFile(configPath, "utf8") === originalConfig && Object.hasOwn(JSON.parse(originalConfig), "nftables_counters")) {
+      await writePrivateJson(join(privateDir, "backups", `${id}-config-${Date.now()}.json`), JSON.parse(originalConfig));
+      await writePrivateJson(configPath, stagedConfig);
+    }
     state.nodes[id].sshTarget = target;
     state.nodes[id].installed = true;
     await writePrivateJson(statePath, state);
@@ -1259,7 +1255,7 @@ async function removeNode(prompt, id, options) {
       await uninstallRemoteAgent(target);
     } else {
       line(`停止 ${target} 上的 Agent…`);
-      await run("ssh", ["-t", target, "sudo systemctl disable --now vpsmon-agent.service vpsmon-nftables-snapshot.timer"], { interactive: true });
+      await run("ssh", ["-t", target, "sudo systemctl disable --now vpsmon-agent.service && (sudo systemctl disable --now vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true)"], { interactive: true });
     }
   }
 
@@ -1482,7 +1478,11 @@ async function manage(prompt) {
       else if (choice === "7" || choice === "9") await removeNode(prompt, await pickNode(prompt), new Map(choice === "9" ? [["uninstall", true]] : []));
       else if (choice === "8") await restoreNode(prompt, await pickNode(prompt, { retired: true }), new Map());
       else line("请输入 0–9。");
-    } catch (error) { line(`操作未完成：${error.message}`); }
+    } catch (error) {
+      if (error instanceof PromptClosed) return;
+      if (error instanceof PromptCancelled) line("已返回管理菜单；已保存的配置和待部署状态会保留。");
+      else line(`操作未完成：${error.message}`);
+    }
   }
 }
 
@@ -1497,6 +1497,7 @@ async function main() {
   if (command === "status") return showStatus();
   const { flags, positional } = parseFlags(argv);
   const prompt = makePrompter();
+  line("回车采用默认值；输入 /cancel 取消当前操作。网络探针表单支持 /back 返回上一项。");
   try {
     if (command === "manage") return await manage(prompt);
     if (command === "adopt") return await adoptDeployment(prompt);
@@ -1542,6 +1543,10 @@ async function main() {
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(toolFile)) {
   main().catch((error) => {
+    if (error instanceof PromptCancelled) {
+      line("已退出当前操作；已保存的配置和待部署状态会保留。");
+      return;
+    }
     process.stderr.write(`\n错误：${error.message}\n`);
     process.exitCode = 1;
   });

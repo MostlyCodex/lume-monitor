@@ -16,8 +16,10 @@ jobs:
         working-directory: agent
     steps:
       - uses: actions/checkout@v6
-      - name: Verify upgrade backup retention
-        run: sh ../deploy/test-upgrade-retention.sh
+      - name: Verify Agent upgrade, rollback and backup retention
+        run: |
+          sh ../deploy/test-upgrade-retention.sh
+          sh ../deploy/test-agent-upgrade.sh
       - uses: actions/setup-go@v7
         with:
           go-version-file: agent/go.mod

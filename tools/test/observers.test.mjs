@@ -4,10 +4,10 @@ import { join } from "node:path";
 import vm from "node:vm";
 import test from "node:test";
 import { normalizeNodeSpec, validateNodeId, validateSshTarget } from "../lumectl.mjs";
-import { InputError, choiceValue, displayValue, inputValue } from "../prompts.mjs";
+import { InputError, PromptCancelled, PromptClosed, choiceValue, displayValue, inputValue } from "../prompts.mjs";
 import {
   createCarrierProbes, editObserverEntries, externalProbes, mergeObserverEntries,
-  printObserverSummary, probeTarget, promptNetworkProbes, promptNftablesCounters, promptServices, selectedIndices,
+  printObserverSummary, probeTarget, promptNetworkProbes, promptServices, selectedIndices,
 } from "../observers.mjs";
 
 const carriers = createCarrierProbes({ region: "测试地区", targets: { ct: "192.0.2.1", cu: "198.51.100.1", cm: "203.0.113.1" } });
@@ -23,12 +23,12 @@ function scriptedPrompt(steps) {
     questions.push(question);
     return step[1] === "" ? fallback : step[1];
   };
-  return { text:(q,f="")=>next("text",q,f), yes:(q,f=false)=>next("yes",q,f), questions, done:()=>assert.equal(pending.length,0) };
+  return { text:(q,f="",o={})=>next("text",o.hint?`${q}（${o.hint}）`:q,f), yes:(q,f=false)=>next("yes",q,f), questions, done:()=>assert.equal(pending.length,0) };
 }
 
 test("network wizard defaults to reusing selected existing carrier probes without mutating the source", async () => {
   const source = structuredClone(sourceNode);
-  const prompt = scriptedPrompt([["text",""],["text","1"],["text","1,3"],["yes",false]]);
+  const prompt = scriptedPrompt([["text",""],["text","1"],["text","1,3"]]);
   const probes = await promptNetworkProbes(prompt, { sources:[source], line:()=>{} });
   assert.deepEqual(probes, [carriers[0], carriers[2]]);
   probes[0].target = "changed.example";
@@ -38,11 +38,11 @@ test("network wizard defaults to reusing selected existing carrier probes withou
 
 test("fresh deployment can configure all three carriers interactively without a source node", async () => {
   const prompt = scriptedPrompt([
-    ["text","1"],["text","测试地区"],["text","test"],
-    ["text","192.0.2.10"],["text","unicom.example"],["text","2001:db8::1"],["yes",false],
+    ["text","1"],["text","测试地区"],
+    ["text","192.0.2.10"],["text","unicom.example"],["text","2001:db8::1"],
   ]);
   const probes = await promptNetworkProbes(prompt, { line:()=>{} });
-  assert.deepEqual(probes.map(p=>p.name), ["test_ct","test_cu","test_cm"]);
+  assert.deepEqual(probes.map(p=>p.name), ["carrier_ct","carrier_cu","carrier_cm"]);
   assert.ok(probes.every(p=>p.kind==="icmp" && p.category==="carrier-reference" && !p.port && !p.target_node_id));
   assert.match(probes[2].label,/移动/);
   prompt.done();
@@ -50,25 +50,12 @@ test("fresh deployment can configure all three carriers interactively without a 
 
 test("custom TCP and node links remain configurable from the same network wizard", async () => {
   const prompt = scriptedPrompt([
-    ["text","3"],["yes",true],["text","tcp"],["text","peer_tls"],["text","Peer TLS"],
-    ["text","peer.example"],["text","8443"],["text","beta"],["yes",false],
+    ["text","3"],["text","tcp"],["text","peer.example"],["text","8443"],["text","Peer TLS"],["text","1"],["yes",false],
   ]);
   const probes = await promptNetworkProbes(prompt,{nodes:["beta"],line:()=>{}});
   assert.equal(probes[0].target_node_id,"beta");
   assert.equal(probes[0].category,"node-link");
   assert.equal(probes[0].port,8443);
-  prompt.done();
-});
-
-test("nftables remains independently configurable when network probes are skipped", async () => {
-  const prompt = scriptedPrompt([
-    ["text","0"],["yes",true],["text","hits"],["text","Rule hits"],["text","inet"],
-    ["text","filter"],["text","input"],["text","tcp"],["text","443"],["text",""],["yes",false],
-  ]);
-  assert.deepEqual(await promptNetworkProbes(prompt,{line:()=>{}}),[]);
-  const counters = await promptNftablesCounters(prompt,{line:()=>{}});
-  assert.equal(counters[0].destination_port,443);
-  assert.equal(counters[0].table,"filter");
   prompt.done();
 });
 
@@ -99,34 +86,31 @@ test("selection, target validation and merge reject invalid input and conflictin
 
 test("custom probe retries each invalid field while preserving previous choices", async () => {
   const prompt = scriptedPrompt([
-    ["text","9",/方式/],["text","3",/方式/],["yes",true],
+    ["text","9",/方式/],["text","3",/方式/],
     ["text","udp",/类型/],["text","TCP",/类型/],
-    ["text","Bad Name",/探针名称/],["text",carriers[0].name,/探针名称/],["text","web_tcp",/探针名称/],
-    ["text","网站连接"],
     ["text","https://web.example",/目标主机/],["text","999.1.1.1",/目标主机/],["text","web.example",/目标主机/],
     ["text","65536",/端口/],["text","1.5",/端口/],["text","443",/端口/],
-    ["text","missing",/目标节点/],["text","beta",/目标节点/],["yes",false],
+    ["text","网站连接"],["text","missing",/目标节点/],["text","1",/目标节点/],["yes",false],
   ]);
   const errors = [];
   const probes = await promptNetworkProbes(prompt, { existing:carriers, nodes:["beta"], line:(message)=>errors.push(message) });
-  assert.equal(probes[0].name,"web_tcp");
+  assert.equal(probes[0].name,"tcp");
   assert.equal(probes[0].target,"web.example");
   assert.equal(probes[0].port,443);
   assert.equal(probes[0].target_node_id,"beta");
-  assert.equal(errors.filter(message=>message.startsWith("输入无效")).length,9);
+  assert.equal(errors.filter(message=>message.startsWith("输入无效")).length,7);
   assert.equal(prompt.questions.filter(question=>question.startsWith("面板显示名")).length,1);
   prompt.done();
 });
 
-test("carrier prefix and each target retry locally, including generated label byte limits",async()=>{
+test("carrier names are generated without collisions and target validation preserves earlier answers",async()=>{
   const prompt=scriptedPrompt([
     ["text","1"],["text","北".repeat(23),/目标地区/],["text","北".repeat(22),/目标地区/],
-    ["text","carrier",/前缀/],["text","x".repeat(78),/前缀/],["text","new",/前缀/],
     ["text","192.0.2.1:80",/电信/],["text","192.0.2.1",/电信/],
-    ["text","unicom.example"],["text","2001:db8::1"],["yes",false],
+    ["text","unicom.example"],["text","2001:db8::1"],
   ]);
   const probes=await promptNetworkProbes(prompt,{existing:carriers,line:()=>{}});
-  assert.deepEqual(probes.map(probe=>probe.name),["new_ct","new_cu","new_cm"]);
+  assert.deepEqual(probes.map(probe=>probe.name),["carrier_2_ct","carrier_2_cu","carrier_2_cm"]);
   assert.ok(probes.every(probe=>Buffer.byteLength(probe.label)===80));
   prompt.done();
 });
@@ -143,27 +127,6 @@ test("systemd retries invalid names, empty entries, duplicates and excessive cou
   prompt.done();
 });
 
-test("nftables retries every constrained field without recreating previous counters",async()=>{
-  const existing=[{name:"hits"}];
-  const prompt=scriptedPrompt([
-    ["yes",true],["text","hits",/计数器名称/],["text","rule_hits",/计数器名称/],["text","规则命中"],
-    ["text","bridge",/family/],["text","inet",/family/],
-    ["text","table bad",/table/],["text","filter",/table/],
-    ["text","x".repeat(65),/chain/],["text","input",/chain/],
-    ["text","icmp",/协议/],["text","udp",/协议/],
-    ["text","0",/端口/],["text","65535",/端口/],
-    ["text","汉".repeat(27),/comment/],["text","exact-rule",/comment/],["yes",false],
-  ]);
-  const counters=await promptNftablesCounters(prompt,{existing,line:()=>{}});
-  assert.equal(counters[0].name,"rule_hits");
-  assert.equal(counters[0].family,"inet");
-  assert.equal(counters[0].protocol,"udp");
-  assert.equal(counters[0].destination_port,65535);
-  assert.equal(counters[0].rule_comment,"exact-rule");
-  assert.deepEqual(existing,[{name:"hits"}]);
-  prompt.done();
-});
-
 test("reuse retries invalid indices, capacity overflow and name conflicts before accepting probes",async()=>{
   const existing=Array.from({length:31},(_,index)=>({...carriers[0],name:`existing_${index}`}));
   const prompt=scriptedPrompt([
@@ -174,7 +137,7 @@ test("reuse retries invalid indices, capacity overflow and name conflicts before
   assert.deepEqual(probes,[carriers[2]]);
   assert.equal(existing.length,31);
   prompt.done();
-  const conflicting=scriptedPrompt([["text","2"],["text","1"],["text","1"],["text","2"],["yes",false]]);
+  const conflicting=scriptedPrompt([["text","2"],["text","1"],["text","1"],["text","2"]]);
   const selected=await promptNetworkProbes(conflicting,{sources:[sourceNode],existing:[{...carriers[0],target:"changed.example"}],line:()=>{}});
   assert.deepEqual(selected,[carriers[1]]);
   conflicting.done();
@@ -197,18 +160,18 @@ function procedure(name) {
   return next<0?remaining:remaining.slice(0,next+1);
 }
 
-function configurationHarness({pending=false, configured=false, failDeploy=false}={}) {
+function configurationHarness({pending=false, configured=false, failDeploy=false, legacy=false}={}) {
   const privateDir=join("memory",".lume"), statePath=join(privateDir,"state.json");
   const configPath=join(privateDir,"nodes","beta","config.json");
   const sourcePath=join(privateDir,"nodes","alpha","config.json");
   let state={nodes:{alpha:{sshTarget:"alpha"},beta:{sshTarget:"beta",pendingApply:pending}},nodeKeys:{beta:"beta-secret"}};
   const counters=[{name:"hits",label:"Rule hits",family:"inet",table:"filter",chain:"input",protocol:"tcp",destination_port:443}];
-  const config={node:{id:"beta"},secret:"beta-secret",services:[{name:"nginx.service"}],probes:configured?structuredClone(carriers):[],nftables_counters:counters};
+  const config={node:{id:"beta"},secret:"beta-secret",services:[{name:"nginx.service"}],probes:configured?structuredClone(carriers):[],...(legacy?{nftables_counters:counters}:{})};
   const files=new Map([[configPath,JSON.stringify(config)],[sourcePath,JSON.stringify({node:{id:"alpha"},secret:"source-secret",probes:carriers})]]);
   const writes=[],deployments=[],lines=[];
   const context=vm.createContext({
-    Object,JSON,Date,join,privateDir,statePath,validateNodeId,InputError,inputValue,choiceValue,displayValue,
-    editObserverEntries,externalProbes,printObserverSummary,promptNetworkProbes,promptNftablesCounters,promptServices,
+    Object,JSON,Date,join,privateDir,statePath,validateNodeId,InputError,PromptCancelled,PromptClosed,inputValue,choiceValue,displayValue,
+    editObserverEntries,externalProbes,printObserverSummary,promptNetworkProbes,promptServices,
     line:(message)=>lines.push(message),fail:(message)=>{throw Error(message);},assertPlainObject:()=>{},
     loadState:async()=>structuredClone(state),exists:async(path)=>files.has(path),
     lstat:async()=>({isFile:()=>true,isSymbolicLink:()=>false}),
@@ -232,7 +195,6 @@ test("new-node wizard collects probes, previews them and installs from the same 
       assert.equal(options.excludeNodeId,"beta");
       return {
         probes:await promptNetworkProbes(prompt,{sources:[sourceNode],line:(message)=>lines.push(message)}),
-        nftablesCounters:await promptNftablesCounters(prompt,{line:(message)=>lines.push(message)}),
       };
     },
     createNodeRecords:async(_state,specs)=>created.push(...specs),
@@ -243,7 +205,7 @@ test("new-node wizard collects probes, previews them and installs from the same 
     ["text","Bad ID",/节点 ID/],["text","alpha",/节点 ID/],["text","beta",/节点 ID/],
     ["text","Beta"],["text","VPS"],["text","Test"],["text","five5",/短标记/],["text","B",/短标记/],
     ["text","nginx service",/systemd/],["text","",/systemd/],
-    ["text","2"],["text","1"],["text",""],["yes",false],["yes",false],
+    ["text","2"],["text","1"],["text",""],
     ["text","user@host:22",/SSH/],["text","ssh-beta",/SSH/],["yes",true,/以上配置/],
   ]);
   await context.addNode(prompt,new Map());
@@ -255,17 +217,17 @@ test("new-node wizard collects probes, previews them and installs from the same 
 
 const reuseSteps=(save=true,deploy=true)=>[
   ["yes",false,/systemd/],["text","2",/网络探针/],["text","2",/方式/],["text","1",/节点编号/],
-  ["text","",/哪些探针/],["yes",false,/自定义/],["yes",false,/nftables/],
+  ["text","",/哪些探针/],
   ["yes",save,/保存/],...(save?[["yes",deploy,/部署/]]:[]),
 ];
 
-test("configuration wizard reuses three carriers, preserves services and counters, previews and deploys", async()=>{
-  const h=configurationHarness();
+test("configuration wizard reuses three carriers, preserves services, removes retired settings, previews and deploys", async()=>{
+  const h=configurationHarness({legacy:true});
   const prompt=scriptedPrompt(reuseSteps());
   await h.run(prompt);
   const saved=JSON.parse(h.files.get(h.configPath));
   assert.deepEqual(saved.probes,carriers);
-  assert.deepEqual(saved.nftables_counters,h.counters);
+  assert.equal(Object.hasOwn(saved,"nftables_counters"),false);
   assert.deepEqual(saved.services,[{name:"nginx.service"}]);
   assert.equal(saved.secret,"beta-secret");
   assert.deepEqual(h.deployments,["beta"]);
@@ -284,7 +246,7 @@ test("declining the configuration preview performs no writes or deployments",asy
 
 test("pending configuration can be deployed from the wizard even when nothing changes",async()=>{
   const h=configurationHarness({pending:true,configured:true});
-  await h.run(scriptedPrompt([["yes",false],["text","1"],["yes",false],["yes",true,/部署/]]));
+  await h.run(scriptedPrompt([["yes",false],["text","1"],["yes",true,/部署/]]));
   assert.deepEqual(h.writes,[]);
   assert.deepEqual(h.deployments,["beta"]);
 });
@@ -297,4 +259,44 @@ test("saving for later or a failed sudo deployment retains the selected probes a
     assert.equal(h.state.nodes.beta.pendingApply,true);
     assert.deepEqual(JSON.parse(h.files.get(h.configPath)).probes,carriers);
   }
+});
+
+test("cancelling an accidentally added second probe preserves the completed first probe", async () => {
+  const prompt = scriptedPrompt([
+    ["text","3"], ["text","icmp"], ["text","192.0.2.1"], ["text","电信"],
+    ["yes",true], ["text","tcp"], ["text","/cancel"],
+  ]);
+  const probes = await promptNetworkProbes(prompt, { line:()=>{} });
+  assert.equal(probes.length, 1);
+  assert.equal(probes[0].target, "192.0.2.1");
+  prompt.done();
+});
+
+test("back revisits previous fields, retains answers and removes the TCP-only port after changing type", async () => {
+  const prompt = scriptedPrompt([
+    ["text","3"], ["text","tcp"], ["text","192.0.2.1"], ["text","443"],
+    ["text","/back"], ["text","/back"], ["text","/back"], ["text","icmp"],
+    ["text",""], ["text","测试"], ["yes",false],
+  ]);
+  const [probe] = await promptNetworkProbes(prompt, { line:()=>{} });
+  assert.equal(probe.kind, "icmp");
+  assert.equal(probe.target, "192.0.2.1");
+  assert.equal(Object.hasOwn(probe, "port"), false);
+  prompt.done();
+});
+
+test("cancelling or skipping a replacement retains existing probes; explicit deletion still works", async () => {
+  for (const create of [async()=>[], async()=>{throw new PromptCancelled();}]) {
+    const result = await editObserverEntries(scriptedPrompt([["text","3"]]), {label:"探针", entries:carriers, limit:32, create, line:()=>{}});
+    assert.deepEqual(result, carriers);
+  }
+  const result = await editObserverEntries(scriptedPrompt([["text","4"],["text","1,2,3"]]), {label:"探针", entries:carriers, limit:32, create:()=>assert.fail(), line:()=>{}});
+  assert.deepEqual(result, []);
+});
+
+test("cancelling a node configuration before preview saves nothing", async () => {
+  const h = configurationHarness({ legacy:true });
+  await assert.rejects(h.run(scriptedPrompt([["yes",false],["text","/cancel"]])), PromptCancelled);
+  assert.deepEqual(h.writes, []);
+  assert.deepEqual(h.deployments, []);
 });
