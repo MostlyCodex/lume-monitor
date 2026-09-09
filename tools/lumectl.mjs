@@ -5,11 +5,11 @@ import { spawn, spawnSync } from "node:child_process";
 import { chmod, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { createInterface } from "node:readline/promises";
+import { isIP } from "node:net";
 import { fileURLToPath } from "node:url";
-import { Writable } from "node:stream";
 import { applyPending, keyProof, parseJsonc, restorePeerProbes, validateImportedConfig, verifyKeyInventory, workerOrigin } from "./management.mjs";
-import { editObserverEntries, externalProbes, printObserverSummary, promptNetworkProbes, promptNftablesCounters } from "./observers.mjs";
+import { editObserverEntries, externalProbes, parseServices, printObserverSummary, promptNetworkProbes, promptNftablesCounters, promptServices } from "./observers.mjs";
+import { InputError, choiceValue, displayValue, inputValue, makePrompter } from "./prompts.mjs";
 
 const toolFile = fileURLToPath(import.meta.url);
 const repoRoot = resolve(dirname(toolFile), "..");
@@ -78,19 +78,34 @@ export function parseFlags(args) {
 }
 
 export function validateWorkerName(value) {
-  return /^[a-z0-9][a-z0-9-]{0,62}$/.test(value);
+  return typeof value === "string" && /^[a-z0-9][a-z0-9-]{0,62}$/.test(value);
 }
 
 export function validateDatabaseName(value) {
-  return /^[a-z0-9][a-z0-9_-]{0,62}$/.test(value);
+  return typeof value === "string" && /^[a-z0-9][a-z0-9_-]{0,62}$/.test(value);
 }
 
 export function validateNodeId(value) {
-  return /^[a-z0-9][a-z0-9_-]{0,31}$/.test(value);
+  return typeof value === "string" && /^[a-z0-9][a-z0-9_-]{0,31}$/.test(value);
 }
 
 export function validateSshTarget(value) {
-  return /^(?!-)[A-Za-z0-9_.@:[\]-]{1,255}$/.test(value);
+  if (typeof value !== "string" || !/^(?!-)[A-Za-z0-9_.@:[\]-]{1,255}$/.test(value)) return false;
+  const parts = value.split("@");
+  if (parts.length > 2 || (parts.length === 2 && !/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(parts[0]))) return false;
+  const host = parts.at(-1);
+  return isIP(host) !== 0 || (/^\[.*\]$/.test(host) && isIP(host.slice(1, -1)) === 6) || /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(host);
+}
+
+async function promptSshTarget(prompt, question, fallback = "", optional = false) {
+  return inputValue(prompt, question, {
+    hint: `SSH 别名 / 主机名 / IP，可带 user@；1–255 字符，不带空格、命令或端口，端口在 SSH config 中设置${optional ? "；回车暂不安装" : "；必填"}`, fallback, line,
+    parse: (value) => {
+      if (!value && optional) return "";
+      if (!validateSshTarget(value)) throw new InputError("请输入有效的 SSH 别名、主机名或 IP，可带 user@；不能包含端口或命令");
+      return value;
+    },
+  });
 }
 
 export function parseD1List(raw) {
@@ -344,23 +359,33 @@ async function assertServerInventory(state) {
 }
 
 async function readNodeConfiguration(prompt, id, defaultTarget = "", rebuildOrigin = "") {
-  const source = await prompt.text(`${id} 配置来源：1 SSH 读取 / 2 本地配置文件${rebuildOrigin ? " / 3 重新配置" : ""}`, "1");
+  const source = await choiceValue(prompt, `${id} 配置来源：1 SSH 读取 / 2 本地配置文件${rebuildOrigin ? " / 3 重新配置" : ""}`, rebuildOrigin ? ["1", "2", "3"] : ["1", "2"], "1", { line });
   if (source === "3" && rebuildOrigin) {
-    const displayName = await prompt.text("节点显示名", id);
-    const role = await prompt.text("用途", "VPS");
-    const region = await prompt.text("地区", "unspecified");
-    const services = parseServices(await prompt.text("systemd 服务（逗号分隔，可留空）"));
+    const displayName = await displayValue(prompt, "节点显示名", id, { line });
+    const role = await displayValue(prompt, "用途", "VPS", { line });
+    const region = await displayValue(prompt, "地区", "unspecified", { line });
+    const services = await promptServices(prompt, { line });
     const observers = await promptOptionalObservers(prompt, { excludeNodeId: id });
-    const target = await prompt.text("SSH 别名", defaultTarget || id);
+    const target = await promptSshTarget(prompt, "SSH 目标", defaultTarget || id);
     return { target, config: createAgentConfig({ id, displayName, role, region, endpoint: rebuildOrigin, secret: randomSecret(), services, probes: observers.probes, nftablesCounters: observers.nftablesCounters }) };
   }
   if (source === "2") {
-    const path = await prompt.text("配置文件路径（内容不会打印）");
-    return { config: JSON.parse((await readFile(resolve(path), "utf8")).replace(/^\uFEFF/, "")), target: await prompt.text("SSH 别名（用于后续管理）", defaultTarget || id) };
+    const config = await inputValue(prompt, "配置文件路径（内容不会打印）", {
+      hint: `可读取的普通 JSON 文件，最多 64 KiB，节点 ID 必须为 ${id}`, line,
+      parse: async (path) => {
+        try {
+          if (!path) throw new Error("empty path");
+          const info = await lstat(resolve(path));
+          if (!info.isFile() || info.isSymbolicLink() || info.size > 65536) throw new Error("invalid file");
+          const config = JSON.parse((await readFile(resolve(path), "utf8")).replace(/^\uFEFF/, ""));
+          if (config?.node?.id !== id || !Array.isArray(config.services) || !Array.isArray(config.probes)) throw new Error("invalid node config");
+          return config;
+        } catch { throw new InputError(`请选择可读取的普通 JSON 节点配置文件（最多 64 KiB），节点 ID 为 ${id}，且包含 services 和 probes 数组`); }
+      },
+    });
+    return { config, target: await promptSshTarget(prompt, "SSH 目标（用于后续管理）", defaultTarget || id) };
   }
-  if (source !== "1") fail("请选择 1 或 2");
-  const target = await prompt.text(`${id} 的 SSH 别名`, defaultTarget || id);
-  if (!validateSshTarget(target)) fail("SSH 别名无效");
+  const target = await promptSshTarget(prompt, `${id} 的 SSH 目标`, defaultTarget || id);
   line("只读获取配置；需要 root 或免密码 sudo。若不可用，可重试并选择本地配置文件。");
   const response = await run("ssh", [target, 'if [ "$(id -u)" -eq 0 ]; then cat /etc/vpsmon/config.json; else sudo -n cat /etc/vpsmon/config.json; fi'], { capture: true });
   return { config: JSON.parse(response.stdout), target };
@@ -373,9 +398,14 @@ async function adoptDeployment(prompt) {
   const config = parseJsonc(await readFile(wranglerConfigPath, "utf8"));
   const binding = config.d1_databases?.find((entry) => entry.binding === "DB");
   if (!validateWorkerName(config.name) || !binding?.database_id || !binding?.database_name) fail("现有 Wrangler 配置缺少 Worker 名称或 DB 绑定");
-  const origin = workerOrigin(await prompt.text("现有 Worker 的 HTTPS 根地址", oldState?.workerUrl || config.vars?.DASHBOARD_BASE_URL || ""));
-  const adminToken = await prompt.secret("现有 ADMIN_TOKEN");
-  if (!adminToken) fail("ADMIN_TOKEN 不能为空");
+  const origin = await inputValue(prompt, "现有 Worker 的 HTTPS 根地址", {
+    hint: "https://主机名，可带端口；不含路径、查询参数、登录信息", fallback: oldState?.workerUrl || config.vars?.DASHBOARD_BASE_URL || "", line,
+    parse: (value) => { try { return workerOrigin(value); } catch { throw new InputError("必须是 HTTPS 根地址，不含路径、查询参数或登录信息"); } },
+  });
+  const adminToken = await inputValue(prompt, "现有 ADMIN_TOKEN", {
+    hint: "当前部署的完整令牌；不能为空或包含控制字符", secret: true, line,
+    parse: (value) => { if (!value || /[\x00-\x1f\x7f]/.test(value)) throw new InputError("ADMIN_TOKEN 不能为空或包含控制字符"); return value; },
+  });
   const state = { schemaVersion: 1, stage: "ready", workerName: config.name, databaseName: binding.database_name, databaseId: binding.database_id, workerUrl: origin, adminToken, nodeKeys: {}, nodes: {}, retiredNodes: {}, telegram: null };
   let databaseChecked = false;
   let inventoryResponse = await adminFetch(state, "/api/v1/admin/key-inventory");
@@ -485,32 +515,6 @@ async function waitForFirstReport(state, id, timeoutSeconds = 90, since = 0) {
     await sleep(3000);
   }
   return null;
-}
-
-function makePrompter() {
-  let muted = false;
-  const output = new Writable({ write(chunk, encoding, done) { if (!muted) process.stdout.write(chunk, encoding); done(); } });
-  const interface_ = createInterface({ input: process.stdin, output, terminal: Boolean(process.stdin.isTTY) });
-  return {
-    async secret(question) {
-      process.stdout.write(`${question}（输入不显示）: `);
-      muted = true;
-      try { return (await interface_.question("")).trim(); }
-      finally { muted = false; line(); }
-    },
-    async text(question, fallback = "") {
-      const suffix = fallback ? ` [${fallback}]` : "";
-      const value = (await interface_.question(`${question}${suffix}: `)).trim();
-      return value || fallback;
-    },
-    async yes(question, fallback = false) {
-      const hint = fallback ? "Y/n" : "y/N";
-      const value = (await interface_.question(`${question} [${hint}]: `)).trim().toLowerCase();
-      if (!value) return fallback;
-      return value === "y" || value === "yes" || value === "是";
-    },
-    close() { interface_.close(); },
-  };
 }
 
 async function doctor({ quiet = false } = {}) {
@@ -627,15 +631,21 @@ async function setup(prompt, assumeYes) {
       return adoptDeployment(prompt);
     }
     const defaultWorker = `lume-${randomBytes(3).toString("hex")}`;
-    const workerName = (await prompt.text("Worker 名称", defaultWorker)).toLowerCase();
-    if (!validateWorkerName(workerName)) fail("Worker 名称只能使用小写字母、数字和连字符，最长 63 字符");
-    const databaseName = (await prompt.text("D1 数据库名称", `${workerName.slice(0, 56)}-db`)).toLowerCase();
-    if (!validateDatabaseName(databaseName)) fail("D1 名称只能使用小写字母、数字、下划线和连字符，最长 63 字符");
+    const workerName = await inputValue(prompt, "Worker 名称", {
+      hint: "1–63 位小写字母、数字或 -，首位为字母或数字", fallback: defaultWorker, line,
+      parse: (value) => { if (!validateWorkerName(value)) throw new InputError("Worker 名称须为 1–63 位小写字母、数字或 -，首位为字母或数字"); return value; },
+    });
+    const databaseName = await inputValue(prompt, "D1 数据库名称", {
+      hint: "1–63 位小写字母、数字、_ 或 -，首位为字母或数字", fallback: `${workerName.slice(0, 56)}-db`, line,
+      parse: (value) => { if (!validateDatabaseName(value)) throw new InputError("D1 名称须为 1–63 位小写字母、数字、_ 或 -，首位为字母或数字"); return value; },
+    });
     const withTelegram = await prompt.yes("配置 Telegram Bot（面板登录需要）", true);
     let botUsername = "";
     if (withTelegram) {
-      botUsername = (await prompt.text("Bot 用户名（可省略 @）")).replace(/^@/, "");
-      if (!/^[A-Za-z0-9_]{5,32}$/.test(botUsername)) fail("Telegram Bot 用户名格式无效");
+      botUsername = await inputValue(prompt, "Bot 用户名", {
+        hint: "5–32 位英文字母、数字或 _，可省略开头的 @", line,
+        parse: (value) => { const username = value.replace(/^@/, ""); if (!/^[A-Za-z0-9_]{5,32}$/.test(username)) throw new InputError("Bot 用户名须为 5–32 位英文字母、数字或 _"); return username; },
+      });
     }
     state = {
       schemaVersion: 1,
@@ -713,14 +723,8 @@ async function setup(prompt, assumeYes) {
   if (await prompt.yes("现在添加并安装首台 VPS", true)) await addNode(prompt, new Map());
 }
 
-function parseServices(value) {
-  if (!value.trim()) return [];
-  const names = [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
-  for (const name of names) {
-    if (!/^[A-Za-z0-9_.@-]{1,80}$/.test(name)) fail(`systemd unit 名称无效：${name}`);
-  }
-  if (names.length > 16) fail("最多配置 16 个 systemd 服务");
-  return names.map((name) => ({ name, label: name.replace(/\.service$/, ""), severity: "P1" }));
+function probeTargetNodes(state, excludeNodeId) {
+  return Object.entries(state?.nodes || {}).filter(([id, node]) => id !== excludeNodeId && validateNodeId(id) && !node.pendingRetire && !node.pendingRestore).map(([id]) => id);
 }
 
 async function availableProbeSources(state, excludeNodeId = "") {
@@ -743,8 +747,9 @@ async function availableProbeSources(state, excludeNodeId = "") {
 }
 
 async function promptOptionalObservers(prompt, { state, excludeNodeId = "" } = {}) {
-  const sources = await availableProbeSources(state || await loadState(false), excludeNodeId);
-  const probes = await promptNetworkProbes(prompt, { sources, line });
+  state ||= await loadState(false);
+  const sources = await availableProbeSources(state, excludeNodeId);
+  const probes = await promptNetworkProbes(prompt, { sources, nodes: probeTargetNodes(state, excludeNodeId), line });
   const nftablesCounters = await promptNftablesCounters(prompt, { line });
   return { probes, nftablesCounters };
 }
@@ -852,16 +857,26 @@ async function addNode(prompt, options) {
       ssh: options.get("ssh"),
     })];
   } else {
-    const id = (await prompt.text("节点 ID（小写，稳定且唯一）")).toLowerCase();
-    if (!validateNodeId(id)) fail("节点 ID 必须匹配 [a-z0-9][a-z0-9_-]{0,31}");
-    const displayName = await prompt.text("面板显示名", id);
-    const role = await prompt.text("用途（面板说明，如网站、备份、中转）", "VPS");
-    const region = await prompt.text("国家 / 城市", "unspecified");
-    const shortMark = await prompt.text("短标记（1–4 个英文字母或数字，仅用于显示）", id.replace(/[-_]/g, "").slice(0, 3).toUpperCase());
-    const units = await prompt.text("systemd 服务（如 nginx.service，逗号分隔；回车跳过）", "");
+    const id = await inputValue(prompt, "节点 ID", {
+      hint: "1–32 位小写字母、数字、_ 或 -；首位为字母或数字；不能与已有或已下线节点重名", line,
+      parse: (value) => {
+        if (!validateNodeId(value)) throw new InputError("节点 ID 须为 1–32 位小写字母、数字、_ 或 -，首位为字母或数字");
+        if (state.nodes[value] || state.nodeKeys?.[value]) throw new InputError(`节点 ${value} 已存在，请使用其他 ID；修改已有节点请选择“配置节点”`);
+        if (state.retiredNodes?.[value]) throw new InputError(`节点 ${value} 已下线，请使用其他 ID 或从管理菜单恢复节点`);
+        return value;
+      },
+    });
+    const displayName = await displayValue(prompt, "面板显示名", id, { line });
+    const role = await displayValue(prompt, "用途（如网站、备份、中转）", "VPS", { line });
+    const region = await displayValue(prompt, "国家 / 城市", "unspecified", { line });
+    const shortMark = await inputValue(prompt, "短标记", {
+      hint: "仅用于显示，可自定义；1–4 个英文字母或数字", fallback: id.replace(/[-_]/g, "").slice(0, 3).toUpperCase(), line,
+      parse: (value) => { if (!/^[A-Za-z0-9]{1,4}$/.test(value)) throw new InputError("短标记须为 1–4 个英文字母或数字"); return value.toUpperCase(); },
+    });
+    const services = await promptServices(prompt, { line });
     const optionalObservers = await promptOptionalObservers(prompt, { state, excludeNodeId: id });
-    const target = await prompt.text("SSH 主机或 ~/.ssh/config 别名（留空则稍后安装）", "");
-    printObserverSummary({ node: { id, display_name: displayName }, services: parseServices(units), probes: optionalObservers.probes, nftables_counters: optionalObservers.nftablesCounters }, line);
+    const target = await promptSshTarget(prompt, "SSH 部署目标", "", true);
+    printObserverSummary({ node: { id, display_name: displayName }, services, probes: optionalObservers.probes, nftables_counters: optionalObservers.nftablesCounters }, line);
     line(`  部署目标：${target || "暂不安装，稍后在管理菜单部署"}`);
     if (!(await prompt.yes("按以上配置新增节点并继续部署", true))) return;
     specs = [normalizeNodeSpec({
@@ -870,7 +885,7 @@ async function addNode(prompt, options) {
       role,
       region,
       mark: shortMark,
-      services: units,
+      services: services.map((service) => service.name),
       ssh: target,
       probes: optionalObservers.probes,
       nftables_counters: optionalObservers.nftablesCounters,
@@ -894,17 +909,17 @@ async function configureNodeObservers(prompt, id) {
   const original = JSON.stringify(config);
   printObserverSummary(config, line);
   if (state.nodes[id].pendingApply) line("! 这份本地配置仍待部署；本次向导可以继续下发。");
-  if (await prompt.yes("修改 systemd 服务列表", false)) config.services = parseServices(await prompt.text("服务名（逗号分隔，留空清空）", ""));
+  if (await prompt.yes("修改 systemd 服务列表（新列表替换原列表，留空清空）", false)) config.services = await promptServices(prompt, { line });
   config.probes = await editObserverEntries(prompt, {
     label: "网络探针（三网 / ICMP / TCP）", entries: config.probes, limit: 32, line,
     fallback: config.probes.length ? "1" : "2",
-    create: async () => promptNetworkProbes(prompt, { sources: await availableProbeSources(state, id), line }),
+    create: async ({ existing }) => promptNetworkProbes(prompt, { sources: await availableProbeSources(state, id), nodes: probeTargetNodes(state, id), existing, line }),
   });
   if (await prompt.yes("修改 nftables 规则计数器（与网络探针独立）", false)) {
     config.nftables_counters = await editObserverEntries(prompt, {
       label: "nftables 计数器", entries: config.nftables_counters || [], limit: 16, line,
       fallback: config.nftables_counters?.length ? "1" : "2",
-      create: async () => promptNftablesCounters(prompt, { line }),
+      create: async ({ existing }) => promptNftablesCounters(prompt, { existing, line }),
     });
   }
   const changed = JSON.stringify(config) !== original;
@@ -922,7 +937,8 @@ async function configureNodeObservers(prompt, id) {
 }
 
 async function nodeTarget(prompt, state, id, target = "") {
-  const chosen = target || state.nodes[id]?.sshTarget || await prompt.text(`${id} 的 SSH 别名`, id);
+  const saved = state.nodes[id]?.sshTarget;
+  const chosen = target || (validateSshTarget(saved || "") ? saved : await promptSshTarget(prompt, `${id} 的 SSH 目标`, id));
   if (!validateSshTarget(chosen)) fail("SSH 别名无效");
   state.nodes[id].sshTarget = chosen;
   return chosen;
@@ -1299,7 +1315,7 @@ async function restoreNode(prompt, id, options) {
       target = imported.target;
     }
     validateImportedConfig(config, id, state.workerUrl);
-    if (!target) target = await prompt.text("SSH 别名", id);
+    if (!target) target = await promptSshTarget(prompt, "SSH 目标", id);
     if (!validateSshTarget(target)) fail("SSH 别名无效");
     config.secret = randomSecret();
     state.nodeKeys[id] = config.secret;
@@ -1441,16 +1457,20 @@ async function pickNode(prompt, { retired = false } = {}) {
   const ids = Object.keys(retired ? state.retiredNodes || {} : state.nodes);
   if (!ids.length) fail(retired ? "没有可恢复的退役节点" : "没有已登记节点，请先接管部署或新增节点");
   ids.forEach((id, index) => line(`  ${index + 1}. ${id}`));
-  const choice = await prompt.text("选择节点编号或输入节点 ID", "1");
-  const id = /^\d+$/.test(choice) ? ids[Number(choice) - 1] : choice;
-  if (!ids.includes(id)) fail("请选择列表中的节点");
-  return id;
+  return inputValue(prompt, "选择节点编号或输入节点 ID", {
+    hint: `编号 1–${ids.length}，或列表中的 ID：${ids.join(" / ")}`, fallback: "1", line,
+    parse: (value) => {
+      const id = /^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= ids.length ? ids[Number(value) - 1] : value;
+      if (!ids.includes(id)) throw new InputError(`只能选择列表中的 1–${ids.length} 号或节点 ID`);
+      return id;
+    },
+  });
 }
 
 async function manage(prompt) {
   while (true) {
     line("\nLume 管理\n  1. 从零部署\n  2. 接管已有部署\n  3. 查看状态\n  4. 新增 VPS\n  5. 配置节点\n  6. 部署配置 / 更新 Agent\n  7. 下线节点\n  8. 恢复节点\n  9. 下线并卸载 Agent\n  0. 退出");
-    const choice = await prompt.text("选择操作", "0");
+    const choice = await choiceValue(prompt, "选择操作", ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], "0", { line });
     if (choice === "0") return;
     try {
       if (choice === "1") await setup(prompt, false);

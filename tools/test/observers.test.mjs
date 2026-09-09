@@ -3,10 +3,11 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import vm from "node:vm";
 import test from "node:test";
-import { normalizeNodeSpec, validateNodeId } from "../lumectl.mjs";
+import { normalizeNodeSpec, validateNodeId, validateSshTarget } from "../lumectl.mjs";
+import { InputError, choiceValue, displayValue, inputValue } from "../prompts.mjs";
 import {
   createCarrierProbes, editObserverEntries, externalProbes, mergeObserverEntries,
-  printObserverSummary, probeTarget, promptNetworkProbes, promptNftablesCounters, selectedIndices,
+  printObserverSummary, probeTarget, promptNetworkProbes, promptNftablesCounters, promptServices, selectedIndices,
 } from "../observers.mjs";
 
 const carriers = createCarrierProbes({ region: "测试地区", targets: { ct: "192.0.2.1", cu: "198.51.100.1", cm: "203.0.113.1" } });
@@ -52,7 +53,7 @@ test("custom TCP and node links remain configurable from the same network wizard
     ["text","3"],["yes",true],["text","tcp"],["text","peer_tls"],["text","Peer TLS"],
     ["text","peer.example"],["text","8443"],["text","beta"],["yes",false],
   ]);
-  const probes = await promptNetworkProbes(prompt,{line:()=>{}});
+  const probes = await promptNetworkProbes(prompt,{nodes:["beta"],line:()=>{}});
   assert.equal(probes[0].target_node_id,"beta");
   assert.equal(probes[0].category,"node-link");
   assert.equal(probes[0].port,8443);
@@ -96,12 +97,103 @@ test("selection, target validation and merge reject invalid input and conflictin
   assert.throws(()=>mergeObserverEntries([],carriers,{limit:2}),/最多/);
 });
 
+test("custom probe retries each invalid field while preserving previous choices", async () => {
+  const prompt = scriptedPrompt([
+    ["text","9",/方式/],["text","3",/方式/],["yes",true],
+    ["text","udp",/类型/],["text","TCP",/类型/],
+    ["text","Bad Name",/探针名称/],["text",carriers[0].name,/探针名称/],["text","web_tcp",/探针名称/],
+    ["text","网站连接"],
+    ["text","https://web.example",/目标主机/],["text","999.1.1.1",/目标主机/],["text","web.example",/目标主机/],
+    ["text","65536",/端口/],["text","1.5",/端口/],["text","443",/端口/],
+    ["text","missing",/目标节点/],["text","beta",/目标节点/],["yes",false],
+  ]);
+  const errors = [];
+  const probes = await promptNetworkProbes(prompt, { existing:carriers, nodes:["beta"], line:(message)=>errors.push(message) });
+  assert.equal(probes[0].name,"web_tcp");
+  assert.equal(probes[0].target,"web.example");
+  assert.equal(probes[0].port,443);
+  assert.equal(probes[0].target_node_id,"beta");
+  assert.equal(errors.filter(message=>message.startsWith("输入无效")).length,9);
+  assert.equal(prompt.questions.filter(question=>question.startsWith("面板显示名")).length,1);
+  prompt.done();
+});
+
+test("carrier prefix and each target retry locally, including generated label byte limits",async()=>{
+  const prompt=scriptedPrompt([
+    ["text","1"],["text","北".repeat(23),/目标地区/],["text","北".repeat(22),/目标地区/],
+    ["text","carrier",/前缀/],["text","x".repeat(78),/前缀/],["text","new",/前缀/],
+    ["text","192.0.2.1:80",/电信/],["text","192.0.2.1",/电信/],
+    ["text","unicom.example"],["text","2001:db8::1"],["yes",false],
+  ]);
+  const probes=await promptNetworkProbes(prompt,{existing:carriers,line:()=>{}});
+  assert.deepEqual(probes.map(probe=>probe.name),["new_ct","new_cu","new_cm"]);
+  assert.ok(probes.every(probe=>Buffer.byteLength(probe.label)===80));
+  prompt.done();
+});
+
+test("systemd retries invalid names, empty entries, duplicates and excessive counts",async()=>{
+  const prompt=scriptedPrompt([
+    ["text","bad name"],["text","nginx.service,,ssh.service"],["text","ssh.service,ssh.service"],
+    ["text",Array.from({length:17},(_,index)=>`unit${index}.service`).join(",")],
+    ["text","nginx.service,ssh.service"],
+  ]);
+  const services=await promptServices(prompt,{line:()=>{}});
+  assert.deepEqual(services.map(service=>service.name),["nginx.service","ssh.service"]);
+  assert.ok(prompt.questions.every(question=>question.includes("0–16")&&question.includes("1–80")));
+  prompt.done();
+});
+
+test("nftables retries every constrained field without recreating previous counters",async()=>{
+  const existing=[{name:"hits"}];
+  const prompt=scriptedPrompt([
+    ["yes",true],["text","hits",/计数器名称/],["text","rule_hits",/计数器名称/],["text","规则命中"],
+    ["text","bridge",/family/],["text","inet",/family/],
+    ["text","table bad",/table/],["text","filter",/table/],
+    ["text","x".repeat(65),/chain/],["text","input",/chain/],
+    ["text","icmp",/协议/],["text","udp",/协议/],
+    ["text","0",/端口/],["text","65535",/端口/],
+    ["text","汉".repeat(27),/comment/],["text","exact-rule",/comment/],["yes",false],
+  ]);
+  const counters=await promptNftablesCounters(prompt,{existing,line:()=>{}});
+  assert.equal(counters[0].name,"rule_hits");
+  assert.equal(counters[0].family,"inet");
+  assert.equal(counters[0].protocol,"udp");
+  assert.equal(counters[0].destination_port,65535);
+  assert.equal(counters[0].rule_comment,"exact-rule");
+  assert.deepEqual(existing,[{name:"hits"}]);
+  prompt.done();
+});
+
+test("reuse retries invalid indices, capacity overflow and name conflicts before accepting probes",async()=>{
+  const existing=Array.from({length:31},(_,index)=>({...carriers[0],name:`existing_${index}`}));
+  const prompt=scriptedPrompt([
+    ["text","2"],["text","2",/节点编号/],["text","1",/节点编号/],
+    ["text","4",/哪些探针/],["text","1,2",/哪些探针/],["text","3",/哪些探针/],
+  ]);
+  const probes=await promptNetworkProbes(prompt,{sources:[sourceNode],existing,line:()=>{}});
+  assert.deepEqual(probes,[carriers[2]]);
+  assert.equal(existing.length,31);
+  prompt.done();
+  const conflicting=scriptedPrompt([["text","2"],["text","1"],["text","1"],["text","2"],["yes",false]]);
+  const selected=await promptNetworkProbes(conflicting,{sources:[sourceNode],existing:[{...carriers[0],target:"changed.example"}],line:()=>{}});
+  assert.deepEqual(selected,[carriers[1]]);
+  conflicting.done();
+});
+
+test("full lists and invalid removal indices retry at their own selection prompt",async()=>{
+  const prompt=scriptedPrompt([["text","9"],["text","2"],["text","4"],["text","4"],["text","1,3"]]);
+  const result=await editObserverEntries(prompt,{label:"探针",entries:carriers,limit:3,create:()=>assert.fail("cannot append to a full list"),line:()=>{}});
+  assert.deepEqual(result,[carriers[1]]);
+  assert.equal(carriers.length,3);
+  prompt.done();
+});
+
 const cli = await readFile(new URL("../lumectl.mjs",import.meta.url),"utf8");
 function procedure(name) {
-  const start = cli.indexOf(`async function ${name}(`);
+  const start = cli.search(new RegExp(`(?:async )?function ${name}\\(`));
   assert.ok(start>=0);
   const remaining = cli.slice(start);
-  const next = remaining.slice(1).search(/\n(?:async )?function /);
+  const next = remaining.slice(1).search(/\n(?:export )?(?:async )?function /);
   return next<0?remaining:remaining.slice(0,next+1);
 }
 
@@ -115,8 +207,8 @@ function configurationHarness({pending=false, configured=false, failDeploy=false
   const files=new Map([[configPath,JSON.stringify(config)],[sourcePath,JSON.stringify({node:{id:"alpha"},secret:"source-secret",probes:carriers})]]);
   const writes=[],deployments=[],lines=[];
   const context=vm.createContext({
-    Object,JSON,Date,join,privateDir,statePath,validateNodeId,
-    editObserverEntries,externalProbes,printObserverSummary,promptNetworkProbes,promptNftablesCounters,
+    Object,JSON,Date,join,privateDir,statePath,validateNodeId,InputError,inputValue,choiceValue,displayValue,
+    editObserverEntries,externalProbes,printObserverSummary,promptNetworkProbes,promptNftablesCounters,promptServices,
     line:(message)=>lines.push(message),fail:(message)=>{throw Error(message);},assertPlainObject:()=>{},
     loadState:async()=>structuredClone(state),exists:async(path)=>files.has(path),
     lstat:async()=>({isFile:()=>true,isSymbolicLink:()=>false}),
@@ -124,7 +216,7 @@ function configurationHarness({pending=false, configured=false, failDeploy=false
     writePrivateJson:async(path,value)=>{writes.push(path);if(path===statePath)state=structuredClone(value);else files.set(path,JSON.stringify(value));},
     applyNodes:async(_prompt,ids)=>{deployments.push(...ids);if(failDeploy)throw Error("sudo password required");state.nodes.beta.pendingApply=false;},
   });
-  new vm.Script(["availableProbeSources","configureNodeObservers"].map(procedure).join("\n")).runInContext(context);
+  new vm.Script(["probeTargetNodes","availableProbeSources","configureNodeObservers"].map(procedure).join("\n")).runInContext(context);
   return {files,writes,deployments,lines,configPath,counters,get state(){return state;},run:(prompt)=>context.configureNodeObservers(prompt,"beta")};
 }
 
@@ -132,7 +224,7 @@ test("new-node wizard collects probes, previews them and installs from the same 
   const created=[],installed=[],lines=[];
   const state={stage:"ready",nodes:{alpha:{}}};
   const context=vm.createContext({
-    normalizeNodeSpec,validateNodeId,loadState:async()=>state,
+    normalizeNodeSpec,validateNodeId,validateSshTarget,InputError,inputValue,choiceValue,displayValue,promptServices,loadState:async()=>state,
     line:(message)=>lines.push(message),fail:(message)=>{throw Error(message);},
     parseServices:()=>[],printObserverSummary,
     promptOptionalObservers:async(prompt,options)=>{
@@ -146,11 +238,13 @@ test("new-node wizard collects probes, previews them and installs from the same 
     createNodeRecords:async(_state,specs)=>created.push(...specs),
     installNode:async(id,ssh)=>installed.push({id,ssh}),
   });
-  new vm.Script(procedure("addNode")).runInContext(context);
+  new vm.Script(["promptSshTarget","addNode"].map(procedure).join("\n")).runInContext(context);
   const prompt=scriptedPrompt([
-    ["text","beta"],["text","Beta"],["text","VPS"],["text","Test"],["text","B"],["text",""],
+    ["text","Bad ID",/节点 ID/],["text","alpha",/节点 ID/],["text","beta",/节点 ID/],
+    ["text","Beta"],["text","VPS"],["text","Test"],["text","five5",/短标记/],["text","B",/短标记/],
+    ["text","nginx service",/systemd/],["text","",/systemd/],
     ["text","2"],["text","1"],["text",""],["yes",false],["yes",false],
-    ["text","ssh-beta"],["yes",true,/以上配置/],
+    ["text","user@host:22",/SSH/],["text","ssh-beta",/SSH/],["yes",true,/以上配置/],
   ]);
   await context.addNode(prompt,new Map());
   assert.deepEqual(created[0].probes,carriers);

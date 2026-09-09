@@ -5,6 +5,7 @@ import vm from "node:vm";
 import test from "node:test";
 import { applyPending, keyProof, parseJsonc, restorePeerProbes, validateImportedConfig, verifyKeyInventory, workerOrigin } from "../management.mjs";
 import { validateNodeId, validateSshTarget, validateWorkerName } from "../lumectl.mjs";
+import { InputError, inputValue } from "../prompts.mjs";
 
 const source = await readFile(new URL("../lumectl.mjs", import.meta.url), "utf8");
 function procedure(name) {
@@ -130,7 +131,7 @@ async function adoptHarness({wrongKey=false, changedDuringInput=false, missingIn
   let databaseReady=false, workerUpdated=false;
   const context=vm.createContext({
     Object,Map,Set,Date,JSON,join,privateDir:"memory",statePath:"state.json",wranglerConfigPath:"wrangler.jsonc",
-    validateNodeId,validateSshTarget,validateWorkerName,parseJsonc,workerOrigin,validateImportedConfig,verifyKeyInventory,
+    validateNodeId,validateSshTarget,validateWorkerName,parseJsonc,workerOrigin,validateImportedConfig,verifyKeyInventory,InputError,inputValue,
     fail:(message)=>{throw Error(message);},line:()=>{},loadState:async()=>null,exists:async()=>true,
     readFile:async()=>JSON.stringify({name:"monitor",d1_databases:[{binding:"DB",database_name:"monitor-db",database_id:"existing-d1"}]}),
     adminFetch:async(_state,path)=>{
