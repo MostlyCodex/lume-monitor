@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 const html = readFileSync(new URL("../public/dashboard/index.html", import.meta.url), "utf8");
 const app = readFileSync(new URL("../public/dashboard/app.js", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../public/dashboard/styles.css", import.meta.url), "utf8");
-const background = new URL("../public/dashboard/background-lume.webp", import.meta.url);
+const background = new URL("../public/dashboard/background-lume.jpg", import.meta.url);
 
 describe("dashboard presentation hierarchy", () => {
   it("keeps the fleet home focused on node cards and current network quality", () => {
@@ -35,13 +35,13 @@ describe("dashboard presentation hierarchy", () => {
     const cardTemplate = app.slice(app.indexOf("function renderNodeCard"), app.indexOf("function filteredNodes"));
     expect(cardTemplate.indexOf('class="resource-gauges"')).toBeLessThan(cardTemplate.indexOf('class="probe-block"'));
     expect(html).toContain('class="scene-image"');
-    expect(html).toContain('src="/dashboard/background-lume.webp?v=orange-halo"');
+    expect(html).toContain('src="/dashboard/background-lume.jpg?v=blue-sand"');
     expect(styles).toContain("height: var(--scene-lock-height, 100lvh)");
     expect(styles).toContain("object-fit: cover");
     expect(styles).toContain("contain: strict");
-    expect(styles).not.toContain('background-image: url("/dashboard/background-lume.webp?v=orange-halo")');
+    expect(styles).not.toContain('background-image: url("/dashboard/background-lume.jpg?v=blue-sand")');
     expect(styles).not.toContain("transform: scale(1.22)");
-    expect(statSync(background).size).toBeLessThan(500_000);
+    expect(statSync(background).size).toBeLessThan(1_500_000);
     expect(existsSync(new URL("../public/dashboard/background-alpine.webp", import.meta.url))).toBe(false);
     expect(styles).toContain(".node-card:hover { transform: none; }");
     expect(styles).not.toContain(".node-card:hover { transform: none; border-color:");

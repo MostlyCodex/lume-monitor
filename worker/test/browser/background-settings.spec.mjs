@@ -147,10 +147,10 @@ test("cancel and close discard selected pictures; demo preferences stay separate
   await selectPicture(page, file);
   await page.locator("#settings-save").click();
   expect((await storedLayout(page, "lume-demo-layout-v1")).background.startsWith("data:image/")).toBe(true);
-  expect(requests.filter((url) => !url.startsWith("data:") && !url.includes("background-lume.webp"))).toEqual([]);
+  expect(requests.filter((url) => !url.startsWith("data:") && !url.includes("background-lume.jpg"))).toEqual([]);
   await openDashboard(page);
   expect((await storedLayout(page)).background).toBeUndefined();
-  await expect(page.locator(".scene-image")).toHaveAttribute("src", /background-lume\.webp/);
+  await expect(page.locator(".scene-image")).toHaveAttribute("src", /background-lume\.jpg/);
 });
 
 test("invalid images and storage failure preserve saved settings and allow retry", async ({ page }) => {
@@ -167,7 +167,7 @@ test("invalid images and storage failure preserve saved settings and allow retry
   ]) {
     await selectPicture(page, file);
     await expect(page.locator("#settings-background-error")).toContainText(error);
-    await expect(page.locator(".scene-image")).toHaveAttribute("src", /background-lume\.webp/);
+    await expect(page.locator(".scene-image")).toHaveAttribute("src", /background-lume\.jpg/);
   }
   await selectPicture(page, await picture(page, { mime: "image/webp" }));
   await expect(page.locator("#settings-background-error")).toBeHidden();
@@ -193,7 +193,7 @@ test("invalid images and storage failure preserve saved settings and allow retry
   await page.locator("#settings-button").click();
   await page.locator("#settings-reset").click();
   expect(await storedLayout(page)).toEqual({});
-  await expect(page.locator(".scene-image")).toHaveAttribute("src", /background-lume\.webp/);
+  await expect(page.locator(".scene-image")).toHaveAttribute("src", /background-lume\.jpg/);
 });
 
 test("late image processing cannot overwrite a cancelled or newer selection", async ({ page }) => {
@@ -233,7 +233,7 @@ test("invalid stored backgrounds fall back without loading external images or lo
   for (const background of ["https://example.invalid/background.png", "data:image/svg+xml;base64,PHN2Zy8+", "data:image/png;base64,aGVsbG8="]) {
     await page.evaluate(({ key, background }) => localStorage.setItem(key, JSON.stringify({ brand: "Keep this name", background })), { key: LAYOUT_KEY, background });
     await page.reload({ waitUntil: "networkidle" });
-    await expect(page.locator(".scene-image")).toHaveAttribute("src", /background-lume\.webp/);
+    await expect(page.locator(".scene-image")).toHaveAttribute("src", /background-lume\.jpg/);
     await expect.poll(() => page.locator(".scene-image").evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
     await page.locator("#settings-button").click();
     await expect(page.locator("#settings-brand")).toHaveValue("Keep this name");
