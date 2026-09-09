@@ -9,6 +9,7 @@ import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { Writable } from "node:stream";
 import { applyPending, keyProof, parseJsonc, restorePeerProbes, validateImportedConfig, verifyKeyInventory, workerOrigin } from "./management.mjs";
+import { editObserverEntries, externalProbes, printObserverSummary, promptNetworkProbes, promptNftablesCounters } from "./observers.mjs";
 
 const toolFile = fileURLToPath(import.meta.url);
 const repoRoot = resolve(dirname(toolFile), "..");
@@ -349,7 +350,7 @@ async function readNodeConfiguration(prompt, id, defaultTarget = "", rebuildOrig
     const role = await prompt.text("用途", "VPS");
     const region = await prompt.text("地区", "unspecified");
     const services = parseServices(await prompt.text("systemd 服务（逗号分隔，可留空）"));
-    const observers = await promptOptionalObservers(prompt);
+    const observers = await promptOptionalObservers(prompt, { excludeNodeId: id });
     const target = await prompt.text("SSH 别名", defaultTarget || id);
     return { target, config: createAgentConfig({ id, displayName, role, region, endpoint: rebuildOrigin, secret: randomSecret(), services, probes: observers.probes, nftablesCounters: observers.nftablesCounters }) };
   }
@@ -722,92 +723,29 @@ function parseServices(value) {
   return names.map((name) => ({ name, label: name.replace(/\.service$/, ""), severity: "P1" }));
 }
 
-function safeObserverName(value, label) {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!/^[a-z0-9][a-z0-9_-]{0,79}$/.test(normalized)) fail(`${label}必须使用小写字母、数字、下划线或连字符`);
-  return normalized;
+async function availableProbeSources(state, excludeNodeId = "") {
+  const sources = [];
+  for (const [id, node] of Object.entries(state?.nodes || {})) {
+    if (id === excludeNodeId || !validateNodeId(id) || node.pendingRetire || node.pendingRestore) continue;
+    const path = join(privateDir, "nodes", id, "config.json");
+    try {
+      const info = await lstat(path);
+      if (!info.isFile() || info.isSymbolicLink()) throw new Error("not a regular configuration file");
+      const config = JSON.parse(await readFile(path, "utf8"));
+      if (config.node?.id !== id) throw new Error("node mismatch");
+      const probes = externalProbes(config);
+      if (probes.length) sources.push({ id, label: config.node.display_name || id, probes });
+    } catch {
+      line(`! 无法读取 ${id} 的本地探针配置，已从复用列表中跳过。`);
+    }
+  }
+  return sources;
 }
 
-function safeProbeTarget(value) {
-  const normalized = String(value || "").trim();
-  if (!normalized || normalized.length > 253 || /[\s/@?#\\]/.test(normalized)) {
-    fail("TCP 目标必须是单独的主机名或 IP，不能包含协议、端口、路径或空白");
-  }
-  return normalized;
-}
-
-function safeNftIdentifier(value, label) {
-  const normalized = String(value || "").trim();
-  if (!/^[A-Za-z0-9_.-]{1,64}$/.test(normalized)) fail(`${label}格式无效`);
-  return normalized;
-}
-
-async function promptOptionalObservers(prompt) {
-  const probes = [];
-  const nftablesCounters = [];
-  if (!(await prompt.yes("配置可选观测（ICMP / TCP / nftables）", false))) {
-    return { probes, nftablesCounters };
-  }
-  while (await prompt.yes("添加一个通信探针", probes.length === 0)) {
-    if (probes.length >= 16) fail("交互工具最多添加 16 个 TCP 探测；更多请按功能手册编辑配置");
-    const kind = (await prompt.text("探针类型（icmp / tcp）", "icmp")).toLowerCase();
-    if (!["icmp", "tcp"].includes(kind)) fail("探针类型只能为 icmp 或 tcp");
-    const name = safeObserverName(await prompt.text("探测名称", `${kind}_${probes.length + 1}`), "探测名称");
-    if (probes.some((probe) => probe.name === name)) fail(`探测名称重复：${name}`);
-    const label = await prompt.text("面板显示名", `${kind.toUpperCase()} ${probes.length + 1}`);
-    const target = safeProbeTarget(await prompt.text("目标主机名或 IP（不含端口）"));
-    const port = kind === "tcp" ? Number(await prompt.text("TCP 端口", "443")) : 443;
-    if (!Number.isInteger(port) || port < 1 || port > 65535) fail("TCP 端口必须是 1–65535 的整数");
-    const targetNodeIdValue = (await prompt.text("目标节点 ID（非节点间探测可留空）", "")).toLowerCase();
-    if (targetNodeIdValue && !validateNodeId(targetNodeIdValue)) fail("目标节点 ID 格式无效");
-    probes.push({
-      name,
-      label,
-      category: targetNodeIdValue ? "node-link" : "external",
-      ...(targetNodeIdValue ? { target_node_id: targetNodeIdValue } : {}),
-      kind,
-      target,
-      ...(kind === "tcp" ? { port, connect_timeout_ms: 1000 } : {}),
-      timeout_seconds: 4,
-      samples: kind === "icmp" ? 5 : 3,
-      sample_interval_ms: 250,
-      warning_ms: 500,
-      critical_ms: 1500,
-      warning_failure_percent: 1,
-      critical_failure_percent: 60,
-      severity: "P2",
-      display_order: (probes.length + 1) * 10,
-    });
-    if (probes.length >= 16) break;
-  }
-  while (await prompt.yes("添加一个 nftables 规则计数观测", nftablesCounters.length === 0)) {
-    if (nftablesCounters.length >= 16) fail("最多添加 16 个 nftables 计数观测");
-    const name = safeObserverName(await prompt.text("计数器名称", `nft_counter_${nftablesCounters.length + 1}`), "计数器名称");
-    if (nftablesCounters.some((counter) => counter.name === name)) fail(`计数器名称重复：${name}`);
-    const label = await prompt.text("面板显示名", `转发规则 ${nftablesCounters.length + 1}`);
-    const family = (await prompt.text("nftables family（ip / ip6 / inet）", "ip")).toLowerCase();
-    if (!["ip", "ip6", "inet"].includes(family)) fail("family 只能是 ip、ip6 或 inet");
-    const table = safeNftIdentifier(await prompt.text("table 名称"), "table 名称");
-    const chain = safeNftIdentifier(await prompt.text("chain 名称"), "chain 名称");
-    const protocol = (await prompt.text("传输协议（tcp / udp）", "tcp")).toLowerCase();
-    if (!["tcp", "udp"].includes(protocol)) fail("传输协议只能是 tcp 或 udp");
-    const destinationPort = Number(await prompt.text("规则匹配的目标端口", "443"));
-    if (!Number.isInteger(destinationPort) || destinationPort < 1 || destinationPort > 65535) fail("目标端口必须是 1–65535 的整数");
-    const ruleComment = await prompt.text("唯一规则 comment（可留空；同链同端口多条规则时必填）", "");
-    if (ruleComment.length > 80 || /[\r\n\t]/.test(ruleComment)) fail("规则 comment 不能超过 80 个普通字符");
-    nftablesCounters.push({
-      name,
-      label,
-      family,
-      table,
-      chain,
-      protocol,
-      destination_port: destinationPort,
-      ...(ruleComment ? { rule_comment: ruleComment } : {}),
-      display_order: (nftablesCounters.length + 1) * 10,
-    });
-    if (nftablesCounters.length >= 16) break;
-  }
+async function promptOptionalObservers(prompt, { state, excludeNodeId = "" } = {}) {
+  const sources = await availableProbeSources(state || await loadState(false), excludeNodeId);
+  const probes = await promptNetworkProbes(prompt, { sources, line });
+  const nftablesCounters = await promptNftablesCounters(prompt, { line });
   return { probes, nftablesCounters };
 }
 
@@ -917,12 +855,15 @@ async function addNode(prompt, options) {
     const id = (await prompt.text("节点 ID（小写，稳定且唯一）")).toLowerCase();
     if (!validateNodeId(id)) fail("节点 ID 必须匹配 [a-z0-9][a-z0-9_-]{0,31}");
     const displayName = await prompt.text("面板显示名", id);
-    const role = await prompt.text("用途", "VPS");
+    const role = await prompt.text("用途（面板说明，如网站、备份、中转）", "VPS");
     const region = await prompt.text("国家 / 城市", "unspecified");
-    const shortMark = await prompt.text("1–4 位短标记", id.replace(/[-_]/g, "").slice(0, 3).toUpperCase());
-    const units = await prompt.text("只读监测的 systemd 服务（逗号分隔，可留空）", "");
-    const optionalObservers = await promptOptionalObservers(prompt);
+    const shortMark = await prompt.text("短标记（1–4 个英文字母或数字，仅用于显示）", id.replace(/[-_]/g, "").slice(0, 3).toUpperCase());
+    const units = await prompt.text("systemd 服务（如 nginx.service，逗号分隔；回车跳过）", "");
+    const optionalObservers = await promptOptionalObservers(prompt, { state, excludeNodeId: id });
     const target = await prompt.text("SSH 主机或 ~/.ssh/config 别名（留空则稍后安装）", "");
+    printObserverSummary({ node: { id, display_name: displayName }, services: parseServices(units), probes: optionalObservers.probes, nftables_counters: optionalObservers.nftablesCounters }, line);
+    line(`  部署目标：${target || "暂不安装，稍后在管理菜单部署"}`);
+    if (!(await prompt.yes("按以上配置新增节点并继续部署", true))) return;
     specs = [normalizeNodeSpec({
       id,
       name: displayName,
@@ -951,35 +892,33 @@ async function configureNodeObservers(prompt, id) {
   const config = JSON.parse(await readFile(configPath, "utf8"));
   assertPlainObject(config, "节点配置");
   const original = JSON.stringify(config);
-  line(`${id} 当前有 ${config.services.length} 个服务、${config.probes.length} 个探针和 ${config.nftables_counters?.length || 0} 个计数器。`);
+  printObserverSummary(config, line);
+  if (state.nodes[id].pendingApply) line("! 这份本地配置仍待部署；本次向导可以继续下发。");
   if (await prompt.yes("修改 systemd 服务列表", false)) config.services = parseServices(await prompt.text("服务名（逗号分隔，留空清空）", ""));
-  const action = await prompt.text("通信探针和计数器：1 保留 / 2 追加 / 3 全部重设 / 4 删除指定项", "1");
-  if (!["1", "2", "3", "4"].includes(action)) fail("请选择 1–4");
-  if (action === "4") {
-    for (const key of ["probes", "nftables_counters"]) {
-      const entries = config[key] || [];
-      if (!entries.length) continue;
-      entries.forEach((entry, index) => line(`  ${index + 1}. ${entry.name} · ${entry.label || ""}`));
-      const selected = await prompt.text(`删除 ${key === "probes" ? "探针" : "计数器"} 的编号（逗号分隔，留空保留）`);
-      const indices = selected ? selected.split(",").map((value) => Number(value.trim()) - 1) : [];
-      if (indices.some((value) => !Number.isInteger(value) || value < 0 || value >= entries.length)) fail("删除编号不在列表中");
-      config[key] = entries.filter((_entry, index) => !indices.includes(index));
-    }
-  } else if (action !== "1") {
-    const observers = await promptOptionalObservers(prompt);
-    config.probes = action === "2" ? restorePeerProbes(config.probes, observers.probes) : observers.probes;
-    const counters = action === "2" ? [...(config.nftables_counters || []), ...observers.nftablesCounters] : observers.nftablesCounters;
-    if (new Set(counters.map((entry) => entry.name)).size !== counters.length) fail("计数器名称重复");
-    config.nftables_counters = counters;
+  config.probes = await editObserverEntries(prompt, {
+    label: "网络探针（三网 / ICMP / TCP）", entries: config.probes, limit: 32, line,
+    fallback: config.probes.length ? "1" : "2",
+    create: async () => promptNetworkProbes(prompt, { sources: await availableProbeSources(state, id), line }),
+  });
+  if (await prompt.yes("修改 nftables 规则计数器（与网络探针独立）", false)) {
+    config.nftables_counters = await editObserverEntries(prompt, {
+      label: "nftables 计数器", entries: config.nftables_counters || [], limit: 16, line,
+      fallback: config.nftables_counters?.length ? "1" : "2",
+      create: async () => promptNftablesCounters(prompt, { line }),
+    });
   }
-  if (JSON.stringify(config) === original) { line("配置没有变化。"); return; }
-  await writePrivateJson(join(privateDir, "backups", `${id}-config-${Date.now()}.json`), JSON.parse(original));
-  await writePrivateJson(configPath, config);
-  state.nodes[id].pendingApply = true;
-  await writePrivateJson(statePath, state);
-  line(`✓ 已更新私密配置：${configPath}`);
-  if (await prompt.yes("立即校验并部署到该 VPS", true)) await applyNodes(prompt, [id], state);
-  else line("已保存待部署状态。稍后运行 npm run node:apply。");
+  const changed = JSON.stringify(config) !== original;
+  if (changed) {
+    printObserverSummary(config, line);
+    if (!(await prompt.yes("保存以上监测配置", true))) return;
+    await writePrivateJson(join(privateDir, "backups", `${id}-config-${Date.now()}.json`), JSON.parse(original));
+    await writePrivateJson(configPath, config);
+    state.nodes[id].pendingApply = true;
+    await writePrivateJson(statePath, state);
+    line(`✓ 已保存并备份 ${id} 的监测配置。`);
+  } else if (!state.nodes[id].pendingApply) { line("配置没有变化，也没有待部署项。"); return; }
+  if (await prompt.yes("现在部署到 VPS（需要时在 SSH 提示中输入 sudo 密码）", true)) await applyNodes(prompt, [id], state);
+  else line("配置已保留为待部署，下次进入“配置节点”或“部署配置 / 更新 Agent”即可继续。");
 }
 
 async function nodeTarget(prompt, state, id, target = "") {
