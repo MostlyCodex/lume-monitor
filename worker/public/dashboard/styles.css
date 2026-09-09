@@ -463,7 +463,7 @@ html[data-theme="light"] .search-control { box-shadow: 0 7px 20px rgba(34, 52, 7
   overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: 16px;
-  background: var(--surface-strong);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
   box-shadow: 0 32px 110px rgba(0, 0, 0, 0.55);
   color: var(--text);
   backdrop-filter: blur(20px) saturate(108%);
@@ -471,7 +471,7 @@ html[data-theme="light"] .search-control { box-shadow: 0 7px 20px rgba(34, 52, 7
 }
 html[data-theme="light"] .settings-dialog { backdrop-filter: blur(20px) saturate(110%); -webkit-backdrop-filter: blur(20px) saturate(110%); }
 .settings-dialog::backdrop { background: rgba(4, 4, 5, 0.46); backdrop-filter: blur(7px); }
-.settings-shell { display: grid; max-height: calc(100vh - 42px); overflow: auto; }
+.settings-shell { display: grid; max-height: calc(100vh - 42px); overflow: auto; scroll-padding-block: 160px 150px; }
 .settings-head {
   position: sticky;
   z-index: 4;
@@ -482,7 +482,7 @@ html[data-theme="light"] .settings-dialog { backdrop-filter: blur(20px) saturate
   gap: 24px;
   padding: 24px 26px 20px;
   border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-strong) 94%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 97%, transparent);
   backdrop-filter: blur(22px);
 }
 .settings-head h2 { margin: 0; font-size: 25px; letter-spacing: -0.035em; }
@@ -509,6 +509,25 @@ html[data-theme="light"] .settings-dialog { backdrop-filter: blur(20px) saturate
 .settings-global-grid input:hover, .settings-node-grid input:hover { border-color: var(--line-strong); }
 .settings-global-grid input:focus, .settings-node-grid input:focus { border-color: rgba(var(--primary-rgb), 0.66); box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1); }
 .settings-country { font-family: var(--mono); text-transform: uppercase; }
+.settings-background-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); align-items: center; gap: 24px; }
+.settings-background-controls { min-width: 0; }
+.settings-background-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.settings-background-controls p { margin: 12px 0 0; font-size: 12px; line-height: 1.7; }
+#settings-background-help { color: var(--text-soft); }
+#settings-background-status { color: var(--muted); }
+.settings-error { margin: 0; color: color-mix(in srgb, var(--red) 85%, var(--text)); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.settings-actions > .settings-error { grid-column: 1 / -1; }
+.settings-background-buttons .button, .settings-actions .button { min-height: 44px; }
+.settings-head .icon-button { min-width: 44px; min-height: 44px; }
+.settings-shell .button:disabled { cursor: default; opacity: 0.45; transform: none; }
+.background-previews { display: grid; grid-template-columns: 256fr 81fr; width: 100%; max-width: 420px; gap: 12px; }
+.background-previews figure { min-width: 0; margin: 0; }
+.background-previews figcaption { margin-top: 8px; color: var(--muted); font-size: 12px; text-align: center; }
+.background-preview { position: relative; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-soft); }
+.background-preview-wide { aspect-ratio: 16 / 9; }
+.background-preview-tall { aspect-ratio: 9 / 16; }
+.background-preview img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; filter: var(--scene-filter); }
+.background-preview::after { position: absolute; inset: 0; background: var(--scene-scrim); content: ""; pointer-events: none; }
 .settings-node-list { display: grid; gap: 9px; }
 .settings-node { padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
 .settings-node > header { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 11px; }
@@ -530,7 +549,7 @@ html[data-theme="light"] .settings-dialog { backdrop-filter: blur(20px) saturate
   margin-top: 18px;
   padding: 17px 26px 21px;
   border-top: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-strong) 95%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 97%, transparent);
   backdrop-filter: blur(22px);
 }
 
@@ -971,6 +990,7 @@ html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-
   .settings-head { padding: 19px 17px 16px; }
   .settings-head h2 { font-size: 21px; }
   .settings-section { padding: 17px 17px 3px; }
+  .settings-background-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .settings-global-grid, .settings-node-grid { grid-template-columns: 1fr; }
   .settings-wide { grid-column: auto; }
   .settings-node > header > div:first-child { grid-template-columns: 27px minmax(0, 1fr); }
@@ -979,6 +999,11 @@ html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-
   .settings-actions > span { display: none; }
   .settings-actions .button { padding: 0 10px; }
   .settings-actions .button-primary { grid-column: 1 / -1; }
+}
+
+@media (max-height: 600px) {
+  .settings-head { position: static; }
+  .settings-shell { scroll-padding-top: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

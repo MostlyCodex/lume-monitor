@@ -4,7 +4,7 @@
 
 [在线体验](https://mostlycodex.github.io/lume-monitor/) · [部署与管理](docs/guide.md) · [参与开发](CONTRIBUTING.md)
 
-演示网页使用虚构数据，无需登录，可体验节点详情、图表、深浅主题和显示设置。
+演示网页使用虚构数据，无需登录，可体验节点详情、图表、深浅主题和自定义背景。
 
 ## 能监测什么
 

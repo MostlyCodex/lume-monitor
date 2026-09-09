@@ -8,9 +8,9 @@
     <meta name="robots" content="noindex, nofollow, noarchive">
     <title>Lume</title>
     <link rel="stylesheet" href="../dashboard/vendor/uPlot.min.css">
-    <link rel="stylesheet" href="../dashboard/styles.css?v=1.2.0&amp;b=optional-observers">
+    <link rel="stylesheet" href="../dashboard/styles.css?v=1.4.0&amp;b=background-settings">
     <script src="../dashboard/vendor/uPlot.iife.min.js" defer></script>
-    <script src="../dashboard/app.js?v=1.2.0&amp;b=optional-observers" defer></script>
+    <script src="../dashboard/app.js?v=1.4.0&amp;b=background-settings" defer></script>
   </head>
   <body>
     <div class="scene" aria-hidden="true">
@@ -191,16 +191,37 @@
           </div>
         </section>
 
+        <section class="settings-section" aria-labelledby="settings-background-title">
+          <div class="settings-section-title"><strong id="settings-background-title">背景图片</strong><span>自动铺满 · 居中裁切</span></div>
+          <div class="settings-background-layout">
+            <div class="settings-background-controls">
+              <input id="settings-background-file" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>
+              <div class="settings-background-buttons">
+                <button id="settings-background-choose" class="button button-ghost" type="button" aria-describedby="settings-background-help">选择图片</button>
+                <button id="settings-background-reset" class="button button-ghost" type="button">恢复默认背景</button>
+              </div>
+              <p id="settings-background-help">JPG / PNG / WebP，最大 10 MB、2400 万像素。自动压缩，仅保存在当前浏览器。</p>
+              <p id="settings-background-status" role="status" aria-live="polite"></p>
+              <p id="settings-background-error" class="settings-error" role="alert" hidden></p>
+            </div>
+            <div class="background-previews" role="group" aria-label="背景裁切预览">
+              <figure><div class="background-preview background-preview-wide"><img alt="" decoding="async"></div><figcaption>横屏预览</figcaption></figure>
+              <figure><div class="background-preview background-preview-tall"><img alt="" decoding="async"></div><figcaption>竖屏预览</figcaption></figure>
+            </div>
+          </div>
+        </section>
+
         <section class="settings-section">
           <div class="settings-section-title"><strong>节点卡片</strong><span>用箭头调整首页顺序</span></div>
           <div id="settings-node-list" class="settings-node-list"></div>
         </section>
 
         <footer class="settings-actions">
-          <button id="settings-reset" class="button button-ghost" type="button">恢复默认</button>
+          <p id="settings-error" class="settings-error" role="alert" hidden></p>
+          <button id="settings-reset" class="button button-ghost" type="button">全部恢复默认</button>
           <span></span>
           <button id="settings-cancel" class="button button-ghost" type="button">取消</button>
-          <button class="button button-primary" type="submit">保存并应用</button>
+          <button id="settings-save" class="button button-primary" type="submit">保存并应用</button>
         </footer>
       </form>
     </dialog>

@@ -24,11 +24,16 @@
   const DEMO_MODE = document.documentElement.dataset.demo === "true";
   const DASHBOARD_HOME = DEMO_MODE ? new URL("./", location.href).pathname : "/dashboard/";
   const DASHBOARD_LAYOUT_KEY = DEMO_MODE ? "lume-demo-layout-v1" : "vpsmon-dashboard-layout-v1";
+  const BACKGROUND_MAX_BYTES = 10 * 1024 * 1024;
+  const BACKGROUND_MAX_PIXELS = 24_000_000;
+  const BACKGROUND_MAX_LENGTH = 1_500_000;
   let demoData;
+  let defaultBackground;
   const DEFAULT_DASHBOARD_LAYOUT = Object.freeze({
     brand: "Lume",
     order: [],
     nodes: {},
+    background: "",
   });
   const state = {
     latest: null,
@@ -50,6 +55,9 @@
     resizeObserver: null,
     layout: null,
     settingsDraftOrder: [],
+    settingsDraftBackground: "",
+    backgroundRevision: 0,
+    backgroundProcessing: false,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -99,11 +107,11 @@
   }
 
   function writePreference(key, value) {
-    try { localStorage.setItem(key, value); } catch { /* Preferences are optional. */ }
+    try { localStorage.setItem(key, value); return true; } catch { return false; }
   }
 
   function removePreference(key) {
-    try { localStorage.removeItem(key); } catch { /* Preferences are optional. */ }
+    try { localStorage.removeItem(key); return true; } catch { return false; }
   }
 
   function layoutText(value, maximum, fallback = "") {
@@ -140,12 +148,125 @@
       brand: configuredBrand || DEFAULT_DASHBOARD_LAYOUT.brand,
       order,
       nodes,
+      background: typeof source.background === "string" && source.background.length <= BACKGROUND_MAX_LENGTH
+        && /^data:image\/(?:webp|png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/.test(source.background)
+        ? source.background : "",
     };
   }
 
   function readDashboardLayout() {
     try { return normalizeDashboardLayout(JSON.parse(readPreference(DASHBOARD_LAYOUT_KEY, "{}"))); }
     catch { return normalizeDashboardLayout({}); }
+  }
+
+  function setBackgroundImage(image, background) {
+    const source = background || defaultBackground;
+    if (image.getAttribute("src") === source) return;
+    image.onerror = () => {
+      if (image.getAttribute("src") === defaultBackground) return;
+      image.src = defaultBackground;
+      if (image.matches(".scene-image")) {
+        if (state.layout.background === background) state.layout.background = "";
+        if (state.settingsDraftBackground === background) state.settingsDraftBackground = "";
+        if ($("settings-dialog").open) renderBackgroundPreview();
+        showToast("背景图片无法读取，已显示默认背景，请重新选择图片。", true);
+      }
+    };
+    image.src = source;
+  }
+
+  function applyBackground(background) {
+    setBackgroundImage(document.querySelector(".scene-image"), background);
+  }
+
+  function settingsMessage(id, message = "") {
+    const element = $(id);
+    element.textContent = message;
+    element.hidden = !message;
+  }
+
+  function renderBackgroundPreview() {
+    document.querySelectorAll(".background-preview img").forEach((image) => setBackgroundImage(image, state.settingsDraftBackground));
+    applyBackground(state.settingsDraftBackground);
+    $("settings-background-reset").disabled = !state.settingsDraftBackground && !state.backgroundProcessing;
+    $("settings-save").disabled = state.backgroundProcessing;
+    $("settings-background-status").textContent = state.backgroundProcessing ? "正在处理图片…"
+      : state.settingsDraftBackground !== state.layout.background ? "预览中，保存后生效"
+        : state.settingsDraftBackground ? "当前为自定义背景" : "当前为默认背景";
+  }
+
+  async function prepareBackground(file) {
+    if (!file.size) throw new Error("图片为空，请重新选择 JPG、PNG 或 WebP 图片。");
+    if (file.size > BACKGROUND_MAX_BYTES) throw new Error("图片超过 10 MB，请选择较小的图片。");
+    const header = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+    const matches = (bytes, offset = 0) => bytes.every((byte, index) => header[offset + index] === byte);
+    const mime = matches([0xff, 0xd8, 0xff]) ? "image/jpeg"
+      : matches([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) ? "image/png"
+        : matches([0x52, 0x49, 0x46, 0x46]) && matches([0x57, 0x45, 0x42, 0x50], 8) ? "image/webp" : "";
+    if (!mime) throw new Error("不支持此格式，请选择 JPG、PNG 或 WebP 图片。");
+    const data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("无法读取图片，请重新选择。"));
+      reader.readAsDataURL(file.slice(0, file.size, mime));
+    });
+    const image = new Image();
+    image.src = data;
+    try { await image.decode(); }
+    catch { throw new Error("图片无法解码，请选择完整的 JPG、PNG 或 WebP 图片。"); }
+    if (image.naturalWidth * image.naturalHeight > BACKGROUND_MAX_PIXELS) {
+      throw new Error("图片超过 2400 万像素，请先缩小尺寸后重试。");
+    }
+    const canvas = document.createElement("canvas");
+    try {
+      for (const [edge, quality] of [[1920, 0.82], [1600, 0.75], [1280, 0.7]]) {
+        const scale = Math.min(1, edge / Math.max(image.naturalWidth, image.naturalHeight));
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        const context = canvas.getContext("2d");
+        if (!context) break;
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const result = canvas.toDataURL("image/webp", quality);
+        if (result.startsWith("data:image/") && result.length <= BACKGROUND_MAX_LENGTH) return result;
+      }
+    } finally {
+      canvas.width = canvas.height = 0;
+    }
+    throw new Error("图片压缩后仍过大，请选择尺寸更小或细节更少的图片。");
+  }
+
+  async function selectBackground(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const revision = ++state.backgroundRevision;
+    state.backgroundProcessing = true;
+    settingsMessage("settings-background-error");
+    settingsMessage("settings-error");
+    renderBackgroundPreview();
+    try {
+      const background = await prepareBackground(file);
+      if (revision !== state.backgroundRevision || !$("settings-dialog").open) return;
+      state.settingsDraftBackground = background;
+    } catch (error) {
+      if (revision !== state.backgroundRevision || !$("settings-dialog").open) return;
+      settingsMessage("settings-background-error", error.message || "图片处理失败，请重新选择。");
+    } finally {
+      if (revision === state.backgroundRevision) {
+        state.backgroundProcessing = false;
+        renderBackgroundPreview();
+      }
+    }
+  }
+
+  function resetBackground() {
+    state.backgroundRevision++;
+    state.backgroundProcessing = false;
+    state.settingsDraftBackground = "";
+    $("settings-background-file").value = "";
+    settingsMessage("settings-background-error");
+    settingsMessage("settings-error");
+    renderBackgroundPreview();
   }
 
   async function fetchJson(url) {
@@ -777,17 +898,27 @@
   function openSettings() {
     if (!state.latest) return;
     state.settingsDraftOrder = catalogNodes().map((node) => node.id);
+    state.settingsDraftBackground = state.layout.background;
+    settingsMessage("settings-background-error");
+    settingsMessage("settings-error");
+    renderBackgroundPreview();
     $("settings-brand").value = state.layout?.brand || DEFAULT_DASHBOARD_LAYOUT.brand;
     renderSettingsNodeList();
     $("settings-dialog").showModal();
   }
 
   function closeSettings() {
+    state.backgroundRevision++;
+    state.backgroundProcessing = false;
+    state.settingsDraftBackground = state.layout.background;
+    $("settings-background-file").value = "";
+    applyBackground(state.layout.background);
     if ($("settings-dialog").open) $("settings-dialog").close();
   }
 
   function saveSettings(event) {
     event.preventDefault();
+    if (state.backgroundProcessing) return;
     const nodes = {};
     document.querySelectorAll("[data-settings-node]").forEach((row) => {
       const id = row.dataset.settingsNode;
@@ -799,12 +930,17 @@
         region: value("region"),
       };
     });
-    state.layout = normalizeDashboardLayout({
+    const layout = normalizeDashboardLayout({
       brand: $("settings-brand").value,
       order: state.settingsDraftOrder,
       nodes,
+      background: state.settingsDraftBackground,
     });
-    writePreference(DASHBOARD_LAYOUT_KEY, JSON.stringify(state.layout));
+    if (!writePreference(DASHBOARD_LAYOUT_KEY, JSON.stringify(layout))) {
+      settingsMessage("settings-error", "未能保存：浏览器存储已满或不可用。请选择较小的图片，或允许此网站保存数据后重试。");
+      return;
+    }
+    state.layout = layout;
     closeSettings();
     renderFleet();
     if (state.selectedNode) renderDetail();
@@ -812,7 +948,10 @@
   }
 
   function resetSettings() {
-    removePreference(DASHBOARD_LAYOUT_KEY);
+    if (!removePreference(DASHBOARD_LAYOUT_KEY)) {
+      settingsMessage("settings-error", "未能恢复默认：浏览器存储不可用，请允许此网站保存数据后重试。");
+      return;
+    }
     state.layout = normalizeDashboardLayout({});
     state.settingsDraftOrder = [];
     closeSettings();
@@ -1445,6 +1584,13 @@
     $("settings-close").addEventListener("click", closeSettings);
     $("settings-cancel").addEventListener("click", closeSettings);
     $("settings-reset").addEventListener("click", resetSettings);
+    $("settings-background-choose").addEventListener("click", () => $("settings-background-file").click());
+    $("settings-background-file").addEventListener("change", selectBackground);
+    $("settings-background-reset").addEventListener("click", resetBackground);
+    $("settings-dialog").addEventListener("cancel", (event) => {
+      event.preventDefault();
+      closeSettings();
+    });
     $("settings-node-list").addEventListener("click", (event) => {
       const button = event.target.closest("button[data-settings-move]");
       if (!button) return;
@@ -1549,7 +1695,9 @@
 
   async function init() {
     lockSceneViewport();
+    defaultBackground = document.querySelector(".scene-image").getAttribute("src");
     state.layout = readDashboardLayout();
+    applyBackground(state.layout.background);
     applyGlobalLayout();
     setTheme(readPreference("vpsmon-theme", "dark"));
     bindEvents();
