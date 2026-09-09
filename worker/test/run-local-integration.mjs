@@ -107,6 +107,16 @@ function testProductionUpgrade(root) {
     throw new Error(`legacy node was not preserved correctly: ${JSON.stringify(preserved)}`);
   }
 
+  const directory = query(
+    config,
+    persistence,
+    "SELECT catalog.retired_at, latest.received_at FROM node_catalog AS catalog " +
+      "LEFT JOIN node_latest AS latest ON latest.node_id = catalog.node_id WHERE catalog.node_id='legacy-fixture'",
+  );
+  if (directory.length !== 1 || directory[0].retired_at !== null) {
+    throw new Error("upgraded node directory must be readable and preserve the existing node without retiring it");
+  }
+
   const latest = query(
     config,
     persistence,

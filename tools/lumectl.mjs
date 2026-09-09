@@ -376,18 +376,25 @@ async function adoptDeployment(prompt) {
   const adminToken = await prompt.secret("现有 ADMIN_TOKEN");
   if (!adminToken) fail("ADMIN_TOKEN 不能为空");
   const state = { schemaVersion: 1, stage: "ready", workerName: config.name, databaseName: binding.database_name, databaseId: binding.database_id, workerUrl: origin, adminToken, nodeKeys: {}, nodes: {}, retiredNodes: {}, telegram: null };
+  let databaseChecked = false;
   let inventoryResponse = await adminFetch(state, "/api/v1/admin/key-inventory");
   if (inventoryResponse.status === 404 || (inventoryResponse.ok && !inventoryResponse.body?.keys)) {
-    line("现有 Worker 尚无接管接口。需要部署当前 Worker 代码；保留现有 D1、变量和 Secrets。");
+    line("现有 Worker 尚无接管接口。需要先应用现有 D1 的待执行迁移，再部署当前 Worker 代码；保留数据库、变量和 Secrets。");
     if (!(await prompt.yes("更新现有 Worker 管理接口", true))) return;
     await ensureCloudflareLogin();
+    await applyDatabaseMigrations(state);
+    databaseChecked = true;
     await wrangler(["deploy", "--keep-vars", "--config", wranglerConfigPath]);
     inventoryResponse = await adminFetch(state, "/api/v1/admin/key-inventory");
   }
   if (!inventoryResponse.ok || !Array.isArray(inventoryResponse.body?.keys)) fail(`接管鉴权失败（HTTP ${inventoryResponse.status}），未修改本地管理状态`);
   const inventory = inventoryResponse.body;
+  // A previous attempt may have updated the Worker without updating D1.
+  if (!databaseChecked) {
+    await ensureCloudflareLogin();
+    await applyDatabaseMigrations(state);
+  }
   const remoteNodes = await adminNodeList(state);
-  if (!remoteNodes) fail("无法读取节点目录，接管已停止");
   for (const node of remoteNodes.filter((entry) => entry.retired)) state.retiredNodes[node.node_id] = { retiredAt: node.retired_at, sshTarget: oldState?.retiredNodes?.[node.node_id]?.sshTarget || "" };
   const imported = [];
   line(`线上共有 ${inventory.keys.length} 份节点密钥，将逐一核对，包括尚未上报的节点。`);
@@ -452,7 +459,16 @@ async function registerDashboardOrigin(state) {
 
 async function adminNodeList(state) {
   const result = await adminFetch(state, "/api/v1/admin/nodes");
-  return result.ok && Array.isArray(result.body?.nodes) ? result.body.nodes : null;
+  if (!result.ok) {
+    const hint = result.status === 401
+      ? "请核对 Worker 地址和 ADMIN_TOKEN。"
+      : result.status >= 500
+        ? "请检查 Worker 的 D1 绑定、数据库迁移和运行日志。"
+        : "请检查 Worker 地址和访问策略。";
+    fail(`无法读取节点目录（HTTP ${result.status}）。${hint}`);
+  }
+  if (!Array.isArray(result.body?.nodes)) fail(`节点目录响应格式无效（HTTP ${result.status}）。请检查 Worker 地址与部署版本。`);
+  return result.body.nodes;
 }
 
 async function waitForFirstReport(state, id, timeoutSeconds = 90, since = 0) {
@@ -525,6 +541,11 @@ async function ensureCloudflareLogin() {
   await wrangler(["login"], { interactive: true });
   const verified = await wrangler(["whoami", "--json"], { capture: true, allowFailure: true });
   if (verified.code !== 0) fail("Cloudflare 登录未完成");
+}
+
+async function applyDatabaseMigrations(state) {
+  line("检查并应用现有 D1 的待执行迁移…");
+  await wrangler(["d1", "migrations", "apply", state.databaseName, "--remote", "--config", wranglerConfigPath]);
 }
 
 async function findOrCreateDatabase(state, prompt) {
@@ -647,8 +668,7 @@ async function setup(prompt, assumeYes) {
   await ensureCloudflareLogin();
   await findOrCreateDatabase(state, prompt);
   await writeWorkerConfig(state);
-  line("应用 D1 migrations…");
-  await wrangler(["d1", "migrations", "apply", state.databaseName, "--remote", "--config", wranglerConfigPath]);
+  await applyDatabaseMigrations(state);
   line("部署 Worker…");
   const deployed = await wrangler(["deploy", "--config", wranglerConfigPath], { capture: true, echo: true });
   const discoveredUrl = extractWorkerUrl(`${deployed.stdout}\n${deployed.stderr}`);

@@ -122,33 +122,97 @@ test("deployment confirmation ignores a report from before the deployment", asyn
   assert.equal(polls,2);
 });
 
-async function adoptHarness({wrongKey=false, changedDuringInput=false}={}) {
+async function adoptHarness({wrongKey=false, changedDuringInput=false, missingInterface=false, migrationFailure=false, unauthorized=false}={}) {
   const secret="existing-key-".repeat(5);
   const inventory={keys:[{node_id:"alpha",proof:keyProof("alpha",secret)}],revoked_node_ids:[]};
   const writes=[];
+  const calls=[];
+  let databaseReady=false, workerUpdated=false;
   const context=vm.createContext({
     Object,Map,Set,Date,JSON,join,privateDir:"memory",statePath:"state.json",wranglerConfigPath:"wrangler.jsonc",
     validateNodeId,validateSshTarget,validateWorkerName,parseJsonc,workerOrigin,validateImportedConfig,verifyKeyInventory,
     fail:(message)=>{throw Error(message);},line:()=>{},loadState:async()=>null,exists:async()=>true,
     readFile:async()=>JSON.stringify({name:"monitor",d1_databases:[{binding:"DB",database_name:"monitor-db",database_id:"existing-d1"}]}),
-    adminFetch:async()=>({ok:true,status:200,body:inventory}),adminNodeList:async()=>[{node_id:"alpha",retired:false}],
-    readNodeConfiguration:async()=>({target:"ssh-alpha",config:{node:{id:"alpha"},secret:wrongKey?"wrong-".repeat(12):secret,endpoint:"https://monitor.example/api/v1/report",services:[],probes:[]}}),
+    adminFetch:async(_state,path)=>{
+      if(unauthorized)return {ok:false,status:401,body:{error:"unauthorized"}};
+      if(path.endsWith("/key-inventory"))return missingInterface&&!workerUpdated?{ok:false,status:404}:{ok:true,status:200,body:inventory};
+      assert.ok(path.endsWith("/nodes"));
+      calls.push("read-nodes");
+      return databaseReady?{ok:true,status:200,body:{nodes:[{node_id:"alpha",retired:false}]}}:{ok:false,status:500,body:{error:"node listing failed"}};
+    },
+    ensureCloudflareLogin:async()=>calls.push("login"),
+    wrangler:async(args)=>{
+      if(args[0]==="d1") {
+        assert.equal(JSON.stringify(args),JSON.stringify(["d1","migrations","apply","monitor-db","--remote","--config","wrangler.jsonc"]));
+        calls.push("migrate");
+        if(migrationFailure)throw Error("migration interrupted");
+        databaseReady=true;
+      } else {
+        assert.equal(args[0],"deploy");
+        assert.ok(args.includes("--keep-vars"));
+        assert.equal(databaseReady,true,"D1 must be upgraded before the Worker");
+        calls.push("deploy-worker");
+        workerUpdated=true;
+      }
+    },
+    readNodeConfiguration:async()=>{
+      calls.push("read-config");
+      return {target:"ssh-alpha",config:{node:{id:"alpha"},secret:wrongKey?"wrong-".repeat(12):secret,endpoint:"https://monitor.example/api/v1/report",services:[],probes:[]}};
+    },
     getServerInventory:async()=>changedDuringInput?{keys:[],revoked_node_ids:[]}:inventory,
     writePrivateJson:async(path,value)=>writes.push({path,value:structuredClone(value)}),
   });
   const signature=source.slice(source.indexOf("function inventorySignature("),source.indexOf("async function getServerInventory("));
-  new vm.Script(signature+procedure("adoptDeployment")).runInContext(context);
-  const run=()=>context.adoptDeployment({text:async()=>"https://monitor.example",secret:async()=>"admin-".repeat(12)});
-  return {run,writes,secret};
+  new vm.Script(signature+["applyDatabaseMigrations","adminNodeList","adoptDeployment"].map(procedure).join("\n")).runInContext(context);
+  const run=()=>context.adoptDeployment({text:async()=>"https://monitor.example",secret:async()=>"admin-".repeat(12),yes:async()=>true});
+  return {run,writes,secret,calls};
 }
 
-test("adoption preserves existing credentials and only writes local management files",async()=>{
+test("adoption migrates an existing Worker database before reading its nodes and preserves credentials",async()=>{
   const h=await adoptHarness();
   await h.run();
   const state=h.writes.find((entry)=>entry.path==="state.json").value;
   assert.equal(state.nodeKeys.alpha,h.secret);
   assert.equal(state.databaseId,"existing-d1");
   assert.equal(state.nodes.alpha.sshTarget,"ssh-alpha");
+  assert.deepEqual(h.calls,["login","migrate","read-nodes","read-config"]);
+});
+
+test("adoption upgrades D1 before deploying a missing Worker management interface",async()=>{
+  const h=await adoptHarness({missingInterface:true});
+  await h.run();
+  assert.deepEqual(h.calls,["login","migrate","deploy-worker","read-nodes","read-config"]);
+});
+
+test("adoption stops before node reads and local writes when migrations fail",async()=>{
+  for(const missingInterface of [false,true]) {
+    const h=await adoptHarness({missingInterface,migrationFailure:true});
+    await assert.rejects(h.run(),/migration interrupted/);
+    assert.deepEqual(h.calls,["login","migrate"]);
+    assert.equal(h.writes.length,0);
+  }
+});
+
+test("adoption does not migrate or save state when authentication fails",async()=>{
+  const h=await adoptHarness({unauthorized:true});
+  await assert.rejects(h.run(),/HTTP 401/);
+  assert.deepEqual(h.calls,[]);
+  assert.equal(h.writes.length,0);
+});
+
+test("node directory errors retain their HTTP status without exposing response contents",async()=>{
+  for(const response of [{ok:false,status:401},{ok:false,status:500},{ok:true,status:200}]) {
+    const context=vm.createContext({
+      adminFetch:async()=>({...response,body:{error:"private-response-marker"}}),
+      fail:(message)=>{throw Error(message);},
+    });
+    new vm.Script(procedure("adminNodeList")).runInContext(context);
+    await assert.rejects(context.adminNodeList({}),(error)=>{
+      assert.match(error.message,new RegExp(`HTTP ${response.status}`));
+      assert.ok(!error.message.includes("private-response-marker"));
+      return true;
+    });
+  }
 });
 
 test("adoption writes no management state if a key is wrong or the server changes",async()=>{
