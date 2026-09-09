@@ -14,6 +14,7 @@ export interface NodeCatalogRow {
   offline_severity: Severity;
   ip_change_severity: Severity;
   enabled: number;
+  retired_at: number | null;
 }
 
 export interface ServiceCatalogRow {
@@ -88,12 +89,15 @@ export interface DashboardCatalog {
 }
 
 export async function loadDashboardCatalog(env: Env): Promise<DashboardCatalog> {
-  const [nodes, services, probes, counters, metrics, routes] = await Promise.all([
+  const [nodes, retired, services, probes, counters, metrics, routes] = await Promise.all([
     env.DB.prepare(
       "SELECT node_id, public_id, display_name, short_mark, role_label, group_name, region_label, " +
-        "stale_seconds, display_order, color_key, offline_severity, ip_change_severity, enabled " +
-        "FROM node_catalog WHERE enabled = 1 ORDER BY display_order, display_name",
+        "stale_seconds, display_order, color_key, offline_severity, ip_change_severity, enabled, retired_at " +
+        "FROM node_catalog WHERE enabled = 1 AND retired_at IS NULL ORDER BY display_order, display_name",
     ).all<NodeCatalogRow>(),
+    env.DB.prepare(
+      "SELECT node_id FROM node_catalog WHERE retired_at IS NOT NULL",
+    ).all<{ node_id: NodeId }>(),
     env.DB.prepare(
       "SELECT node_id, service_name, display_name, severity, display_order, enabled " +
         "FROM service_catalog WHERE enabled = 1 ORDER BY node_id, display_order, display_name",
@@ -118,13 +122,25 @@ export async function loadDashboardCatalog(env: Env): Promise<DashboardCatalog> 
         "ORDER BY display_order, display_name",
     ).all<BusinessRouteRow>(),
   ]);
+  // A retired node keeps its own catalog rows disabled, but a peer that still
+  // reports a node-link probe toward it would re-enable that probe and its
+  // route on every report. Filtering on read makes retirement independent of
+  // whether every peer configuration has been updated yet.
+  const retiredNodeIds = new Set(retired.results.map((row) => row.node_id));
+  const visibleNode = (nodeId: NodeId): boolean => !retiredNodeIds.has(nodeId);
+  const visibleTarget = (targetNodeId: NodeId | null): boolean =>
+    targetNodeId === null || !retiredNodeIds.has(targetNodeId);
   return {
     nodes: nodes.results,
-    services: services.results,
-    probes: probes.results,
-    counters: counters.results,
+    services: services.results.filter((service) => visibleNode(service.node_id)),
+    probes: probes.results.filter(
+      (probe) => visibleNode(probe.node_id) && visibleTarget(probe.target_node_id),
+    ),
+    counters: counters.results.filter((counter) => visibleNode(counter.node_id)),
     metrics: metrics.results,
-    routes: routes.results,
+    routes: routes.results.filter(
+      (route) => visibleNode(route.source_node_id) && visibleTarget(route.target_node_id),
+    ),
   };
 }
 

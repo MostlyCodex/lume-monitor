@@ -421,6 +421,130 @@ assert(hostOnlyDetailBody.probes.length === 0, "disabled probes remained in node
 assert(hostOnlyDetailBody.probe_summaries.length === 0, "disabled probes remained in node detail summaries");
 assert(hostOnlyDetailBody.counters.length === 0, "disabled counters remained in node detail history");
 
+// Retirement. The regression this guards: Beta is decommissioned while Alpha
+// still reports a node-link probe toward it. Before `retired_at` existed,
+// Alpha's next report re-enabled both the probe row and the route row, so the
+// dead link reappeared on the dashboard within one report interval.
+const relinkedAlpha = report();
+relinkedAlpha.generated_at += 300;
+relinkedAlpha.probes.forEach((probe) => { probe.checked_at = relinkedAlpha.generated_at; });
+const relinked = await fetch(`${base}/api/v1/report`, signedRequest(JSON.stringify(relinkedAlpha)));
+assert(relinked.status === 202, `re-linked alpha report returned ${relinked.status}`);
+
+const retireUnauthorized = await fetch(`${base}/api/v1/admin/nodes/beta-vps/retire`, { method: "POST" });
+assert(retireUnauthorized.status === 401, "retire accepted an unauthenticated request");
+
+const retireUnknown = await fetch(`${base}/api/v1/admin/nodes/no-such-node/retire`, {
+  method: "POST",
+  headers: adminHeaders,
+});
+assert(retireUnknown.status === 404, `retiring an unknown node returned ${retireUnknown.status}`);
+
+const retired = await fetch(`${base}/api/v1/admin/nodes/beta-vps/retire`, {
+  method: "POST",
+  headers: adminHeaders,
+});
+const retiredBody = await retired.json();
+assert(
+  retired.status === 200 && retiredBody.retired === true && retiredBody.already_retired === false,
+  `retiring beta failed: ${JSON.stringify(retiredBody)}`,
+);
+
+// Alpha has not been reconfigured yet and keeps reporting the link.
+const staleLinkAlpha = report();
+staleLinkAlpha.generated_at += 360;
+staleLinkAlpha.probes.forEach((probe) => { probe.checked_at = staleLinkAlpha.generated_at; });
+const staleLinkAccepted = await fetch(`${base}/api/v1/report`, signedRequest(JSON.stringify(staleLinkAlpha)));
+assert(staleLinkAccepted.status === 202, `report from a peer of a retired node returned ${staleLinkAccepted.status}`);
+
+const afterRetire = await fetch(`${base}/api/v1/dashboard/latest`, { headers: adminHeaders });
+const afterRetireBody = await afterRetire.json();
+assert(
+  !afterRetireBody.nodes.some((node) => node.id === "beta-vps"),
+  "retired node reappeared on the dashboard",
+);
+assert(afterRetireBody.summary.total_nodes === 1, "retired node still counted in the fleet summary");
+assert(
+  !afterRetireBody.catalog.routes.some((route) => route.target_node_id === "beta-vps"),
+  "a peer report re-enabled the route toward a retired node",
+);
+assert(
+  !afterRetireBody.catalog.probes.some((probe) => probe.target_node_id === "beta-vps"),
+  "a peer report re-enabled the probe toward a retired node",
+);
+const alphaAfterRetire = afterRetireBody.nodes.find((node) => node.id === "alpha-vps");
+assert(
+  !alphaAfterRetire.probes.some((probe) => probe.name === "peer_icmp"),
+  "the peer card still shows a link to a retired node",
+);
+
+const afterRetireHistory = await fetch(`${base}/api/v1/dashboard/history?hours=24`, { headers: adminHeaders });
+const afterRetireHistoryBody = await afterRetireHistory.json();
+assert(
+  !afterRetireHistoryBody.routes.some((route) => route.key === "alpha-vps--peer_icmp"),
+  "retired link still aggregated in fleet history",
+);
+
+const adminNodes = await fetch(`${base}/api/v1/admin/nodes`, { headers: adminHeaders });
+const adminNodesBody = await adminNodes.json();
+const betaAdmin = adminNodesBody.nodes.find((node) => node.node_id === "beta-vps");
+assert(
+  adminNodes.status === 200 && betaAdmin?.retired === true && typeof betaAdmin.retired_at === "number",
+  `admin node listing did not report retirement: ${JSON.stringify(adminNodesBody)}`,
+);
+assert(
+  adminNodesBody.nodes.find((node) => node.node_id === "alpha-vps")?.retired === false,
+  "an unrelated node was marked retired",
+);
+
+// Retiring twice is a no-op rather than an error, so the tool can be re-run.
+const retiredAgain = await fetch(`${base}/api/v1/admin/nodes/beta-vps/retire`, {
+  method: "POST",
+  headers: adminHeaders,
+});
+const retiredAgainBody = await retiredAgain.json();
+assert(
+  retiredAgain.status === 200 && retiredAgainBody.already_retired === true &&
+    retiredAgainBody.retired_at === retiredBody.retired_at,
+  "repeating a retire changed the recorded retirement time",
+);
+
+const restored = await fetch(`${base}/api/v1/admin/nodes/beta-vps/restore`, {
+  method: "POST",
+  headers: adminHeaders,
+});
+assert(restored.status === 200 && (await restored.json()).retired === false, "restoring beta failed");
+const restoredBeta = report("beta-vps");
+restoredBeta.generated_at += 300;
+const restoredAccepted = await fetch(
+  `${base}/api/v1/report`,
+  signedRequest(JSON.stringify(restoredBeta), undefined, true, "beta-vps"),
+);
+assert(restoredAccepted.status === 202, `report after restore returned ${restoredAccepted.status}`);
+const afterRestore = await fetch(`${base}/api/v1/dashboard/latest`, { headers: adminHeaders });
+const afterRestoreBody = await afterRestore.json();
+assert(
+  afterRestoreBody.nodes.some((node) => node.id === "beta-vps"),
+  "restored node did not come back on the dashboard",
+);
+
+// Origin discovery replaces the second deploy a fresh setup used to need.
+const originUnauthorized = await fetch(`${base}/api/v1/admin/dashboard-origin`, { method: "POST" });
+assert(originUnauthorized.status === 401, "origin recording accepted an unauthenticated request");
+const originRecorded = await fetch(`${base}/api/v1/admin/dashboard-origin`, {
+  method: "POST",
+  headers: adminHeaders,
+});
+const originRecordedBody = await originRecorded.json();
+assert(
+  originRecorded.status === 200 && originRecordedBody.dashboard_origin === new URL(base).origin,
+  `origin recording returned ${JSON.stringify(originRecordedBody)}`,
+);
+const originRead = await fetch(`${base}/api/v1/admin/dashboard-origin`, { headers: adminHeaders });
+assert(
+  originRead.status === 200 && (await originRead.json()).dashboard_origin === new URL(base).origin,
+  "recorded dashboard origin was not read back",
+);
 const scheduled = await fetch(`${base}/cdn-cgi/local/scheduled?cron=*+*+*+*+*&format=json`);
 assert(scheduled.status === 200, `scheduled handler returned ${scheduled.status}`);
 

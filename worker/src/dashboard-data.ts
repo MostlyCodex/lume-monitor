@@ -320,17 +320,18 @@ export async function latestDashboardData(env: Env, now: number): Promise<Record
       probes: report.probes
         .map((probe) => {
           const probeMeta = probesByKey.get(`${meta.node_id}:${probe.name}`);
+          if (!probeMeta) return null;
           return {
-            name: probeMeta?.public_id ?? probe.name.slice(0, 80),
-            label: probeMeta?.display_name ?? probe.name.slice(0, 48),
-            category: probeMeta?.category ?? "other",
-            kind: probeMeta?.kind ?? probe.kind,
-            primary: probeMeta?.is_primary === 1,
-            warning_ms: probeMeta?.warning_ms ?? null,
-            critical_ms: probeMeta?.critical_ms ?? null,
-            warning_failure_percent: probeMeta?.warning_failure_percent ?? 0,
-            critical_failure_percent: probeMeta?.critical_failure_percent ?? 0,
-            order: probeMeta?.display_order ?? 999,
+            name: probeMeta.public_id,
+            label: probeMeta.display_name,
+            category: probeMeta.category,
+            kind: probeMeta.kind,
+            primary: probeMeta.is_primary === 1,
+            warning_ms: probeMeta.warning_ms,
+            critical_ms: probeMeta.critical_ms,
+            warning_failure_percent: probeMeta.warning_failure_percent,
+            critical_failure_percent: probeMeta.critical_failure_percent,
+            order: probeMeta.display_order,
             success: probe.success,
             complete: probe.complete,
             duration_ms: Math.max(0, Math.round(probe.duration_ms * 10) / 10),
@@ -350,6 +351,7 @@ export async function latestDashboardData(env: Env, now: number): Promise<Record
             checked_at: probe.checked_at,
           };
         })
+        .filter((probe): probe is NonNullable<typeof probe> => probe !== null)
         .sort((left, right) => left.order - right.order),
       counters: (report.counters ?? [])
         .map((counter) => {

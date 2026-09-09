@@ -1,5 +1,6 @@
 import type { Env } from "./types";
 import { constantTimeEqual } from "./auth";
+import { getSetting, resolveDashboardBaseUrl, setSetting } from "./settings";
 
 export interface TelegramUpdate {
   update_id: number;
@@ -37,20 +38,6 @@ export interface TelegramDiagnostics {
 }
 
 export type TelegramWebhookResult = "replied" | "ignored" | "duplicate";
-
-async function getSetting(env: Env, key: string): Promise<string | null> {
-  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first<{ value: string }>();
-  return row?.value ?? null;
-}
-
-async function setSetting(env: Env, key: string, value: string, now: number): Promise<void> {
-  await env.DB.prepare(
-    "INSERT INTO settings(key, value, updated_at) VALUES (?, ?, ?) " +
-      "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-  )
-    .bind(key, value, now)
-    .run();
-}
 
 async function telegramCall<T>(env: Env, method: string, payload: unknown): Promise<T> {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error("Telegram token is not configured");
@@ -226,16 +213,23 @@ export async function processTelegramWebhookUpdate(
   }
 }
 
-function telegramWebhookUrl(env: Env): string {
-  return `${env.DASHBOARD_BASE_URL.replace(/\/+$/, "")}/api/v1/telegram/webhook`;
+function telegramWebhookUrl(baseUrl: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}/api/v1/telegram/webhook`;
 }
 
-export async function configureTelegramWebhook(env: Env, now: number): Promise<boolean> {
+/**
+ * Callers that hold a request pass its origin, so a first deployment can
+ * configure itself without knowing its own workers.dev hostname in advance.
+ * The scheduled path has no request and resolves the recorded origin instead.
+ */
+export async function configureTelegramWebhook(env: Env, now: number, baseUrl?: string): Promise<boolean> {
   if (!env.TELEGRAM_WEBHOOK_SECRET || env.TELEGRAM_WEBHOOK_SECRET.length < 32) {
     throw new Error("Telegram webhook secret is not configured");
   }
+  const resolved = baseUrl ?? (await resolveDashboardBaseUrl(env));
+  if (!resolved) throw new Error("dashboard base URL is not configured");
   const configured = await telegramCall<boolean>(env, "setWebhook", {
-    url: telegramWebhookUrl(env),
+    url: telegramWebhookUrl(resolved),
     secret_token: env.TELEGRAM_WEBHOOK_SECRET,
     allowed_updates: ["message"],
     drop_pending_updates: false,
@@ -244,7 +238,7 @@ export async function configureTelegramWebhook(env: Env, now: number): Promise<b
   await setSetting(
     env,
     "telegram_webhook_config",
-    `${WEBHOOK_CONFIG_VERSION}|${telegramWebhookUrl(env)}`,
+    `${WEBHOOK_CONFIG_VERSION}|${telegramWebhookUrl(resolved)}`,
     now,
   );
   return true;
@@ -252,12 +246,15 @@ export async function configureTelegramWebhook(env: Env, now: number): Promise<b
 
 export async function ensureTelegramWebhook(env: Env, now: number): Promise<boolean> {
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET) return false;
-  const expected = `${WEBHOOK_CONFIG_VERSION}|${telegramWebhookUrl(env)}`;
+  const resolved = await resolveDashboardBaseUrl(env);
+  if (!resolved) return false;
+  const expected = `${WEBHOOK_CONFIG_VERSION}|${telegramWebhookUrl(resolved)}`;
   if ((await getSetting(env, "telegram_webhook_config")) === expected) return true;
-  return configureTelegramWebhook(env, now);
+  return configureTelegramWebhook(env, now, resolved);
 }
 
 export async function telegramDiagnostics(env: Env): Promise<TelegramDiagnostics> {
+  const baseUrl = await resolveDashboardBaseUrl(env);
   const me = await telegramCall<{ username?: string }>(env, "getMe", {});
   const webhook = await telegramCall<{
     url?: string;
@@ -271,7 +268,7 @@ export async function telegramDiagnostics(env: Env): Promise<TelegramDiagnostics
     bot_ok: actual.length > 0,
     username_matches: actual === expected,
     webhook_configured: Boolean(webhook.url),
-    webhook_url_matches: webhook.url === telegramWebhookUrl(env),
+    webhook_url_matches: webhook.url === telegramWebhookUrl(baseUrl),
     pending_update_count: webhook.pending_update_count ?? 0,
     last_error_date: webhook.last_error_date ?? null,
     last_error_message: (webhook.last_error_message ?? "").slice(0, 240),

@@ -1,4 +1,4 @@
-import type { NodeCatalogRow } from "./catalog";
+import type { NodeCatalogRow, ProbeCatalogRow } from "./catalog";
 import type { AgentReport, NodeId, ProbeResult } from "./types";
 
 export interface TelegramStatusNodeRow {
@@ -26,13 +26,14 @@ function nodeStatusIcon(
   node: TelegramStatusNodeRow,
   meta: NodeCatalogRow,
   report: AgentReport,
+  visibleProbes: ProbeResult[],
   now: number,
 ): string {
   if (now - node.received_at > meta.stale_seconds) return "🔴";
   const unhealthyServices = report.services.filter((service) => service.state !== "active");
   if (unhealthyServices.some((service) => service.severity === "P1")) return "🔴";
   if (unhealthyServices.length > 0) return "🟡";
-  const failedProbes = report.probes.filter((probe) => !probe.complete || !probe.success);
+  const failedProbes = visibleProbes.filter((probe) => !probe.complete || !probe.success);
   if (failedProbes.some((probe) => probe.severity === "P1")) return "🔴";
   if (failedProbes.length > 0 || (report.counters ?? []).some((counter) => !counter.complete)) return "🟡";
   return "🟢";
@@ -83,10 +84,17 @@ function updateTimestamp(now: number): string {
 
 export function formatTelegramStatusMessage(
   catalogNodes: NodeCatalogRow[],
+  catalogProbes: ProbeCatalogRow[],
   nodeRows: TelegramStatusNodeRow[],
   now: number,
 ): string {
   const rows = new Map(nodeRows.map((node) => [node.node_id, node]));
+  // Only probes the catalog still exposes are shown, so a link toward a
+  // retired node disappears from /status even while the peer keeps
+  // reporting it.
+  const visibleProbeKeys = new Set(
+    catalogProbes.map((probe) => `${probe.node_id}:${probe.probe_name}`),
+  );
   const parsed = new Map<NodeId, AgentReport>();
   let onlineCount = 0;
 
@@ -114,14 +122,17 @@ export function formatTelegramStatusMessage(
       continue;
     }
 
+    const visibleProbes = report.probes.filter((probe) =>
+      visibleProbeKeys.has(`${meta.node_id}:${probe.name}`),
+    );
     const block = [
-      `${nodeStatusIcon(node, meta, report, now)} ${meta.display_name}`,
+      `${nodeStatusIcon(node, meta, report, visibleProbes, now)} ${meta.display_name}`,
       `   更新  ${compactAge(node.received_at, now)}`,
       `   资源  ${resourceLine(report)}`,
     ];
     const services = serviceLine(report);
     if (services) block.push(`   服务  ${services}`);
-    const probes = [...report.probes]
+    const probes = [...visibleProbes]
       .sort((left, right) => left.display_order - right.display_order)
       .slice(0, 4)
       .map(probeLine);

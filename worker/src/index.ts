@@ -26,6 +26,7 @@ import {
   type TelegramUpdate,
 } from "./telegram";
 import { formatTelegramStatusMessage, type TelegramStatusNodeRow } from "./telegram-status";
+import { recordDashboardOrigin, resolveDashboardBaseUrl } from "./settings";
 import type {
   AgentReport,
   Env,
@@ -43,6 +44,9 @@ import {
 
 const MAX_BODY_BYTES = 64 * 1024;
 const DAY_SECONDS = 24 * 60 * 60;
+const NODE_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+const ADMIN_NODE_ACTION_PATTERN =
+  /^\/api\/v1\/admin\/nodes\/([a-z0-9][a-z0-9_-]{0,31})\/(retire|restore)$/;
 
 function securityHeaders(contentType: string): HeadersInit {
   return {
@@ -649,7 +653,7 @@ async function telegramStatusMessage(env: Env, now: number): Promise<string> {
       "SELECT node_id, received_at, report_json FROM node_latest ORDER BY node_id",
     ).all<TelegramStatusNodeRow>(),
   ]);
-  return formatTelegramStatusMessage(catalog.nodes, nodes.results, now);
+  return formatTelegramStatusMessage(catalog.nodes, catalog.probes, nodes.results, now);
 }
 
 function telegramHelpMessage(): string {
@@ -666,11 +670,18 @@ function telegramHelpMessage(): string {
   ].join("\n");
 }
 
-async function telegramCommandMessage(env: Env, command: TelegramCommand, now: number): Promise<string> {
+async function telegramCommandMessage(
+  env: Env,
+  command: TelegramCommand,
+  now: number,
+  requestOrigin: string,
+): Promise<string> {
   if (command === "status") return telegramStatusMessage(env, now);
   if (command === "help") return telegramHelpMessage();
   const token = await issueDashboardLogin(env, now);
-  const baseUrl = env.DASHBOARD_BASE_URL.replace(/\/+$/, "");
+  // Telegram calls the webhook on whatever origin the webhook is registered
+  // with, so the request origin is this deployment's own panel origin.
+  const baseUrl = (requestOrigin || (await resolveDashboardBaseUrl(env))).replace(/\/+$/, "");
   return [
     "🔐 VPS 监控面板登录",
     "",
@@ -699,6 +710,90 @@ async function cleanup(env: Env, now: number): Promise<void> {
     env.DB.prepare("DELETE FROM settings WHERE key LIKE 'telegram_webhook_update:%' AND updated_at < ?").bind(now - DAY_SECONDS),
   ]);
   await cleanupDashboardAuth(env, now);
+}
+
+interface NodeCatalogAdminRow {
+  node_id: NodeId;
+  display_name: string;
+  enabled: number;
+  retired_at: number | null;
+  received_at: number | null;
+}
+
+async function adminNodes(env: Env, now: number): Promise<Response> {
+  const rows = await env.DB.prepare(
+    "SELECT catalog.node_id, catalog.display_name, catalog.enabled, catalog.retired_at, latest.received_at " +
+      "FROM node_catalog AS catalog LEFT JOIN node_latest AS latest ON latest.node_id = catalog.node_id " +
+      "ORDER BY catalog.display_order, catalog.node_id",
+  ).all<NodeCatalogAdminRow>();
+  return json({
+    server_time: now,
+    nodes: rows.results.map((row) => ({
+      node_id: row.node_id,
+      display_name: row.display_name,
+      enabled: row.enabled === 1,
+      retired: row.retired_at !== null,
+      retired_at: row.retired_at,
+      last_report_at: row.received_at,
+      last_report_age_seconds: row.received_at === null ? null : Math.max(0, now - row.received_at),
+    })),
+  });
+}
+
+/**
+ * Retiring a node disables its own catalog rows and every probe or route that
+ * points at it, including ones owned by peers that still report the link.
+ * `retired_at` is what makes this stick: the report path only manages
+ * `enabled`, so it can no longer resurrect a decommissioned node. Raw history
+ * is deliberately preserved and expires under the normal retention policy.
+ */
+async function retireNode(env: Env, nodeId: NodeId, now: number): Promise<Response> {
+  const existing = await env.DB.prepare(
+    "SELECT node_id, retired_at FROM node_catalog WHERE node_id = ?",
+  )
+    .bind(nodeId)
+    .first<{ node_id: NodeId; retired_at: number | null }>();
+  if (!existing) return json({ error: "unknown node" }, 404);
+  await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE node_catalog SET enabled = 0, retired_at = COALESCE(retired_at, ?), updated_at = ? WHERE node_id = ?",
+    ).bind(now, now, nodeId),
+    env.DB.prepare(
+      "UPDATE service_catalog SET enabled = 0, updated_at = ? WHERE node_id = ? AND enabled = 1",
+    ).bind(now, nodeId),
+    env.DB.prepare(
+      "UPDATE probe_catalog SET enabled = 0, updated_at = ? WHERE (node_id = ? OR target_node_id = ?) AND enabled = 1",
+    ).bind(now, nodeId, nodeId),
+    env.DB.prepare(
+      "UPDATE counter_catalog SET enabled = 0, updated_at = ? WHERE node_id = ? AND enabled = 1",
+    ).bind(now, nodeId),
+    env.DB.prepare(
+      "UPDATE business_routes SET enabled = 0, updated_at = ? " +
+        "WHERE (source_node_id = ? OR target_node_id = ?) AND enabled = 1",
+    ).bind(now, nodeId, nodeId),
+  ]);
+  return json({
+    ok: true,
+    node_id: nodeId,
+    retired: true,
+    retired_at: existing.retired_at ?? now,
+    already_retired: existing.retired_at !== null,
+  });
+}
+
+/**
+ * Restoring only clears the operator decision. Services, probes, counters and
+ * routes come back on their own with the first accepted report, which is also
+ * the only thing that can prove the node is really running again.
+ */
+async function restoreNode(env: Env, nodeId: NodeId, now: number): Promise<Response> {
+  const result = await env.DB.prepare(
+    "UPDATE node_catalog SET enabled = 1, retired_at = NULL, updated_at = ? WHERE node_id = ?",
+  )
+    .bind(now, nodeId)
+    .run();
+  if ((result.meta.changes ?? 0) === 0) return json({ error: "unknown node" }, 404);
+  return json({ ok: true, node_id: nodeId, retired: false });
 }
 
 function isAdmin(request: Request, env: Env): boolean {
@@ -837,7 +932,7 @@ export default {
           env,
           update,
           nowSeconds(),
-          (command) => telegramCommandMessage(env, command, nowSeconds()),
+          (command) => telegramCommandMessage(env, command, nowSeconds(), url.origin),
         );
         return json({ ok: true, result });
       } catch {
@@ -889,6 +984,40 @@ export default {
     if (request.method === "GET" && url.pathname === "/api/v1/status") {
       return isAdmin(request, env) ? status(env, nowSeconds()) : json({ error: "unauthorized" }, 401);
     }
+    if (url.pathname === "/api/v1/admin/dashboard-origin") {
+      if (!isAdmin(request, env)) return json({ error: "unauthorized" }, 401);
+      if (request.method === "POST") {
+        const recorded = await recordDashboardOrigin(env, url.origin, nowSeconds());
+        if (!recorded) return json({ error: "unusable request origin" }, 400);
+        return json({ ok: true, dashboard_origin: recorded });
+      }
+      if (request.method === "GET") {
+        return json({ ok: true, dashboard_origin: await resolveDashboardBaseUrl(env) });
+      }
+    }
+    if (request.method === "GET" && url.pathname === "/api/v1/admin/nodes") {
+      if (!isAdmin(request, env)) return json({ error: "unauthorized" }, 401);
+      try {
+        return await adminNodes(env, nowSeconds());
+      } catch {
+        return json({ error: "node listing failed" }, 500);
+      }
+    }
+    if (request.method === "POST") {
+      const nodeAction = ADMIN_NODE_ACTION_PATTERN.exec(url.pathname);
+      if (nodeAction) {
+        if (!isAdmin(request, env)) return json({ error: "unauthorized" }, 401);
+        const [, nodeId, action] = nodeAction;
+        if (!NODE_ID_PATTERN.test(nodeId)) return json({ error: "invalid node id" }, 400);
+        try {
+          return action === "retire"
+            ? await retireNode(env, nodeId, nowSeconds())
+            : await restoreNode(env, nodeId, nowSeconds());
+        } catch {
+          return json({ error: "node catalog update failed" }, 500);
+        }
+      }
+    }
     if (request.method === "POST" && url.pathname === "/api/v1/admin/rebuild-observability") {
       if (!isAdmin(request, env)) return json({ error: "unauthorized" }, 401);
       const offsetDays = Number(url.searchParams.get("offset_days") ?? "0");
@@ -918,7 +1047,18 @@ export default {
       );
       if (!isAdmin(request, env) && !webhookAuthorized) return json({ error: "unauthorized" }, 401);
       try {
-        return json({ ok: await configureTelegramWebhook(env, nowSeconds()) });
+        const now = nowSeconds();
+        // Recording the origin here is what removes the second deploy from a
+        // fresh setup: the Worker learns its own public URL from this call.
+        // Only the admin token may write it; the webhook-secret path is allowed
+        // to re-register the webhook but not to redefine where the panel lives.
+        const origin = isAdmin(request, env)
+          ? await recordDashboardOrigin(env, url.origin, now)
+          : null;
+        return json({
+          ok: await configureTelegramWebhook(env, now, origin ?? undefined),
+          dashboard_origin: origin ?? (await resolveDashboardBaseUrl(env)),
+        });
       } catch {
         return json({ error: "telegram webhook configuration failed" }, 502);
       }

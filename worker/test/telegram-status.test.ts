@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { NodeCatalogRow } from "../src/catalog";
+import type { NodeCatalogRow, ProbeCatalogRow } from "../src/catalog";
 import { formatTelegramStatusMessage, type TelegramStatusNodeRow } from "../src/telegram-status";
 import type { AgentReport, ProbeResult } from "../src/types";
 
@@ -20,6 +20,7 @@ function catalog(overrides: Partial<NodeCatalogRow> = {}): NodeCatalogRow {
     offline_severity: "P1",
     ip_change_severity: "P2",
     enabled: 1,
+    retired_at: null,
     ...overrides,
   };
 }
@@ -103,6 +104,30 @@ function report(overrides: Partial<AgentReport> = {}): AgentReport {
   };
 }
 
+// Only probes the catalog still exposes reach /status, so the fixtures build
+// the catalog rows the reports imply unless a test deliberately omits one.
+function probeCatalog(reports: AgentReport[]): ProbeCatalogRow[] {
+  return reports.flatMap((value) =>
+    value.probes.map((probe, index) => ({
+      node_id: value.node_id,
+      probe_name: probe.name,
+      public_id: probe.name,
+      display_name: probe.label,
+      category: probe.category,
+      kind: probe.kind,
+      target_node_id: probe.target_node_id ?? null,
+      warning_ms: probe.warning_ms,
+      critical_ms: probe.critical_ms,
+      warning_failure_percent: probe.warning_failure_percent,
+      critical_failure_percent: probe.critical_failure_percent,
+      severity: probe.severity,
+      display_order: probe.display_order,
+      is_primary: index === 0 ? 1 : 0,
+      enabled: 1,
+    })),
+  );
+}
+
 function row(value: AgentReport, overrides: Partial<TelegramStatusNodeRow> = {}): TelegramStatusNodeRow {
   return {
     node_id: value.node_id,
@@ -114,7 +139,7 @@ function row(value: AgentReport, overrides: Partial<TelegramStatusNodeRow> = {})
 
 describe("Telegram status formatting", () => {
   it("renders a compact node summary without exposing an IP field", () => {
-    const message = formatTelegramStatusMessage([catalog()], [row(report())], now);
+    const message = formatTelegramStatusMessage([catalog()], probeCatalog([report()]), [row(report())], now);
 
     expect(message).toContain("◇ Lume · 最新状态");
     expect(message).toContain("在线  1/1");
@@ -133,6 +158,7 @@ describe("Telegram status formatting", () => {
     const minimal = report({ services: [], probes: [] });
     const message = formatTelegramStatusMessage(
       [catalog()],
+      probeCatalog([minimal]),
       [row(minimal, { received_at: now - 600 })],
       now,
     );
@@ -148,12 +174,37 @@ describe("Telegram status formatting", () => {
       services: [{ name: "xray", label: "Xray", severity: "P2", state: "inactive" }],
       probes: [icmpProbe({ packet_loss_percent: 20, sample_failure_percent: 40, duration_ms: 170 })],
     });
-    const message = formatTelegramStatusMessage([catalog()], [row(unhealthy)], now);
+    const message = formatTelegramStatusMessage([catalog()], probeCatalog([unhealthy]), [row(unhealthy)], now);
 
     expect(message).toContain("🟡 示例节点");
     expect(message).toContain("Xray 异常（inactive）");
     expect(message).toContain("北京电信 · 170 ms · 丢包 20%");
     expect(message).not.toContain("40%");
+  });
+
+  it("hides a probe the catalog no longer exposes, such as a link to a retired node", () => {
+    const linked = report({
+      probes: [
+        icmpProbe(),
+        icmpProbe({
+          name: "retired-peer",
+          label: "已下线节点",
+          category: "node-link",
+          target_node_id: "retired-vps",
+          success: false,
+          severity: "P1",
+          display_order: 5,
+        }),
+      ],
+    });
+    // The catalog keeps only the first probe: the peer is retired.
+    const visible = probeCatalog([linked]).filter((probe) => probe.target_node_id === null);
+    const message = formatTelegramStatusMessage([catalog()], visible, [row(linked)], now);
+
+    expect(message).not.toContain("已下线节点");
+    expect(message).toContain("北京电信");
+    // A failing retired link must not colour the node either.
+    expect(message).toContain("🟢 示例节点");
   });
 
   it("keeps large fleets within Telegram's message limit and directs overflow to the panel", () => {
@@ -166,7 +217,10 @@ describe("Telegram status formatting", () => {
       const value = report({ node_id: meta.node_id, node: { ...report().node, id: meta.node_id } });
       return row(value);
     });
-    const message = formatTelegramStatusMessage(catalogs, rows, now);
+    const reports = catalogs.map((meta) =>
+      report({ node_id: meta.node_id, node: { ...report().node, id: meta.node_id } }),
+    );
+    const message = formatTelegramStatusMessage(catalogs, probeCatalog(reports), rows, now);
 
     expect(message.length).toBeLessThanOrEqual(4000);
     expect(message).toContain("个节点，请在面板查看");
