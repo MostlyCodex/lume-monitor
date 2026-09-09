@@ -1466,7 +1466,7 @@ async function pickNode(prompt, { retired = false } = {}) {
 async function manage(prompt) {
   while (true) {
     line("\nLume 管理\n  1. 从零部署\n  2. 接管已有部署\n  3. 查看状态\n  4. 新增 VPS\n  5. 配置节点\n  6. 部署配置 / 更新 Agent\n  7. 下线节点\n  8. 恢复节点\n  9. 下线并卸载 Agent\n  0. 退出");
-    const choice = await choiceValue(prompt, "选择操作", ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], "0", { line });
+    const choice = await choiceValue(prompt, "选择操作", ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], "0", { line, showChoices: false });
     if (choice === "0") return;
     try {
       if (choice === "1") await setup(prompt, false);

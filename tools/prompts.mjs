@@ -46,9 +46,9 @@ export async function inputValue(prompt, question, { hint, fallback = "", parse 
   }
 }
 
-export function choiceValue(prompt, question, choices, fallback = "", { line = console.log } = {}) {
+export function choiceValue(prompt, question, choices, fallback = "", { line = console.log, showChoices = true } = {}) {
   return inputValue(prompt, question, {
-    hint: `可选：${choices.join(" / ")}${choices.some((choice) => /[a-z]/i.test(choice)) ? "，不区分大小写" : ""}`, fallback, line,
+    hint: showChoices ? `可选：${choices.join(" / ")}${choices.some((choice) => /[a-z]/i.test(choice)) ? "，不区分大小写" : ""}` : undefined, fallback, line,
     parse: (value) => {
       const selected = value.toLowerCase();
       if (!choices.includes(selected)) throw new InputError(`只能选择 ${choices.join(" / ")}`);
