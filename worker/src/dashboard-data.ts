@@ -265,6 +265,7 @@ export async function latestDashboardData(env: Env, now: number): Promise<Record
       },
       metrics: {
         cpu_percent: safePercent(report.system.cpu_percent),
+        cpu_count: report.system.cpu_count ?? null,
         memory_used_percent: safePercent(memoryUsedPercent),
         memory_total_bytes: Math.max(0, report.system.memory_total_bytes),
         memory_available_bytes: Math.max(0, report.system.memory_available_bytes),

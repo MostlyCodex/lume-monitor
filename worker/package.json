@@ -1,6 +1,6 @@
 {
   "name": "lume-worker",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
   "description": "Cloudflare Worker, D1 schema and dashboard for Lume. Deploying needs Wrangler only; the test toolchain lives in the repository root package.",

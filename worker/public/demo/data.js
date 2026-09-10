@@ -61,6 +61,7 @@ function latestData() {
     system: { hostname: definition.id, os: "Debian GNU/Linux 12", kernel: "6.1.0", arch: "x86_64" },
     metrics: {
       cpu_percent: definition.resources[0], memory_used_percent: definition.resources[1], disk_used_percent: definition.resources[2],
+      cpu_count: 1 + (nodeIndex % 4),
       memory_total_bytes: 1024 ** 3 * (1 + (nodeIndex % 3)),
       memory_available_bytes: 1024 ** 3 * (1 + (nodeIndex % 3)) * (1 - definition.resources[1] / 100),
       disk_total_bytes: 1024 ** 3 * (20 + nodeIndex * 5),

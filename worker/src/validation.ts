@@ -111,6 +111,7 @@ function systemMetrics(value: unknown): SystemMetrics {
     boot_id: stringValue(v.boot_id, "system.boot_id", 128),
     uptime_seconds: numberValue(v.uptime_seconds, "system.uptime_seconds"),
     cpu_percent: numberValue(v.cpu_percent, "system.cpu_percent", 0, 100),
+    cpu_count: v.cpu_count === undefined ? undefined : integerValue(v.cpu_count, "system.cpu_count", 1, 65536),
     load1: numberValue(v.load1, "system.load1", 0, 100000),
     load5: numberValue(v.load5, "system.load5", 0, 100000),
     load15: numberValue(v.load15, "system.load15", 0, 100000),

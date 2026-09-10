@@ -212,7 +212,7 @@ func (c *Collector) Collect() (model.SystemMetrics, []error) {
 	}
 	return model.SystemMetrics{
 		Hostname: hostname, OS: readOS(), Kernel: kernel, Arch: runtime.GOARCH, BootID: bootID,
-		UptimeSeconds: uptime, CPUPercent: cpu, Load1: load1, Load5: load5, Load15: load15,
+		UptimeSeconds: uptime, CPUPercent: cpu, CPUCount: runtime.NumCPU(), Load1: load1, Load5: load5, Load15: load15,
 		MemoryTotalBytes: memTotal, MemoryAvailableBytes: memAvailable,
 		SwapTotalBytes: swapTotal, SwapUsedBytes: swapUsed,
 		RootTotalBytes: rootTotal, RootFreeBytes: rootFree, RootUsedPercent: rootUsed, RootInodeUsedPercent: inodeUsed,

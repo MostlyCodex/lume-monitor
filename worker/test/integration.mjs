@@ -45,6 +45,7 @@ function report(id = "alpha-vps") {
       boot_id: `integration-${id}-boot-id`,
       uptime_seconds: 1000,
       cpu_percent: 2,
+      ...(alpha ? { cpu_count: 4 } : {}),
       load1: 0.1,
       load5: 0.1,
       load15: 0.1,
@@ -323,6 +324,10 @@ assert(dashboardBody.catalog.routes.length === 2, "node-link routes were not reg
 assert(!("counters" in dashboardBody.catalog), "retired counter catalog is still exposed");
 const alphaLatest = dashboardBody.nodes.find((node) => node.id === "alpha-vps");
 const betaLatest = dashboardBody.nodes.find((node) => node.id === "beta-vps");
+assert(alphaLatest.metrics.cpu_count === 4, "CPU capacity was lost between report and dashboard");
+assert(betaLatest.metrics.cpu_count === null, "missing CPU capacity must remain unknown");
+assert(alphaLatest.metrics.memory_total_bytes === 1_000_000_000, "memory capacity is missing");
+assert(alphaLatest.metrics.disk_total_bytes === 10_000_000_000, "root filesystem capacity is missing");
 assert(alphaLatest.metrics.network_rx_rate_bps === 100, `network RX rate was not derived correctly: ${alphaLatest.metrics.network_rx_rate_bps}`);
 assert(alphaLatest.metrics.network_tx_rate_bps === 200, `network TX rate was not derived correctly: ${alphaLatest.metrics.network_tx_rate_bps}`);
 assert(alphaLatest.probes.find((probe) => probe.name === "external_icmp")?.packet_loss_percent === 20, "ICMP packet loss was not exposed");

@@ -52,7 +52,10 @@ project-specific interpretation of the generated glassmorphism direction.
 
 ## Detail performance and hierarchy
 
-- CPU, RAM and disk stay on the fleet cards and are not duplicated in node details.
+- CPU, RAM and disk utilization stay on the fleet cards. Node facts show vCPU count,
+  total memory and root filesystem capacity in a compact responsive definition list.
+- Facts reflow into multiple columns where space permits, wrap long values, and size
+  independently of the neighboring events card.
 - A node detail opens immediately from already-loaded fleet history for 6-hour and 24-hour
   views. The 1-minute
   detail series replaces that preview in the background and remains cached for the session.

@@ -760,12 +760,13 @@ html[data-theme="light"] .probe-picker-actions button { box-shadow: 0 6px 18px r
 .plot-host-network { height: 390px; }
 .network-chart-card .chart-title > span { display: inline-flex; align-items: center; min-height: 25px; padding: 0 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--glass-control-bg); }
 .chart-empty { position: absolute; inset: 64px 18px 18px; display: grid; place-items: center; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); font-size: 12px; }
-.detail-bottom-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.detail-bottom-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px; }
 .info-card { padding: 20px; }
-.detail-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.detail-fact { display: grid; min-width: 0; gap: 3px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
-.detail-fact span { color: var(--muted); font-size: 9px; }
-.detail-fact strong { overflow: hidden; font-family: var(--mono); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.info-card .compact-heading { margin-bottom: 8px; }
+.detail-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); gap: 0 16px; margin: 0; }
+.detail-fact { display: grid; align-content: start; min-width: 0; gap: 3px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.detail-fact dt { color: var(--text-soft); font-size: 12px; line-height: 1.5; }
+.detail-fact dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-family: var(--mono); font-size: 13px; font-weight: 600; line-height: 1.5; }
 .timeline-list { display: grid; gap: 8px; }
 .timeline-item { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: start; gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); }
 .timeline-item:first-child { border-top: 0; }
@@ -880,8 +881,6 @@ html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-
   .detail-probe-card > span:not(.detail-probe-label) { font-size: 13px; }
   .chart-title span, .uplot .u-legend { font-size: 13px; }
   .chart-empty { font-size: 14px; }
-  .detail-fact span { font-size: 12px; }
-  .detail-fact strong { font-size: 14px; }
   .timeline-icon { font-size: 13px; }
   .timeline-item strong { font-size: 15px; }
   .timeline-item span { font-size: 13px; }
@@ -977,7 +976,6 @@ html[data-theme="light"] .toast { backdrop-filter: blur(18px); -webkit-backdrop-
   .plot-tooltip-row { grid-template-columns: minmax(82px, 1fr) auto auto; gap: 8px; }
   .uplot .u-legend { position: static; min-height: 24px; margin-bottom: 4px; }
   .uplot .u-legend tbody { justify-content: flex-start; }
-  .detail-facts { grid-template-columns: 1fr; }
   .dashboard-footer { width: calc(100% + 16px); min-height: 96px; margin: 44px -8px 0; padding: 26px max(12px, env(safe-area-inset-right)) calc(30px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
   .toast { right: 16px; bottom: 16px; }
   .auth-shell { width: min(100% - 24px, 620px); padding: 18px 0; }

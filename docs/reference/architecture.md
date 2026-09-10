@@ -28,6 +28,11 @@ The required core collects:
 - hostname, operating system, kernel, architecture, boot ID and uptime;
 - Agent queue, collection errors, send errors, version and start time.
 
+Node facts show the logical CPU count available to the Agent at startup (`runtime.NumCPU`),
+total memory from `/proc/meminfo`, and root filesystem capacity from `statfs("/")`.
+Capacities use binary units (MiB/GiB). Missing hardware values display as unknown;
+CPU count becomes available after the node runs an Agent that reports `cpu_count`.
+
 Optional `services` entries read systemd state. Optional `probes` entries perform bounded outbound ICMP Echo or TCP Connect checks. ICMP uses `pro-bing` in unprivileged datagram-socket mode; TCP uses ordinary Go sockets and sends no application data. The resident Agent retains an empty capability set.
 
 Failed reports are kept in a one-entry local spool and retried.
@@ -64,7 +69,7 @@ Other tables store the latest report, metric/probe samples, long-term series rol
 
 Telegram updates arrive through a Webhook protected by a secret header. Only the bound owner's private chat is accepted; no group is required. `/panel` creates a single-use short-lived login token. The dashboard exchanges it for an HttpOnly session cookie. The Bot never initiates alerts or daily summaries.
 
-The dashboard renders its fleet cards, service summaries and probe rows from the catalogs. The fleet view contains current node status, CPU/RAM/disk gauges, network-rate/traffic counters and per-target ICMP 24-hour latency/loss cells. TCP probes still participate in health but appear only in node details, where their failures are labelled as connect failures rather than packet loss. Network rates are interval averages derived from the delta between two consecutive Agent byte-counter reports divided by their report-time delta; they are not streaming real-time measurements. Fleet history uses five-minute display buckets to bound a multi-node response. Clicking a card opens a separate node detail view with selectable probe series plus latency, failure-event and traffic history; CPU/RAM/disk are not duplicated there. Six- and 24-hour details render immediately from the already-loaded fleet history, then replace it with one-minute data in the background and retain that result in a session cache. The client does not prefetch every node. Longer ranges use hourly buckets for 7/30 days and daily buckets for 90 days. Display aggregation does not change the Agent cadence or raw-data retention. The detail charts use a pinned local copy of uPlot; the dashboard never loads chart code from a CDN. It has no fixed node names or node count.
+The dashboard renders its fleet cards, service summaries and probe rows from the catalogs. The fleet view contains current node status, CPU/RAM/disk gauges, network-rate/traffic counters and per-target ICMP 24-hour latency/loss cells. TCP probes still participate in health but appear only in node details, where their failures are labelled as connect failures rather than packet loss. Network rates are interval averages derived from the delta between two consecutive Agent byte-counter reports divided by their report-time delta; they are not streaming real-time measurements. Fleet history uses five-minute display buckets to bound a multi-node response. Clicking a card opens a separate node detail view with selectable probe series plus latency, failure-event and traffic history; CPU/RAM/disk utilization stays on fleet cards, while node facts show hardware capacity. Six- and 24-hour details render immediately from the already-loaded fleet history, then replace it with one-minute data in the background and retain that result in a session cache. The client does not prefetch every node. Longer ranges use hourly buckets for 7/30 days and daily buckets for 90 days. Display aggregation does not change the Agent cadence or raw-data retention. The detail charts use a pinned local copy of uPlot; the dashboard never loads chart code from a CDN. It has no fixed node names or node count.
 
 ## Extension model
 

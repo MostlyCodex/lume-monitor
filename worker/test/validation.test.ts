@@ -131,6 +131,19 @@ describe("report validation", () => {
     expect(validateReport(validReport()).node_id).toBe("future-vps-01");
   });
 
+  it("accepts CPU capacity without requiring existing Agents to report it", () => {
+    const report = validReport();
+    expect(validateReport(report).system.cpu_count).toBeUndefined();
+    (report.system as Record<string, unknown>).cpu_count = 4;
+    expect(validateReport(report).system.cpu_count).toBe(4);
+  });
+
+  it.each([0, -1, 1.5, "2", null, NaN, Infinity, 65537])("rejects invalid CPU capacity %s", (value) => {
+    const report = validReport();
+    (report.system as Record<string, unknown>).cpu_count = value;
+    expect(() => validateReport(report)).toThrow("system.cpu_count");
+  });
+
   it("normalizes an ICMP round with explicit packet loss", () => {
     const report = validReport();
     const probe = (report.probes as Array<Record<string, unknown>>)[0];

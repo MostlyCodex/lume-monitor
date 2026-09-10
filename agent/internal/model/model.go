@@ -22,6 +22,7 @@ type SystemMetrics struct {
 	BootID               string  `json:"boot_id"`
 	UptimeSeconds        float64 `json:"uptime_seconds"`
 	CPUPercent           float64 `json:"cpu_percent"`
+	CPUCount             int     `json:"cpu_count,omitempty"`
 	Load1                float64 `json:"load1"`
 	Load5                float64 `json:"load5"`
 	Load15               float64 `json:"load15"`

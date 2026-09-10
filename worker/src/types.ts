@@ -64,6 +64,7 @@ export interface SystemMetrics {
   boot_id: string;
   uptime_seconds: number;
   cpu_percent: number;
+  cpu_count?: number;
   load1: number;
   load5: number;
   load15: number;

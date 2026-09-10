@@ -379,12 +379,18 @@
     return `${hours} 小时 ${Math.floor((value % 3600) / 60)} 分`;
   }
 
-  function formatBytes(value) {
+  function formatBytes(value, units = ["B", "KB", "MB", "GB", "TB", "PB"]) {
     let bytes = Math.max(0, Number(value) || 0);
-    const units = ["B", "KB", "MB", "GB", "TB", "PB"];
     let index = 0;
     while (bytes >= 1024 && index < units.length - 1) { bytes /= 1024; index += 1; }
     return `${bytes.toFixed(index > 2 ? 2 : 1)} ${units[index]}`;
+  }
+
+  function formatCapacity(value) {
+    const bytes = Number(value);
+    return Number.isFinite(bytes) && bytes > 0
+      ? formatBytes(bytes, ["B", "KiB", "MiB", "GiB", "TiB", "PiB"])
+      : "—";
   }
 
   function formatRate(value) {
@@ -961,7 +967,7 @@
   }
 
   function detailFact(label, value) {
-    return `<div class="detail-fact"><span>${escapeHtml(label)}</span><strong title="${escapeHtml(value)}">${escapeHtml(value)}</strong></div>`;
+    return `<div class="detail-fact"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`;
   }
 
   function renderDetailHero() {
@@ -979,6 +985,9 @@
     const metrics = node.metrics || {};
     const agentErrors = Number(node.agent?.collect_errors || 0) + Number(node.agent?.send_errors || 0);
     $("detail-facts").innerHTML = [
+      detailFact("CPU", Number.isInteger(metrics.cpu_count) && metrics.cpu_count > 0 ? `${metrics.cpu_count} vCPU` : "—"),
+      detailFact("内存", formatCapacity(metrics.memory_total_bytes)),
+      detailFact("磁盘（/）", formatCapacity(metrics.disk_total_bytes)),
       detailFact("主机名", node.system?.hostname || "—"),
       detailFact("系统", node.system?.os || "—"),
       detailFact("内核", node.system?.kernel || "—"),
