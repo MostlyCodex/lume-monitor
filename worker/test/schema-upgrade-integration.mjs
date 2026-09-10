@@ -1,25 +1,8 @@
+import { cleanDatabase } from "../../tools/database.mjs";
 import assert from "node:assert/strict";
 import { createHmac, randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
-import {
-  nodeIdentityCleanupSQL,
-  nodeIdentityRollbackSQL,
-} from "../../tools/schema-lifecycle.mjs";
 
-export function contractIdentity(query, legacy = false) {
-  const migrationName = legacy
-    ? "0012_node_identity.sql"
-    : "0007_node_identity.sql";
-  const folder = legacy ? "migrations-v3-contract" : "migrations-contract";
-  const source = readFileSync(
-    new URL(`../${folder}/${migrationName}`, import.meta.url),
-    "utf8",
-  );
-  const columns = query("PRAGMA table_info(node_catalog)").map(
-    (column) => column.name,
-  );
-  query(nodeIdentityCleanupSQL(source, columns, migrationName));
-}
+export async function contractIdentity(query) { await cleanDatabase({ query }); }
 
 // Exercise schema transitions while the real Worker continues to accept HTTP
 // reports. This database and its signing keys belong only to the local fixture.
@@ -71,12 +54,13 @@ export async function testSchemaTransitions({ query, baseUrl }) {
     );
   };
   await send();
-  contractIdentity(query);
+  await contractIdentity(query);
   assert.ok(!columns().includes("short_mark"));
   await send();
 
-  // The supported rollback prepares the legacy column before switching code.
-  query(nodeIdentityRollbackSQL(columns()));
+  // Simulate a manually restored storage field. This does not prove that an
+  // old Worker accepts modern Agent reports; the version matrix checks that.
+  query("ALTER TABLE node_catalog ADD COLUMN short_mark TEXT NOT NULL DEFAULT 'TEST';");
   assert.ok(columns().includes("short_mark"));
   query("UPDATE node_catalog SET short_mark='OLD' WHERE node_id='alpha-vps'");
   assert.equal(
@@ -91,10 +75,10 @@ export async function testSchemaTransitions({ query, baseUrl }) {
   const marker =
     "SELECT COUNT(*) AS n FROM d1_migrations WHERE name='0007_node_identity.sql'";
   assert.equal(query(marker)[0].n, 1);
-  contractIdentity(query);
+  await contractIdentity(query);
   assert.ok(!columns().includes("short_mark"));
   await send();
-  contractIdentity(query);
+  await contractIdentity(query);
   assert.equal(query(marker)[0].n, 1);
-  console.log("schema_expand_contract_rollback_ok=true");
+  console.log("schema_cleanup_retry_ok=true");
 }

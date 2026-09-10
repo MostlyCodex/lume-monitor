@@ -1,7 +1,7 @@
 PRAGMA foreign_keys = OFF;
 
 -- Privacy-free representation of the production schema immediately before
--- migrations-v3/0006. Only the compatibility surface used by 0006-0009 is
+-- the one-time v3 upgrade. Only the required compatibility surface is
 -- reproduced; no live node identity or measurement is included.
 CREATE TABLE node_catalog (
   node_id TEXT PRIMARY KEY,

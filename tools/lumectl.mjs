@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { deployInPhases, nodeIdentityCleanupSQL, nodeIdentityRollbackSQL, rollbackWithSchema } from "./schema-lifecycle.mjs";
+import { prepareDatabase, cleanDatabase } from "./database.mjs";
+import { deployInPhases } from "./schema-lifecycle.mjs";
+import { assertRollbackVersion, workerVersion, currentWorkerVersion, waitForLiveReports, rollbackSafely } from "./worker-rollback.mjs";
 import { deleteManagedNode } from "./node-deletion.mjs";
 import { nodeFilePlan, applyNodeFilePlan } from "./private-node-data.mjs";
 import { buildFrontend } from "./build-frontend.mjs";
@@ -172,7 +174,7 @@ export function createWranglerConfig({ workerName, databaseName, databaseId, das
       binding: "DB",
       database_name: databaseName,
       database_id: databaseId,
-      migrations_dir: "migrations",
+      migrations_dir: "database/updates",
     }],
     triggers: { crons: ["* * * * *", "0 1 * * *"] },
   };
@@ -428,7 +430,7 @@ async function adoptDeployment(prompt) {
   let databaseChecked = false;
   let inventoryResponse = await adminFetch(state, "/api/v1/admin/key-inventory");
   if (inventoryResponse.status === 404 || (inventoryResponse.ok && !inventoryResponse.body?.keys)) {
-    line("现有 Worker 尚无接管接口。将先应用兼容迁移，部署并确认新 Worker 后再清理退役字段；保留数据库、变量和 Secrets。");
+    line("现有 Worker 尚无接管接口。将先准备数据库，部署并确认新 Worker 后再完成数据库清理；保留数据库、变量和 Secrets。");
     if (!(await prompt.yes("更新现有 Worker 管理接口", true))) return;
     await ensureCloudflareLogin();
     await deployWorker(state);
@@ -440,7 +442,7 @@ async function adoptDeployment(prompt) {
   // A previous attempt may have updated the Worker without updating D1.
   if (!databaseChecked) {
     await ensureCloudflareLogin();
-    await applyDatabaseMigrations(state);
+    await prepareWorkerDatabase(state);
   }
   const remoteNodes = await adminNodeList(state);
   for (const node of remoteNodes.filter((entry) => entry.retired)) state.retiredNodes[node.node_id] = { retiredAt: node.retired_at, sshTarget: oldState?.retiredNodes?.[node.node_id]?.sshTarget || "" };
@@ -511,7 +513,7 @@ async function adminNodeSnapshot(state) {
     const hint = result.status === 401
       ? "请核对 Worker 地址和 ADMIN_TOKEN。"
       : result.status >= 500
-        ? "请检查 Worker 的 D1 绑定、数据库迁移和运行日志。"
+        ? "请检查 Worker 的 D1 绑定、数据库结构更新和运行日志。"
         : "请检查 Worker 地址和访问策略。";
     fail(`无法读取节点目录（HTTP ${result.status}）。${hint}`);
   }
@@ -589,18 +591,43 @@ async function ensureCloudflareLogin() {
   if (verified.code !== 0) fail("Cloudflare 登录未完成");
 }
 
-async function applyDatabaseMigrations(state) {
-  line("检查并应用部署前的兼容迁移…");
-  await wrangler(["d1", "migrations", "apply", state.databaseName, "--remote", "--config", wranglerConfigPath]);
+async function prepareWorkerDatabase(state, options = {}) {
+  const source = await readFile(wranglerConfigPath, "utf8");
+  const config = parseJsonc(source);
+  const binding = config.d1_databases?.find((entry) => entry.binding === "DB");
+  line("检查数据库初始化与升级状态…");
+  await prepareDatabase({
+    query: (sql) => databaseQuery(state, sql, options),
+    historyTable: binding?.migrations_table,
+    line,
+  });
+  if (
+    binding?.migrations_dir &&
+    binding.migrations_dir !== "database/updates"
+  ) {
+    if ((await readFile(wranglerConfigPath, "utf8")) !== source)
+      fail("数据库已就绪，但配置文件被其他进程修改；请重试以更新配置入口。");
+    await writePrivateJson(
+      join(privateDir, "backups", `worker-config-${Date.now()}.json`),
+      config,
+    );
+    binding.migrations_dir = "database/updates";
+    await writeFile(
+      wranglerConfigPath,
+      JSON.stringify(config, null, 2) + "\n",
+      "utf8",
+    );
+    line("✓ 数据库脚本入口已统一为 database/updates");
+  }
 }
 
-async function databaseQuery(state, sql) {
+async function databaseQuery(state, sql, { local = false } = {}) {
   const result = await wrangler(
     [
       "d1",
       "execute",
       state.databaseName,
-      "--remote",
+      local ? "--local" : "--remote",
       "--config",
       wranglerConfigPath,
       `--command=${sql}`,
@@ -615,30 +642,11 @@ async function databaseQuery(state, sql) {
 async function contractNodeIdentity(state) {
   const config = parseJsonc(await readFile(wranglerConfigPath, "utf8"));
   const binding = config.d1_databases?.find((entry) => entry.binding === "DB");
-  const directory = resolve(workerDir, binding?.migrations_dir || "migrations");
-  const upgrade = directory === join(workerDir, "migrations-v3");
-  if (!upgrade && directory !== join(workerDir, "migrations"))
-    fail("不支持的迁移目录，已停止清理 schema。");
-  const migrationName = upgrade
-    ? "0012_node_identity.sql"
-    : "0007_node_identity.sql";
-  const source = await readFile(
-    join(directory + "-contract", migrationName),
-    "utf8",
-  );
-  const columns = (
-    await databaseQuery(state, "PRAGMA table_info(node_catalog)")
-  ).map((column) => column.name);
-  await databaseQuery(
-    state,
-    nodeIdentityCleanupSQL(
-      source,
-      columns,
-      migrationName,
-      binding?.migrations_table,
-    ),
-  );
-  line("✓ 新 Worker 已确认，退役字段清理完成。");
+  await cleanDatabase({
+    query: (sql) => databaseQuery(state, sql),
+    historyTable: binding?.migrations_table,
+  });
+  line("✓ 新 Worker 已确认，数据库清理完成。");
 }
 
 async function verifyDeployedWorker(url, version) {
@@ -669,7 +677,7 @@ async function verifyDeployedWorker(url, version) {
 async function deployWorker(state) {
   const version = await readVersion();
   return deployInPhases({
-    expand: () => applyDatabaseMigrations(state),
+    expand: () => prepareWorkerDatabase(state),
     deploy: () =>
       wrangler(
         [
@@ -724,38 +732,147 @@ async function rollbackWorker(prompt, versionId, options) {
     fail(
       "回滚需指定 Cloudflare Worker 版本 ID（UUID）；通过 wrangler versions list 查看。",
     );
-  const state = await workerDeploymentState();
+  const state = await loadState();
+  if (!state.adminToken || !state.workerUrl)
+    fail("请先通过管理菜单接管部署，以验证回滚后的面板与节点上报。");
   await ensureCloudflareLogin();
-  await wrangler(
-    ["versions", "view", versionId, "--config", wranglerConfigPath, "--json"],
-    { capture: true },
+  const metadata = async (id) =>
+    JSON.parse(
+      (
+        await wrangler(
+          ["versions", "view", id, "--config", wranglerConfigPath, "--json"],
+          { capture: true },
+        )
+      ).stdout,
+    );
+  const active = async () =>
+    currentWorkerVersion(
+      JSON.parse(
+        (
+          await wrangler(
+            ["deployments", "list", "--config", wranglerConfigPath, "--json"],
+            { capture: true },
+          )
+        ).stdout,
+      ),
+    );
+  const targetMetadata = await metadata(versionId);
+  const targetVersion = workerVersion(targetMetadata);
+  const columns = (
+    await databaseQuery(state, "PRAGMA table_info(node_catalog)")
+  ).map((row) => row.name);
+  assertRollbackVersion(targetVersion, columns);
+  const originalId = await active();
+  if (originalId === versionId) {
+    line("当前已运行该 Worker 版本。");
+    return;
+  }
+  const originalMetadata = await metadata(originalId);
+  const originalVersion = workerVersion(originalMetadata);
+  const databaseBinding = (data) =>
+    data.resources?.bindings?.find(
+      (binding) => binding.name === "DB" && binding.type === "d1",
+    )?.id;
+  if (
+    !databaseBinding(originalMetadata) ||
+    databaseBinding(originalMetadata) !== databaseBinding(targetMetadata)
+  )
+    fail("回滚目标绑定了不同的 D1，未执行回滚。");
+  if (!originalVersion) fail("无法识别当前 Worker 的版本，未执行回滚。");
+  const read = async () => {
+    const healthResponse = await fetch(state.workerUrl + "/healthz", {
+      signal: AbortSignal.timeout(10_000),
+      cache: "no-store",
+    });
+    const dashboard = await adminFetch(state, "/api/v1/dashboard/latest");
+    const inventory = await adminFetch(state, "/api/v1/admin/nodes");
+    if (!healthResponse.ok || !dashboard.ok || !inventory.ok)
+      throw Error("无法读取回滚验证数据");
+    return {
+      health: await healthResponse.json(),
+      dashboard: dashboard.body,
+      inventory: inventory.body,
+    };
+  };
+  const baseline = await read();
+  if (
+    baseline.health.version !== originalVersion ||
+    baseline.dashboard.app_version !== originalVersion ||
+    !Array.isArray(baseline.inventory.nodes) ||
+    !Array.isArray(baseline.dashboard.nodes)
+  )
+    fail("当前部署状态无法核验，未执行回滚。");
+  const catalog = await databaseQuery(
+    state,
+    "SELECT node_id, public_id, stale_seconds FROM node_catalog WHERE enabled=1 AND retired_at IS NULL",
   );
+  const targets = catalog.flatMap((node) => {
+    const sample = baseline.inventory.nodes.find(
+      (row) => row.node_id === node.node_id,
+    );
+    return sample?.enabled &&
+      !sample.retired &&
+      Number.isFinite(sample.last_report_age_seconds) &&
+      sample.last_report_age_seconds <= node.stale_seconds
+      ? [{ ...node, generated_at: sample.generated_at }]
+      : [];
+  });
+  line(
+    "回滚目标：v" +
+      targetVersion +
+      " · 验证 " +
+      targets.length +
+      " 个当前在线节点",
+  );
+  if (catalog.length !== targets.length)
+    line("当前离线节点不计入本次新上报验证。");
   if (
     options.get("yes") !== true &&
-    !(await prompt.yes(`回滚 Worker 至 ${versionId}（保留监测数据）`, false))
+    !(await prompt.yes(
+      "回滚 Worker 至 " + versionId + "（保留监测数据）",
+      false,
+    ))
   )
     return;
-  await rollbackWithSchema({
-    prepare: async () => {
-      const columns = (
-        await databaseQuery(state, "PRAGMA table_info(node_catalog)")
-      ).map((column) => column.name);
-      await databaseQuery(state, nodeIdentityRollbackSQL(columns));
+  if ((await active()) !== originalId)
+    fail("部署已被其他操作更新，请重新选择回滚版本。");
+  let since;
+  const switchTo = async (id) => {
+    // versions deploy refuses changed secrets. Wrangler rollback would confirm
+    // its force override in a non-interactive shell, potentially reviving old keys.
+    await wrangler([
+      "versions",
+      "deploy",
+      id + "@100%",
+      "--config",
+      wranglerConfigPath,
+      "--yes",
+      "--message",
+      "Lume verified rollback",
+    ]);
+    if ((await active()) !== id) fail("目标版本未接管全部流量。");
+    since = Math.floor(Date.now() / 1000);
+  };
+  const verify = (version) =>
+    waitForLiveReports({ read, targets, version, since, progress: line });
+  await rollbackSafely({
+    rollback: () => switchTo(versionId),
+    verify: () => verify(targetVersion),
+    restore: async () => {
+      const currentId = await active();
+      if (currentId !== originalId && currentId !== versionId)
+        fail("检测到其他部署操作，已停止自动恢复。");
+      line("回滚未通过验证，正在恢复原 Worker…");
+      if (currentId !== originalId) await switchTo(originalId);
+      else since = Math.floor(Date.now() / 1000);
     },
-    rollback: () =>
-      wrangler([
-        "rollback",
-        versionId,
-        "--config",
-        wranglerConfigPath,
-        "--yes",
-      ]),
-    verify: async () => {
-      if (!(await verifyHealth(state.workerUrl)))
-        fail("回滚后健康检查未通过，请核对版本与地址。");
-    },
+    verifyRestored: () => verify(originalVersion),
   });
-  line("✓ Worker 已回滚；下次正常部署会自动清理过渡字段。");
+  line(
+    "✓ Worker 已回滚；面板读取正常，" +
+      targets.length +
+      " 个在线节点的新上报已确认。",
+  );
 }
 
 async function findOrCreateDatabase(state, prompt) {
@@ -870,7 +987,7 @@ async function setup(prompt, assumeYes) {
       } : null,
     };
     line("");
-    line("即将执行：登录 Cloudflare、创建或绑定一个 D1、迁移数据库、部署 Worker、写入 Secrets。" );
+    line("即将执行：登录 Cloudflare、创建或绑定一个 D1、初始化或升级数据库、部署 Worker、写入 Secrets。" );
     line(`Worker: ${workerName}`);
     line(`D1:     ${databaseName}`);
     line(`私密状态只写入：${statePath}（已被 Git 忽略）`);
@@ -1830,6 +1947,10 @@ async function main() {
     if (command === "manage") return await manage(prompt);
     if (command === "adopt") return await adoptDeployment(prompt);
     if (command === "setup") return await setup(prompt, flags.get("yes") === true);
+    if (command === "database") {
+      if (positional[1] !== "prepare" || positional.length !== 2 || flags.size !== 1 || flags.get("local") !== true) fail("本地数据库入口：npm run db:local");
+      return await prepareWorkerDatabase(await workerDeploymentState(), { local: true });
+    }
     if (command === "worker") {
       const allowedFlags = positional[1] === "rollback" ? ["yes"] : [];
       if ([...flags.keys()].some(flag => !allowedFlags.includes(flag))) fail("不支持的 Worker 参数；deploy 自动使用包版本，rollback 仅支持 --yes。");

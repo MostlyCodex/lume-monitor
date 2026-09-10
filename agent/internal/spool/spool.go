@@ -23,6 +23,8 @@ func Load(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+// Save retains the latest failed report. It replaces any older pending report;
+// this bounded slot restores recent state, not lossless historical delivery.
 func Save(path string, body []byte) error {
 	if len(body) > maxReportBytes {
 		return fmt.Errorf("report exceeds %d bytes", maxReportBytes)

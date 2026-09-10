@@ -72,7 +72,7 @@ describe("frontend data boundaries", () => {
   it("never falls back to system totals when cycle accounting is unavailable", () => {
     expect(
       trafficSummary({ network_valid: true, traffic_cycle_enabled: true, network_rx_bytes: 1024 }),
-    ).toMatchObject({ label: "本周期流量", rx: "—", tx: "—" });
+    ).toMatchObject({ label: "周期流量（估算）", rx: "—", tx: "—" });
     expect(trafficSummary({ network_valid: false, network_rx_bytes: 1024 }).rx).toBe("—");
   });
   it("does not count null latency or loss as a successful zero measurement", () => {

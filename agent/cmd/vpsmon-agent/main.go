@@ -25,9 +25,13 @@ import (
 
 var version = "dev"
 
+type metricsCollector interface {
+	Collect() (model.SystemMetrics, []error)
+}
+
 type application struct {
 	config        config.Config
-	collector     *collect.Collector
+	collector     metricsCollector
 	sender        *sender.Sender
 	startedAt     int64
 	collectErrors atomic.Uint64
@@ -35,6 +39,7 @@ type application struct {
 	lastProbeAt   time.Time
 	lastProbes    []model.ProbeResult
 	traffic       *traffic.Tracker
+	clock         func() time.Time
 }
 
 func (a *application) runOnce(parent context.Context, dryRun bool) error {
@@ -57,12 +62,16 @@ func (a *application) runOnce(parent context.Context, dryRun bool) error {
 		}
 	}
 
+	sampledAt := time.Now()
+	if a.clock != nil {
+		sampledAt = a.clock()
+	}
 	system, collectionErrors := a.collector.Collect()
 	system.TrafficCycleEnabled = a.config.TrafficCycle.Enabled
 	a.collectErrors.Add(uint64(len(collectionErrors)))
 	if a.traffic != nil {
 		var trafficErr error
-		system.TrafficCycle, trafficErr = a.traffic.Observe(time.Now(), a.config.TrafficCycle, system, !dryRun)
+		system.TrafficCycle, trafficErr = a.traffic.Observe(sampledAt, a.config.TrafficCycle, system, !dryRun)
 		if trafficErr != nil {
 			a.collectErrors.Add(1)
 			log.Printf("traffic accounting unavailable: %v", trafficErr)
@@ -91,7 +100,7 @@ func (a *application) runOnce(parent context.Context, dryRun bool) error {
 			OfflineSeverity:  a.config.Node.OfflineSeverity,
 			IPChangeSeverity: a.config.Node.IPChangeSeverity,
 		},
-		GeneratedAt: time.Now().Unix(),
+		GeneratedAt: sampledAt.Unix(),
 		System:      system,
 		Services:    services,
 		Probes:      a.lastProbes,
@@ -151,7 +160,7 @@ func main() {
 	app := &application{
 		config:    cfg,
 		collector: collect.New(cfg.NetworkInterfaces...),
-		traffic:   traffic.New("/var/lib/vpsmon/traffic.json"),
+		traffic:   traffic.New("/var/lib/vpsmon/traffic.json", time.Duration(cfg.ReportIntervalSeconds)*time.Second),
 		sender:    sender.New(cfg.Endpoint, cfg.Node.ID, cfg.Secret, version),
 		startedAt: time.Now().Unix(),
 	}

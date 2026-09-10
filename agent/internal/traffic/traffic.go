@@ -26,9 +26,14 @@ type state struct {
 	LastSeen   int64                              `json:"last_seen"`
 }
 
-type Tracker struct{ path string }
+type Tracker struct {
+	path           string
+	sampleInterval time.Duration
+}
 
-func New(path string) *Tracker { return &Tracker{path: path} }
+func New(path string, sampleInterval time.Duration) *Tracker {
+	return &Tracker{path: path, sampleInterval: sampleInterval}
+}
 
 func zone(name string) *time.Location {
 	if name == "Asia/Shanghai" {
@@ -149,9 +154,11 @@ func (t *Tracker) Observe(now time.Time, cfg config.TrafficCycle, system model.S
 	samePeriod := samePolicy && previous.Cycle.PeriodStart == start.Unix()
 	if samePeriod {
 		cycle = previous.Cycle
-	} else if samePolicy && previous.Cycle.PeriodEnd == start.Unix() {
+	} else if samePolicy && previous.Cycle.PeriodEnd == start.Unix() &&
+		now.Unix()-previous.LastSeen <= int64(2*t.sampleInterval/time.Second) {
 		// A normal sample crosses the boundary after it occurs. Coverage carries
-		// into the adjacent period; a prior partial period does not taint it.
+		// into the adjacent period only within two configured sample intervals.
+		// A long pause cannot claim coverage from the reset boundary.
 		// Boot/counter discontinuities below still mark this period partial.
 		cycle.Partial = false
 		cycle.ObservedSince = start.Unix()

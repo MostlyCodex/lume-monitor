@@ -36,6 +36,12 @@ jobs:
         working-directory: worker
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
       - uses: actions/setup-node@v6
         with:
           node-version: 22

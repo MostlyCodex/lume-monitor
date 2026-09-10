@@ -49,36 +49,36 @@ func TestTrafficPersistsAcrossAgentRestartAndCounterResets(t *testing.T) {
 		}
 		return cycle
 	}
-	first := observe(New(path), 0, metrics("a", 1000, 2000))
+	first := observe(New(path, time.Minute), 0, metrics("a", 1000, 2000))
 	if first.RXBytes != 0 || !first.Partial {
 		t.Fatal(first)
 	}
-	second := observe(New(path), 1, metrics("a", 1200, 2300))
+	second := observe(New(path, time.Minute), 1, metrics("a", 1200, 2300))
 	if second.RXBytes != 200 || second.TXBytes != 300 {
 		t.Fatal(second)
 	}
-	reboot := observe(New(path), 2, metrics("b", 10, 20))
+	reboot := observe(New(path, time.Minute), 2, metrics("b", 10, 20))
 	if reboot.RXBytes != 200 || reboot.TXBytes != 300 {
 		t.Fatal(reboot)
 	}
-	next := observe(New(path), 3, metrics("b", 110, 220))
+	next := observe(New(path, time.Minute), 3, metrics("b", 110, 220))
 	if next.RXBytes != 300 || next.TXBytes != 500 {
 		t.Fatal(next)
 	}
-	reset := observe(New(path), 4, metrics("b", 1, 2))
+	reset := observe(New(path, time.Minute), 4, metrics("b", 1, 2))
 	if reset.RXBytes != 300 || reset.TXBytes != 500 {
 		t.Fatal(reset)
 	}
 	recreated := metrics("b", 9999, 9999)
 	recreated.NetworkCounters["eth0"] = model.InterfaceCounters{RX: 9999, TX: 9999, Index: 3}
-	last := observe(New(path), 5, recreated)
+	last := observe(New(path, time.Minute), 5, recreated)
 	if last.RXBytes != 300 {
 		t.Fatal(last)
 	}
 }
 func TestCycleBoundaryAndChangedPolicyDoNotChargeEarlierTraffic(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "traffic.json")
-	tracker := New(path)
+	tracker := New(path, time.Minute)
 	cfg := config.TrafficCycle{Enabled: true, ResetDay: 1, TimeZone: "UTC"}
 	tracker.Observe(at("2026-09-30T23:59:00Z"), cfg, metrics("a", 100, 200), true)
 	cycle, err := tracker.Observe(at("2026-10-01T00:01:00Z"), cfg, metrics("a", 500, 900), true)
@@ -108,7 +108,7 @@ func TestCycleBoundaryAndChangedPolicyDoNotChargeEarlierTraffic(t *testing.T) {
 }
 func TestClockRollbackDryRunAndCorruptionPreserveState(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "traffic.json")
-	tracker := New(path)
+	tracker := New(path, time.Minute)
 	cfg := config.TrafficCycle{Enabled: true, ResetDay: 1, TimeZone: "UTC"}
 	tracker.Observe(at("2026-10-01T00:01:00Z"), cfg, metrics("a", 100, 200), true)
 	before, _ := os.ReadFile(path)
@@ -135,7 +135,7 @@ func TestContinuousMonthlyObservationClearsPartialWithSamplingOffset(t *testing.
 			boundary := at("2026-02-01T00:00:00Z")
 			for step := 0; step <= 32*24; step++ {
 				now := begin.Add(time.Duration(step) * time.Hour)
-				cycle, err := New(path).Observe(now, cfg, metrics("same-boot", uint64(1000+step*100), uint64(2000+step*200)), true)
+				cycle, err := New(path, time.Hour).Observe(now, cfg, metrics("same-boot", uint64(1000+step*100), uint64(2000+step*200)), true)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -153,7 +153,7 @@ func TestContinuousMonthlyObservationClearsPartialWithSamplingOffset(t *testing.
 func TestBoundaryDiscontinuitiesRemainPartial(t *testing.T) {
 	for _, scenario := range []string{"reboot", "counter-reset", "interface-replaced", "skipped-period", "policy-change", "disabled"} {
 		t.Run(scenario, func(t *testing.T) {
-			tracker := New(filepath.Join(t.TempDir(), "traffic.json"))
+			tracker := New(filepath.Join(t.TempDir(), "traffic.json"), time.Minute)
 			cfg := config.TrafficCycle{Enabled: true, ResetDay: 1, TimeZone: "UTC"}
 			before := at("2026-09-30T23:59:30Z")
 			if _, err := tracker.Observe(before, cfg, metrics("a", 100, 200), true); err != nil {
@@ -184,5 +184,58 @@ func TestBoundaryDiscontinuitiesRemainPartial(t *testing.T) {
 				t.Fatalf("discontinuity was treated as complete: %+v %v", cycle, err)
 			}
 		})
+	}
+}
+
+func TestBoundaryGapCoverage(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		gap      time.Duration
+		interval time.Duration
+		partial  bool
+	}{
+		{"normal", time.Minute, time.Minute, false},
+		{"one-delayed-round", 2 * time.Minute, time.Minute, false},
+		{"beyond-tolerance", 2*time.Minute + time.Second, time.Minute, true},
+		{"long-pause", 21 * 24 * time.Hour, time.Minute, true},
+		{"configured-ten-minutes", 20 * time.Minute, 10 * time.Minute, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "traffic.json")
+			tracker := New(path, tc.interval)
+			cfg := config.TrafficCycle{Enabled: true, ResetDay: 1, TimeZone: "UTC"}
+			before := at("2026-01-31T23:59:30Z")
+			if _, err := tracker.Observe(before, cfg, metrics("same", 100, 200), true); err != nil {
+				t.Fatal(err)
+			}
+			now := before.Add(tc.gap)
+			cycle, err := tracker.Observe(now, cfg, metrics("same", 1000, 2000), true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cycle.Partial != tc.partial || cycle.RXBytes != 0 {
+				t.Fatalf("%+v", cycle)
+			}
+			expected := cycle.PeriodStart
+			if tc.partial {
+				expected = now.Unix()
+			}
+			if cycle.ObservedSince != expected {
+				t.Fatalf("incorrect coverage start: %+v", cycle)
+			}
+		})
+	}
+}
+
+func TestSamePeriodPauseRetainsCounterCoverage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "traffic.json")
+	cfg := config.TrafficCycle{Enabled: true, ResetDay: 1, TimeZone: "UTC"}
+	tracker := New(path, time.Minute)
+	if _, err := tracker.Observe(at("2026-01-01T00:00:00Z"), cfg, metrics("same", 100, 200), true); err != nil {
+		t.Fatal(err)
+	}
+	cycle, err := New(path, time.Minute).Observe(at("2026-01-20T00:00:00Z"), cfg, metrics("same", 900, 1200), true)
+	if err != nil || cycle.Partial || cycle.RXBytes != 800 || cycle.TXBytes != 1000 {
+		t.Fatalf("%+v %v", cycle, err)
 	}
 }

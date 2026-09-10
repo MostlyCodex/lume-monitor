@@ -9,7 +9,7 @@
     "enabled": false
   },
   "vars": {
-    "APP_VERSION": "1.0.2",
+    "APP_VERSION": "1.0.3",
     "REPORT_MAX_AGE_SECONDS": "300",
     "TELEGRAM_BOT_USERNAME": "your_monitor_bot",
     "DASHBOARD_BASE_URL": "https://your-worker.your-subdomain.workers.dev"
@@ -24,7 +24,7 @@
       "binding": "DB",
       "database_name": "lume",
       "database_id": "00000000-0000-0000-0000-000000000000",
-      "migrations_dir": "migrations"
+      "migrations_dir": "database/updates"
     }
   ],
   "triggers": {

@@ -146,6 +146,8 @@ async function adoptHarness({wrongKey=false, changedDuringInput=false, missingIn
       calls.push("read-nodes");
       return databaseReady?{ok:true,status:200,body:{nodes:[{node_id:"alpha",retired:false}]}}:{ok:false,status:500,body:{error:"node listing failed"}};
     },
+    prepareDatabase:async()=>{calls.push("migrate");if(migrationFailure)throw Error("migration interrupted");databaseReady=true;},
+    databaseQuery:async()=>[],
     ensureCloudflareLogin:async()=>calls.push("login"),
     wrangler:async(args)=>{
       if(args[0]==="d1") {
@@ -162,7 +164,7 @@ async function adoptHarness({wrongKey=false, changedDuringInput=false, missingIn
       }
     },
     deployWorker:async(state)=>{
-      await context.applyDatabaseMigrations(state);
+      await context.prepareWorkerDatabase(state);
       await context.wrangler(["deploy","--keep-vars"]);
     },
     readNodeConfiguration:async()=>{
@@ -173,7 +175,7 @@ async function adoptHarness({wrongKey=false, changedDuringInput=false, missingIn
     writePrivateJson:async(path,value)=>writes.push({path,value:structuredClone(value)}),
   });
   const signature=source.slice(source.indexOf("function inventorySignature("),source.indexOf("async function getServerInventory("));
-  new vm.Script(signature+["applyDatabaseMigrations","adminNodeSnapshot","adminNodeList","adoptDeployment"].map(procedure).join("\n")).runInContext(context);
+  new vm.Script(signature+["prepareWorkerDatabase","adminNodeSnapshot","adminNodeList","adoptDeployment"].map(procedure).join("\n")).runInContext(context);
   const run=()=>context.adoptDeployment({text:async()=>"https://monitor.example",secret:async()=>"admin-".repeat(12),yes:async()=>true});
   return {run,writes,secret,calls};
 }
@@ -243,7 +245,7 @@ test("deployment upgrades missing acknowledgement or node metadata capabilities 
   const context=vm.createContext({
    line:()=>{},fail:message=>{throw Error(message);},wranglerConfigPath:"memory/wrangler.jsonc",
    adminFetch:async()=>({ok:initialStatus===200,status:initialStatus,body:{nodes:[],capabilities:updated?{config_fingerprint:1,node_metadata:2}:capabilities}}),
-   ensureCloudflareLogin:async()=>calls.push("login"),applyDatabaseMigrations:async()=>calls.push("migrate"),readVersion:async()=>"1.0.0",
+   ensureCloudflareLogin:async()=>calls.push("login"),prepareWorkerDatabase:async()=>calls.push("migrate"),readVersion:async()=>"1.0.0",
    deployWorker:async()=>{calls.push("migrate","update-worker");updated=true;},
   });
   new vm.Script(procedure("ensureConfigurationReporting")).runInContext(context);

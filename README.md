@@ -2,14 +2,14 @@
 
 轻量、自托管的 Linux VPS 监控：资源状态、线路质量和历史图表，一个面板看清。
 
-源码 v1.0.2 · [在线体验](https://mostlycodex.github.io/lume-monitor/) · [部署与管理](docs/guide.md) · [参与开发](CONTRIBUTING.md)
+源码 v1.0.3 · [在线体验](https://mostlycodex.github.io/lume-monitor/) · [部署与管理](docs/guide.md) · [参与开发](CONTRIBUTING.md)
 
 演示网页使用虚构数据，无需登录，可体验节点详情、图表、深浅主题和自定义背景。
 
 ## 能监测什么
 
 - **主机资源**：CPU、内存、磁盘、流量、启动时间和 Agent 状态。
-- **网络流量**：自动或指定统计网卡，可按月设置周期流量与重置日。
+- **网络流量**：自动或指定统计网卡，可按月估算周期流量并设置重置日。
 - **线路质量**：ICMP 延迟与丢包、TCP 建连延迟与失败率、节点间链路。
 - **服务状态**：只读监测所选 systemd 服务。
 - **历史与查询**：资源和线路历史、运行事件、IP 变化；Telegram `/status` 和 `/panel`。
@@ -39,7 +39,7 @@ npm run manage
 ```text
 lume-monitor/
 ├── agent/                      # Go Agent，在 VPS 上采集并上报数据
-│   ├── cmd/vpsmon-agent/       # 程序入口
+│   ├── cmd/vpsmon-agent/        # 程序入口
 │   ├── internal/               # 采集、探测与上报实现
 │   │   ├── check/              # 只读 systemd 服务检查
 │   │   ├── collect/            # 主机资源与网络指标采集
@@ -47,7 +47,7 @@ lume-monitor/
 │   │   ├── model/              # 上报数据结构
 │   │   ├── probe/              # ICMP / TCP 网络探针
 │   │   ├── sender/             # 请求签名与 HTTPS 上报
-│   │   ├── spool/              # 上报失败时的本地缓存
+│   │   ├── spool/              # 最新一份失败上报的本地暂存
 │   │   └── traffic/            # 按周期累计流量与持久化
 │   └── testdata/               # 测试与性能基准配置
 ├── worker/                     # Cloudflare 服务端与 Web 面板
@@ -63,10 +63,11 @@ lume-monitor/
 │   │   │   └── demo/           # 虚构数据源
 │   │   └── static/             # 默认背景与第三方许可
 │   ├── public/                 # 安全响应头及自动生成的面板、演示资源
-│   ├── migrations/             # 新安装 D1 的部署前迁移
-│   ├── migrations-v3/          # v3 数据库的部署前迁移
-│   ├── migrations-contract/    # 新安装 D1 的部署后清理
-│   ├── migrations-v3-contract/ # v3 数据库的部署后清理
+│   ├── database/               # 数据库初始化、升级与部署后清理
+│   │   ├── initialize.sql      # 新库初始化
+│   │   ├── upgrade-v3.sql      # 早期数据库的一次性升级
+│   │   ├── updates/            # 所有部署共用的后续结构更新
+│   │   └── cleanup/            # 新 Worker 确认生效后的结构清理
 │   └── test/                   # 单元测试、集成测试与本地预览服务
 │       ├── browser/            # 浏览器交互与响应式界面测试
 │       └── fixtures/           # 数据库升级测试数据

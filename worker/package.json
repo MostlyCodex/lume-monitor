@@ -1,6 +1,6 @@
 {
   "name": "lume-worker",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "type": "module",
   "description": "Cloudflare Worker, Vue 3 dashboard, and deployment tools for Lume.",
@@ -14,7 +14,7 @@
     "setup": "node ../tools/lumectl.mjs setup",
     "deploy": "node ../tools/lumectl.mjs worker deploy",
     "dev": "npm run build:frontend && wrangler dev",
-    "db:local": "wrangler d1 migrations apply lume --local",
+    "db:local": "node ../tools/lumectl.mjs database prepare --local",
     "monitor:status": "node ../tools/lumectl.mjs status",
     "node:add": "node ../tools/lumectl.mjs node add",
     "node:configure": "node ../tools/lumectl.mjs node configure",

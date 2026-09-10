@@ -6,8 +6,6 @@ import vm from "node:vm";
 import {
   deployInPhases,
   nodeIdentityCleanupSQL,
-  nodeIdentityRollbackSQL,
-  rollbackWithSchema,
 } from "../schema-lifecycle.mjs";
 import { createAgentConfig } from "../lumectl.mjs";
 
@@ -35,7 +33,7 @@ test("Worker deployment contracts only after compatible migrations, deployment a
       deployInPhases,
       readVersion: async () => "test-version",
       wranglerConfigPath: "wrangler.jsonc",
-      applyDatabaseMigrations: step("expand"),
+      prepareWorkerDatabase: step("expand"),
       wrangler: async (args) => {
         assert.ok(args.includes("--keep-vars"));
         assert.ok(args.includes("APP_VERSION:test-version"));
@@ -93,7 +91,7 @@ test("live verification rejects an old version, incompatible schema or unreachab
 test("contract SQL is repeatable when a previous deployment already removed the column", async () => {
   const sql = await readFile(
     new URL(
-      "../../worker/migrations-contract/0007_node_identity.sql",
+      "../../worker/database/cleanup/0007_node_identity.sql",
       import.meta.url,
     ),
     "utf8",
@@ -109,34 +107,6 @@ test("contract SQL is repeatable when a previous deployment already removed the 
   assert.throws(() =>
     nodeIdentityCleanupSQL(sql, [], "0007_node_identity.sql", "invalid;DROP"),
   );
-  assert.match(nodeIdentityRollbackSQL([]), /ADD COLUMN/);
-  assert.doesNotMatch(nodeIdentityRollbackSQL(["short_mark"]), /ADD COLUMN/);
-});
-
-test("rollback stops before changing code if preparing its schema fails", async () => {
-  for (const failure of [null, "prepare", "rollback"]) {
-    const calls = [];
-    const steps = Object.fromEntries(
-      ["prepare", "rollback", "verify"].map((name) => [
-        name,
-        async () => {
-          calls.push(name);
-          if (failure === name) throw Error(name);
-        },
-      ]),
-    );
-    if (failure)
-      await assert.rejects(rollbackWithSchema(steps), new RegExp(failure));
-    else await rollbackWithSchema(steps);
-    assert.deepEqual(
-      calls,
-      failure === "prepare"
-        ? ["prepare"]
-        : failure === "rollback"
-          ? ["prepare", "rollback"]
-          : ["prepare", "rollback", "verify"],
-    );
-  }
 });
 
 test("node add upgrades a missing inventory endpoint before keys or files are changed", async () => {
@@ -208,72 +178,5 @@ test("node add upgrades a missing inventory endpoint before keys or files are ch
         else assert.ok(!calls.includes("upgrade"));
       }
     }
-  }
-});
-
-test("rollback validates the version and prepares D1 before changing the live Worker", async () => {
-  for (const mode of [
-    "success",
-    "cancel",
-    "unknown-version",
-    "schema-failure",
-  ]) {
-    const calls = [];
-    const version = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-    const context = vm.createContext({
-      rollbackWithSchema,
-      nodeIdentityRollbackSQL,
-      line: () => {},
-      fail: (message) => {
-        throw Error(message);
-      },
-      workerDeploymentState: async () => ({
-        workerUrl: "https://monitor.example",
-      }),
-      ensureCloudflareLogin: async () => {},
-      wranglerConfigPath: "wrangler.jsonc",
-      wrangler: async (args) => {
-        if (args[0] === "versions") {
-          calls.push("validate-version");
-          assert.deepEqual(Array.from(args).slice(0, 3), [
-            "versions",
-            "view",
-            version,
-          ]);
-          if (mode === "unknown-version") throw Error("unknown version");
-        } else {
-          calls.push("rollback");
-          assert.equal(args[0], "rollback");
-          assert.equal(args[1], version);
-        }
-      },
-      databaseQuery: async (_state, sql) => {
-        if (sql.startsWith("PRAGMA")) return [];
-        calls.push("prepare-schema");
-        assert.match(sql, /ADD COLUMN short_mark/);
-        if (mode === "schema-failure") throw Error("schema failed");
-      },
-      verifyHealth: async () => {
-        calls.push("verify");
-        return true;
-      },
-    });
-    new vm.Script(procedure("rollbackWorker")).runInContext(context);
-    const run = () =>
-      context.rollbackWorker(
-        { yes: async () => mode !== "cancel" },
-        version,
-        new Map(),
-      );
-    if (["unknown-version", "schema-failure"].includes(mode))
-      await assert.rejects(run());
-    else await run();
-    const expected =
-      mode === "success"
-        ? ["validate-version", "prepare-schema", "rollback", "verify"]
-        : mode === "schema-failure"
-          ? ["validate-version", "prepare-schema"]
-          : ["validate-version"];
-    assert.deepEqual(calls, expected);
   }
 });

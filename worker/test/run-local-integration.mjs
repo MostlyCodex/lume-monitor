@@ -1,3 +1,6 @@
+import { testDatabaseUpdates } from "./database-updates.mjs";
+import { testVersionCompatibility } from "./version-compatibility.mjs";
+import { prepareDatabase } from "../../tools/database.mjs";
 import { contractIdentity, testSchemaTransitions } from "./schema-upgrade-integration.mjs";
 import { testPermanentDeletion } from "./node-deletion-integration.mjs";
 import { spawn, spawnSync } from "node:child_process";
@@ -84,7 +87,7 @@ function query(config, persistence, sql, all = false) {
   return all ? results : results[0]?.results ?? [];
 }
 
-function testProductionUpgrade(root) {
+async function testProductionUpgrade(root) {
   const persistence = join(root, "upgrade");
   const config = "wrangler.upgrade-test.jsonc";
   runWrangler([
@@ -96,10 +99,7 @@ function testProductionUpgrade(root) {
     "--command", "UPDATE node_latest SET report_json=json_object('node',json_object('id','legacy-fixture','display_name','Legacy Fixture','short_mark','OLD'),'keep',42); " +
       "UPDATE snapshots SET report_json=(SELECT report_json FROM node_latest WHERE node_id='legacy-fixture');", "--yes",
   ], true);
-  runWrangler([
-    "d1", "migrations", "apply", "DB", "--local", "--config", config,
-    "--persist-to", persistence,
-  ], true);
+  await prepareDatabase({query:sql=>query(config,persistence,sql)});
   const preserved = query(
     config,
     persistence,
@@ -142,7 +142,7 @@ function testProductionUpgrade(root) {
   query(config, persistence, "UPDATE node_catalog SET short_mark='OLD' WHERE node_id='legacy-fixture'");
   const legacyMark=query(config, persistence, "SELECT short_mark FROM node_catalog WHERE node_id='legacy-fixture'");
   if (legacyMark[0]?.short_mark !== "OLD") throw new Error("legacy Worker schema broken before deployment");
-  contractIdentity(sql=>query(config,persistence,sql),true);
+  await contractIdentity(sql=>query(config,persistence,sql));
   const columns=query(config,persistence,"PRAGMA table_info(node_catalog)").map(column=>column.name);
   if (columns.includes("short_mark")) throw new Error("obsolete node column survived upgrade");
   const indexes=query(config,persistence,"SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='node_catalog'").map(row=>row.name);
@@ -159,10 +159,7 @@ function testProductionUpgrade(root) {
 async function testFreshDatabase(root) {
   const persistence = join(root, "fresh");
   const config = "wrangler.test.jsonc";
-  runWrangler([
-    "d1", "migrations", "apply", "DB", "--local", "--config", config,
-    "--persist-to", persistence,
-  ], true);
+  await prepareDatabase({query:sql=>query(config,persistence,sql)});
   runWrangler([
     "d1", "execute", "DB", "--local", "--config", config, "--persist-to", persistence,
     "--command",
@@ -196,6 +193,8 @@ async function testFreshDatabase(root) {
     process.stdout.write(result.stdout);
     await testSchemaTransitions({baseUrl,query:(sql,all)=>query(config,persistence,sql,all)});
     await testPermanentDeletion({baseUrl,query:(sql,all)=>query(config,persistence,sql,all)});
+  } catch (error) {
+    throw new Error("Worker schema/deletion integration failed\n" + output.join(""), {cause: error});
   } finally {
     await stopWorker(child);
   }
@@ -229,7 +228,9 @@ function workflowEscape(value) {
 
 async function main() {
   try {
-    testProductionUpgrade(temporaryRoot);
+    await testDatabaseUpdates();
+    await testVersionCompatibility();
+    await testProductionUpgrade(temporaryRoot);
     await testFreshDatabase(temporaryRoot);
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 });
@@ -241,6 +242,7 @@ try {
 } catch (error) {
   const detail = error instanceof Error ? error.stack ?? error.message : String(error);
   console.error(detail);
+  if (error.cause) console.error(error.cause);
   if (process.env.GITHUB_ACTIONS === "true") {
     console.error(`::error title=Local Wrangler integration failed::${workflowEscape(detail)}`);
   }

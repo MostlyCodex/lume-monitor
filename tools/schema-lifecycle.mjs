@@ -35,23 +35,3 @@ export function nodeIdentityCleanupSQL(
     "');\n"
   );
 }
-
-export function nodeIdentityRollbackSQL(columns) {
-  const statements = [];
-  if (!columns.includes("short_mark"))
-    statements.push(
-      "ALTER TABLE node_catalog ADD COLUMN short_mark TEXT NOT NULL DEFAULT '';",
-    );
-  // Reconstruct a valid display placeholder, not previously deleted labels.
-  // Only the explicit rollback path restores this storage compatibility field.
-  statements.push(
-    "UPDATE node_catalog SET short_mark=substr(replace(replace(node_id,'_',''),'-',''),1,4) WHERE short_mark='';",
-  );
-  return statements.join("\n");
-}
-
-export async function rollbackWithSchema({ prepare, rollback, verify }) {
-  await prepare();
-  await rollback();
-  await verify();
-}

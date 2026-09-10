@@ -13,7 +13,7 @@ Generic host core
     └── TCP: connect latency and connect failure rate
 ```
 
-Adding a node must not require source changes, a database migration, or a pre-allocated slot. A node becomes known after its first authenticated report. The same report synchronizes its display metadata and optional service/probe catalogs.
+Adding a node must not require source changes, a database schema update, or a pre-allocated slot. A node becomes known after its first authenticated report. The same report synchronizes its display metadata and optional service/probe catalogs.
 
 ## Components
 
@@ -35,7 +35,7 @@ CPU count becomes available after the node runs an Agent that reports `cpu_count
 
 Optional `services` entries read systemd state. Optional `probes` entries perform bounded outbound ICMP Echo or TCP Connect checks. ICMP uses `pro-bing` in unprivileged datagram-socket mode; TCP uses ordinary Go sockets and sends no application data. The resident Agent retains an empty capability set.
 
-Failed reports are kept in a one-entry local spool and retried.
+The local spool retains only the latest failed report. Each round retries that report before collecting and sending the next; another failure replaces the pending entry. Intermediate resource and probe history can be lost during an outage. Traffic-cycle totals are persisted locally before HTTP delivery, so failed delivery alone does not interrupt local accounting.
 
 ### Worker
 
@@ -63,7 +63,7 @@ D1 contains no seeded node topology. Catalog tables are data-driven:
 - `probe_catalog`: zero or more ICMP/TCP probes per node;
 - `business_routes`: derived node-to-node relationships.
 
-Other tables store the latest report, metric/probe samples, long-term series rollups, operational events, source-IP history and dashboard login tokens. Current raw history uses time-leading `WITHOUT ROWID` tables: one row per node resource report and one compact JSON row per node communication-probe round. This avoids per-probe and secondary-index write amplification while history queries transparently merge pre-upgrade rows until they expire. Recent replay nonces and current network rates share the already-updated latest-state row instead of creating another write per report. Compatibility tables remain in the schema so an upgrade does not destroy existing data. Legacy alert tables likewise remain for migration compatibility but are not read or written by the runtime. Scheduled Worker jobs maintain retention and long-term rollups.
+Other tables store the latest report, metric/probe samples, long-term series rollups, operational events, source-IP history and dashboard login tokens. Current raw history uses time-leading `WITHOUT ROWID` tables: one row per node resource report and one compact JSON row per node communication-probe round. This avoids per-probe and secondary-index write amplification while history queries transparently merge pre-upgrade rows until they expire. Recent replay nonces and current network rates share the already-updated latest-state row instead of creating another write per report. Compatibility tables remain in the schema so an upgrade does not destroy existing data. Legacy alert tables likewise remain for upgrade compatibility but are not read or written by the runtime. Scheduled Worker jobs maintain retention and long-term rollups.
 
 ### Telegram and dashboard
 
@@ -83,7 +83,7 @@ Display settings stay in browser storage, with separate keys for production and 
 
 The communication contract supports `icmp` and `tcp`. Optional collectors must remain configuration-driven, default off, preserve the required host report and use the same generic Agent binary.
 
-Deployments apply compatible migrations first, deploy and verify the new Worker, then run destructive cleanup from the matching `*-contract/` directory. The new report writer supports both schemas during this transition. Cleanup inspects actual columns as well as preserving migration markers, so retrying after a rollback remains safe. `worker:rollback` prepares legacy schema before switching Worker code; Agent compatibility remains version-specific. Published SQL contents and migration names are immutable. The current `probe_catalog` schema enforces `CHECK (kind IN ('icmp', 'tcp'))`.
+All SQL lives in `worker/database/`: one empty-database initializer, a one-time v3 upgrade, a shared `updates/` chain, and deployment-gated `cleanup/`. The updater maps historical completion names without replaying completed SQL; each update and its marker share one D1 batch. Deployment applies compatible updates, deploys and verifies the Worker, then cleans obsolete structure. Published SQL execution contents remain unchanged. Managed rollback accepts only versions covered by the real Worker/Agent matrix, preserves the D1 binding, refuses forced Secrets changes, and verifies fresh reports plus dashboard reads. Failure triggers a verified return to the previous deployment unless another deployment has intervened. The `probe_catalog` schema enforces `CHECK (kind IN ('icmp', 'tcp'))`.
 
 Examples:
 
