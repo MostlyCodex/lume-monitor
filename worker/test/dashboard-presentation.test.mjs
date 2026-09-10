@@ -35,11 +35,11 @@ describe("dashboard presentation hierarchy", () => {
     const cardTemplate = app.slice(app.indexOf("function renderNodeCard"), app.indexOf("function filteredNodes"));
     expect(cardTemplate.indexOf('class="resource-gauges"')).toBeLessThan(cardTemplate.indexOf('class="probe-block"'));
     expect(html).toContain('class="scene-image"');
-    expect(html).toContain('src="/dashboard/background-lume.jpg?v=blue-sand"');
+    expect(html).toContain('src="/dashboard/background-lume.jpg?v=cyan-pink"');
     expect(styles).toContain("height: var(--scene-lock-height, 100lvh)");
     expect(styles).toContain("object-fit: cover");
     expect(styles).toContain("contain: strict");
-    expect(styles).not.toContain('background-image: url("/dashboard/background-lume.jpg?v=blue-sand")');
+    expect(styles).not.toContain('background-image: url("/dashboard/background-lume.jpg?v=cyan-pink")');
     expect(styles).not.toContain("transform: scale(1.22)");
     expect(statSync(background).size).toBeLessThan(1_500_000);
     expect(existsSync(new URL("../public/dashboard/background-alpine.webp", import.meta.url))).toBe(false);
