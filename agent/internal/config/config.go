@@ -144,12 +144,20 @@ func Load(path string) (Config, error) {
 	if len(raw) > maxConfigBytes {
 		return Config{}, errors.New("config exceeds 64 KiB")
 	}
+	return decode(raw)
+}
+
+// decode is the only upgrade boundary; retired fields never enter Config.
+func decode(raw []byte) (Config, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	// Accept the retired field when upgrading an existing configuration. It is
-	// discarded at this boundary and never reaches collection or serialization.
+	// Accept only explicitly retired fields; all other unknown fields remain errors.
 	var document struct {
 		Config
+		Node struct {
+			Node
+			RetiredShortMark json.RawMessage `json:"short_mark"`
+		} `json:"node"`
 		RetiredCounters json.RawMessage `json:"nftables_counters"`
 	}
 	if err := decoder.Decode(&document); err != nil {
@@ -160,6 +168,7 @@ func Load(path string) (Config, error) {
 		return Config{}, errors.New("config must contain one JSON object")
 	}
 	cfg := document.Config
+	cfg.Node = document.Node.Node
 	cfg.Fingerprint = fmt.Sprintf("%x", sha256.Sum256(raw))
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err

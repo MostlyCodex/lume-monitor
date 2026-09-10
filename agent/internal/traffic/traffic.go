@@ -149,6 +149,12 @@ func (t *Tracker) Observe(now time.Time, cfg config.TrafficCycle, system model.S
 	samePeriod := samePolicy && previous.Cycle.PeriodStart == start.Unix()
 	if samePeriod {
 		cycle = previous.Cycle
+	} else if samePolicy && previous.Cycle.PeriodEnd == start.Unix() {
+		// A normal sample crosses the boundary after it occurs. Coverage carries
+		// into the adjacent period; a prior partial period does not taint it.
+		// Boot/counter discontinuities below still mark this period partial.
+		cycle.Partial = false
+		cycle.ObservedSince = start.Unix()
 	}
 	if samePolicy {
 		if previous.BootID != system.BootID {
@@ -168,6 +174,9 @@ func (t *Tracker) Observe(now time.Time, cfg config.TrafficCycle, system model.S
 				}
 			}
 		}
+	}
+	if !samePeriod && cycle.Partial {
+		cycle.ObservedSince = now.Unix()
 	}
 	next := state{Version: 1, Cycle: cycle, BootID: system.BootID, Interfaces: names, Counters: system.NetworkCounters, LastSeen: now.Unix()}
 	if persist {

@@ -11,7 +11,7 @@ npx playwright install chromium
 npm run test:ci
 ```
 
-Agent 改动另在 `agent/` 执行 `go test ./...` 和 `go vet ./...`。Linux 上执行 `sh deploy/test-upgrade-retention.sh`、`sh deploy/test-agent-upgrade.sh`、`sh deploy/test-agent-audit.sh`，验证备份保留、升级回滚和远端变更清单。
+Agent 改动另在 `agent/` 执行 `go test ./...` 和 `go vet ./...`。Linux 上执行 `sh deploy/test-upgrade-retention.sh`、`sh deploy/test-agent-upgrade.sh`、`sh deploy/test-agent-audit.sh`、`sh deploy/test-agent-uninstall.sh`，验证备份保留、升级回滚和远端变更清单。
 
 测试只使用虚构节点、保留域名和测试密钥。不得导入生产数据库或私有配置。
 
@@ -78,11 +78,19 @@ npm --prefix worker run preview:dashboard
 
 ## 更新 Worker
 
-在 `worker/` 执行 `npm run deploy -- --var APP_VERSION:1.0.1`，先构建前端再部署。后续版本将 `APP_VERSION` 替换为包版本；此参数覆盖私有配置中的旧值。管理菜单中的 Worker 部署也经过同一构建入口；构建失败会停止发布。不要跳过构建而直接发布旧静态资源。
+在 `worker/` 执行 `npm run deploy`。命令与管理菜单共用部署流程，`APP_VERSION` 自动取包版本：
+
+1. 应用 `migrations/` 或 `migrations-v3/` 中的兼容迁移。
+2. 构建 Vue 前端并部署 Worker。过渡期间，新 Worker 可读写清理前后的 schema。
+3. 确认线上版本和 schema 能力后，执行对应 `*-contract/` 中的清理。部署或校验失败时保留旧字段，重试即可。
+
+破坏性迁移放入部署后阶段；保留已发布 SQL 的内容、文件名和迁移记录。清理同时检查实际列，支持中断重试及回滚后的再次部署。
+
+回退时先用 `npx wrangler versions list` 查版本 ID，再执行 `npm run worker:rollback -- <版本ID>`。命令在回退代码前补齐旧 schema；直接 `wrangler rollback` 不处理数据库兼容。该命令不回滚 Agent，也不恢复已删除的历史数据或原显示短标识；旧版本的显示字段使用节点 ID 生成占位值。回退至要求旧上报格式的版本时，应同时使用对应 Agent 与配置。
 
 ## 发布版本
 
-当前发布版本为 **v1.0.1**。源码标签、根目录与 `worker/` 的 `package.json` 和锁文件、`wrangler.example.jsonc` 中的 `APP_VERSION` 使用同一版本。
+当前发布版本为 **v1.0.2**。源码标签、根目录与 `worker/` 的 `package.json` 和锁文件、`wrangler.example.jsonc` 中的 `APP_VERSION` 使用同一版本。
 
 后续发布先更新版本和相关手册，提交后推送 `main`，再创建并推送对应的 `vX.Y.Z` 标签。版本标签发布后不复用。
 

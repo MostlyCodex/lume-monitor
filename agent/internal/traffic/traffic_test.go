@@ -82,7 +82,7 @@ func TestCycleBoundaryAndChangedPolicyDoNotChargeEarlierTraffic(t *testing.T) {
 	cfg := config.TrafficCycle{Enabled: true, ResetDay: 1, TimeZone: "UTC"}
 	tracker.Observe(at("2026-09-30T23:59:00Z"), cfg, metrics("a", 100, 200), true)
 	cycle, err := tracker.Observe(at("2026-10-01T00:01:00Z"), cfg, metrics("a", 500, 900), true)
-	if err != nil || cycle.RXBytes != 0 || !cycle.Partial {
+	if err != nil || cycle.RXBytes != 0 || cycle.Partial {
 		t.Fatalf("%+v %v", cycle, err)
 	}
 	cycle, err = tracker.Observe(at("2026-10-01T00:02:00Z"), cfg, metrics("a", 600, 1000), true)
@@ -123,5 +123,66 @@ func TestClockRollbackDryRunAndCorruptionPreserveState(t *testing.T) {
 	os.WriteFile(path, []byte("corrupt"), 0600)
 	if _, err := tracker.Observe(at("2026-10-01T00:03:00Z"), cfg, metrics("a", 300, 400), true); err == nil {
 		t.Fatal("corruption silently reset billing totals")
+	}
+}
+
+func TestContinuousMonthlyObservationClearsPartialWithSamplingOffset(t *testing.T) {
+	for _, offset := range []time.Duration{0, 30 * time.Second} {
+		t.Run(offset.String(), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "traffic.json")
+			cfg := config.TrafficCycle{Enabled: true, ResetDay: 1, TimeZone: "UTC"}
+			begin := at("2026-01-01T00:00:00Z").Add(offset)
+			boundary := at("2026-02-01T00:00:00Z")
+			for step := 0; step <= 32*24; step++ {
+				now := begin.Add(time.Duration(step) * time.Hour)
+				cycle, err := New(path).Observe(now, cfg, metrics("same-boot", uint64(1000+step*100), uint64(2000+step*200)), true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if step == 0 && cycle.Partial != (offset != 0) {
+					t.Fatalf("initial sample: %+v", cycle)
+				}
+				if !now.Before(boundary) && (cycle.Partial || cycle.ObservedSince != boundary.Unix()) {
+					t.Fatalf("continuous new period stayed partial at %s: %+v", now, cycle)
+				}
+			}
+		})
+	}
+}
+
+func TestBoundaryDiscontinuitiesRemainPartial(t *testing.T) {
+	for _, scenario := range []string{"reboot", "counter-reset", "interface-replaced", "skipped-period", "policy-change", "disabled"} {
+		t.Run(scenario, func(t *testing.T) {
+			tracker := New(filepath.Join(t.TempDir(), "traffic.json"))
+			cfg := config.TrafficCycle{Enabled: true, ResetDay: 1, TimeZone: "UTC"}
+			before := at("2026-09-30T23:59:30Z")
+			if _, err := tracker.Observe(before, cfg, metrics("a", 100, 200), true); err != nil {
+				t.Fatal(err)
+			}
+			now := before.Add(time.Minute)
+			system := metrics("a", 500, 900)
+			switch scenario {
+			case "reboot":
+				system.BootID = "b"
+			case "counter-reset":
+				system = metrics("a", 1, 2)
+			case "interface-replaced":
+				system.NetworkCounters["eth0"] = model.InterfaceCounters{RX: 500, TX: 900, Index: 3}
+			case "skipped-period":
+				now = at("2026-11-01T00:00:30Z")
+			case "policy-change":
+				cfg.TimeZone = "Asia/Shanghai"
+			case "disabled":
+				cfg.Enabled = false
+				if _, err := tracker.Observe(before.Add(time.Second), cfg, system, true); err != nil {
+					t.Fatal(err)
+				}
+				cfg.Enabled = true
+			}
+			cycle, err := tracker.Observe(now, cfg, system, true)
+			if err != nil || !cycle.Partial || cycle.RXBytes != 0 {
+				t.Fatalf("discontinuity was treated as complete: %+v %v", cycle, err)
+			}
+		})
 	}
 }

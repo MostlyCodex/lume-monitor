@@ -49,6 +49,7 @@ jobs:
           sh ../deploy/test-upgrade-retention.sh
           sh ../deploy/test-agent-upgrade.sh
           sh ../deploy/test-agent-audit.sh
+          sh ../deploy/test-agent-uninstall.sh
           go test ./...
           go vet ./...
       - name: Install development toolchain

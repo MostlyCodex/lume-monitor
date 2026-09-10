@@ -23,6 +23,7 @@ function harness() {
   const privateDir = join("memory", ".lume"), statePath = join(privateDir, "state.json");
   const config = (id) => ({node:{id},endpoint:"https://monitor.example/api/v1/report",secret:`${id}-`.repeat(16),services:[],probes:[],nftables_counters:[]});
   const alpha = config("alpha"), beta = config("beta");
+  alpha.node.short_mark="OLD";
   beta.probes = [{name:"to-alpha",kind:"icmp",target_node_id:"alpha",target:"alpha.example"},{name:"reference",kind:"icmp",target:"reference.example"}];
   const files = new Map([[join(privateDir,"nodes","alpha","config.json"),JSON.stringify(alpha)],[join(privateDir,"nodes","beta","config.json"),JSON.stringify(beta)]]);
   let saved = {workerUrl:"https://monitor.example",nodeKeys:{alpha:alpha.secret,beta:beta.secret},nodes:{alpha:{sshTarget:"ssh-alpha",installed:true},beta:{sshTarget:"ssh-beta",installed:true}},revokedNodeIds:[]};
@@ -108,6 +109,9 @@ test("a failed restore retains its new key and can retry without double rotation
   await h.remove();
   h.failures.deploy="alpha";
   await assert.rejects(h.restore(),/SSH unavailable/);
+  const stored=JSON.parse(h.files.get(join(h.privateDir,"nodes","alpha","config.json")));
+  assert.equal(Object.hasOwn(stored.node,"short_mark"),false);
+  assert.equal(Object.hasOwn(stored,"nftables_counters"),false);
   const pendingKey=h.state.nodeKeys.alpha;
   assert.equal(h.state.nodes.alpha.pendingRestore,true);
   await h.restore();
@@ -157,9 +161,13 @@ async function adoptHarness({wrongKey=false, changedDuringInput=false, missingIn
         workerUpdated=true;
       }
     },
+    deployWorker:async(state)=>{
+      await context.applyDatabaseMigrations(state);
+      await context.wrangler(["deploy","--keep-vars"]);
+    },
     readNodeConfiguration:async()=>{
       calls.push("read-config");
-      return {target:"ssh-alpha",config:{node:{id:"alpha"},secret:wrongKey?"wrong-".repeat(12):secret,endpoint:"https://monitor.example/api/v1/report",services:[],probes:[]}};
+      return {target:"ssh-alpha",config:{node:{id:"alpha",short_mark:"OLD"},nftables_counters:[],secret:wrongKey?"wrong-".repeat(12):secret,endpoint:"https://monitor.example/api/v1/report",services:[],probes:[]}};
     },
     getServerInventory:async()=>changedDuringInput?{keys:[],revoked_node_ids:[]}:inventory,
     writePrivateJson:async(path,value)=>writes.push({path,value:structuredClone(value)}),
@@ -175,6 +183,10 @@ test("adoption migrates an existing Worker database before reading its nodes and
   await h.run();
   const state=h.writes.find((entry)=>entry.path==="state.json").value;
   assert.equal(state.nodeKeys.alpha,h.secret);
+  const stored=h.writes.find(entry=>entry.path.endsWith("config.json")).value;
+  assert.equal(Object.hasOwn(stored.node,"short_mark"),false);
+  assert.equal(Object.hasOwn(stored,"nftables_counters"),false);
+  assert.equal(stored.secret,h.secret);
   assert.equal(state.databaseId,"existing-d1");
   assert.equal(state.nodes.alpha.sshTarget,"ssh-alpha");
   assert.deepEqual(h.calls,["login","migrate","read-nodes","read-config"]);
@@ -232,7 +244,7 @@ test("deployment upgrades missing acknowledgement or node metadata capabilities 
    line:()=>{},fail:message=>{throw Error(message);},wranglerConfigPath:"memory/wrangler.jsonc",
    adminFetch:async()=>({ok:initialStatus===200,status:initialStatus,body:{nodes:[],capabilities:updated?{config_fingerprint:1,node_metadata:2}:capabilities}}),
    ensureCloudflareLogin:async()=>calls.push("login"),applyDatabaseMigrations:async()=>calls.push("migrate"),readVersion:async()=>"1.0.0",
-   wrangler:async args=>{assert.equal(args[0],"deploy");assert.ok(args.includes("--keep-vars"));calls.push("update-worker");updated=true;},
+   deployWorker:async()=>{calls.push("migrate","update-worker");updated=true;},
   });
   new vm.Script(procedure("ensureConfigurationReporting")).runInContext(context);
   if(initialStatus===401){await assert.rejects(context.ensureConfigurationReporting({}),/401/);assert.deepEqual(calls,[]);}

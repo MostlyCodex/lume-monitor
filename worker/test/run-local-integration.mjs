@@ -1,3 +1,4 @@
+import { contractIdentity, testSchemaTransitions } from "./schema-upgrade-integration.mjs";
 import { testPermanentDeletion } from "./node-deletion-integration.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -77,7 +78,7 @@ async function stopWorker(child) {
 function query(config, persistence, sql, all = false) {
   const raw = runWrangler([
     "d1", "execute", "DB", "--local", "--config", config,
-    "--persist-to", persistence, "--command", sql, "--json",
+    "--persist-to", persistence, `--command=${sql}`, "--json",
   ], true);
   const results = JSON.parse(raw);
   return all ? results : results[0]?.results ?? [];
@@ -137,6 +138,11 @@ function testProductionUpgrade(root) {
   if (Number(invalidKinds[0]?.count) !== 0) {
     throw new Error(`obsolete probe kinds survived the upgrade: ${JSON.stringify(invalidKinds)}`);
   }
+  // Pre-deployment migrations must still accept the old Worker's reads and writes.
+  query(config, persistence, "UPDATE node_catalog SET short_mark='OLD' WHERE node_id='legacy-fixture'");
+  const legacyMark=query(config, persistence, "SELECT short_mark FROM node_catalog WHERE node_id='legacy-fixture'");
+  if (legacyMark[0]?.short_mark !== "OLD") throw new Error("legacy Worker schema broken before deployment");
+  contractIdentity(sql=>query(config,persistence,sql),true);
   const columns=query(config,persistence,"PRAGMA table_info(node_catalog)").map(column=>column.name);
   if (columns.includes("short_mark")) throw new Error("obsolete node column survived upgrade");
   const indexes=query(config,persistence,"SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='node_catalog'").map(row=>row.name);
@@ -188,6 +194,7 @@ async function testFreshDatabase(root) {
       throw new Error(`HTTP integration failed\n${result.stdout}\n${result.stderr}\n${output.join("")}`);
     }
     process.stdout.write(result.stdout);
+    await testSchemaTransitions({baseUrl,query:(sql,all)=>query(config,persistence,sql,all)});
     await testPermanentDeletion({baseUrl,query:(sql,all)=>query(config,persistence,sql,all)});
   } finally {
     await stopWorker(child);

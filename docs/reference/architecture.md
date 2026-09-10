@@ -83,7 +83,7 @@ Display settings stay in browser storage, with separate keys for production and 
 
 The communication contract supports `icmp` and `tcp`. Optional collectors must remain configuration-driven, default off, preserve the required host report and use the same generic Agent binary.
 
-Migrations apply schema changes in order while preserving existing data. Applied migration files are immutable; further schema changes use new migrations. The current `probe_catalog` schema enforces `CHECK (kind IN ('icmp', 'tcp'))`.
+Deployments apply compatible migrations first, deploy and verify the new Worker, then run destructive cleanup from the matching `*-contract/` directory. The new report writer supports both schemas during this transition. Cleanup inspects actual columns as well as preserving migration markers, so retrying after a rollback remains safe. `worker:rollback` prepares legacy schema before switching Worker code; Agent compatibility remains version-specific. Published SQL contents and migration names are immutable. The current `probe_catalog` schema enforces `CHECK (kind IN ('icmp', 'tcp'))`.
 
 Examples:
 

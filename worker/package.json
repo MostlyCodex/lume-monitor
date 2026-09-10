@@ -1,6 +1,6 @@
 {
   "name": "lume-worker",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "type": "module",
   "description": "Cloudflare Worker, Vue 3 dashboard, and deployment tools for Lume.",
@@ -12,7 +12,7 @@
     "node:restore": "node ../tools/lumectl.mjs node restore",
     "doctor": "node ../tools/lumectl.mjs doctor",
     "setup": "node ../tools/lumectl.mjs setup",
-    "deploy": "npm run build:frontend && wrangler deploy",
+    "deploy": "node ../tools/lumectl.mjs worker deploy",
     "dev": "npm run build:frontend && wrangler dev",
     "db:local": "wrangler d1 migrations apply lume --local",
     "monitor:status": "node ../tools/lumectl.mjs status",
@@ -31,7 +31,8 @@
     "test:ci": "npm run check && node test/run-local-integration.mjs && playwright test",
     "build:frontend": "node ../tools/build-frontend.mjs",
     "check:frontend": "vue-tsc --noEmit -p frontend/tsconfig.json",
-    "dev:frontend": "vite --config frontend/vite.config.mjs"
+    "dev:frontend": "vite --config frontend/vite.config.mjs",
+    "worker:rollback": "node ../tools/lumectl.mjs worker rollback"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "6.0.8",

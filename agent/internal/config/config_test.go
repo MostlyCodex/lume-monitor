@@ -236,3 +236,44 @@ func TestFingerprintAcknowledgesTheExactLoadedFile(t *testing.T) {
 		t.Fatal("trailing configuration data was accepted")
 	}
 }
+
+func TestDecodeUpgradeDiscardsOnlyRetiredFields(t *testing.T) {
+	original := baseConfig()
+	original.Probes = []Probe{{Name: "reference", Kind: "icmp", Target: "192.0.2.1"}}
+	raw, _ := json.Marshal(original)
+	var document map[string]any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	document["nftables_counters"] = []any{map[string]any{"name": "old-rule"}}
+	node := document["node"].(map[string]any)
+	node["short_mark"] = "OLD"
+	raw, _ = json.Marshal(document)
+	cfg, err := decode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Node.ID != original.Node.ID || cfg.Secret != original.Secret || len(cfg.Probes) != 1 {
+		t.Fatal("current configuration changed")
+	}
+	if cfg.Fingerprint != fmt.Sprintf("%x", sha256.Sum256(raw)) {
+		t.Fatal("fingerprint must identify the actual input file")
+	}
+	clean, _ := json.Marshal(cfg)
+	var result map[string]any
+	json.Unmarshal(clean, &result)
+	if _, found := result["nftables_counters"]; found {
+		t.Fatal("retired counters were serialized")
+	}
+	if _, found := result["node"].(map[string]any)["short_mark"]; found {
+		t.Fatal("retired node metadata was serialized")
+	}
+	for _, scope := range []map[string]any{document, node} {
+		scope["unexpected_option"] = true
+		invalid, _ := json.Marshal(document)
+		if _, err := decode(invalid); err == nil {
+			t.Fatal("unrecognized fields must still fail")
+		}
+		delete(scope, "unexpected_option")
+	}
+}
