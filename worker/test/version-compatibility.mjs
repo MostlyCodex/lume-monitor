@@ -155,7 +155,7 @@ export async function testVersionCompatibility() {
     // Before cleanup: old code must still work during compatible DB updates.
     await switchWorker(sources[0]);
     await submit(sources[0]);
-    await submit(sources.at(-1), 400);
+    await submit(sources.at(-1), 422);
     await switchWorker(sources.at(-1));
     for (const source of sources) await submit(source);
     await cleanDatabase({ query: runtime.query });
@@ -178,7 +178,7 @@ export async function testVersionCompatibility() {
     );
     await switchWorker(sources[0]);
     await submit(sources[0]);
-    await submit(sources.at(-1), 400);
+    await submit(sources.at(-1), 422);
     console.log("legacy_worker_protocol_counterexample_ok=true");
   } finally {
     await runtime.close();
