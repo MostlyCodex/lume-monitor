@@ -91,3 +91,16 @@ test("failed remote operations still retrieve their actual changes without maski
     assert.deepEqual(events,["read-report",retrievalFails?"unavailable":"recorded"]);
   }
 });
+
+test("permanent deletion reports directory and account entry removal using metadata only", () => {
+  const changes=parseRemoteChanges(report([
+    "pruned\t/var/lib/vpsmon\tdirectory\t-\t-",
+    "entries\t/etc/shadow\ttext\t23\t-",
+    "removed\t/var/lib/vpsmon/traffic.json\ttext\t1-8\t-",
+  ]));
+  assert.deepEqual(changes.map(formatRemoteChange),[
+    "  清理  /var/lib/vpsmon（目录）",
+    "  账号条目  /etc/shadow（删除原行 23）",
+    "  删除  /var/lib/vpsmon/traffic.json（原行 1-8）",
+  ]);
+});

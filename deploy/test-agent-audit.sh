@@ -37,6 +37,9 @@ for scenario in install modify attributes unchanged rollback partial uninstall s
   FIXTURE="$test_root/$scenario"
   export FIXTURE
   mkdir -p "$FIXTURE/opt/vpsmon" "$FIXTURE/etc/vpsmon" "$FIXTURE/etc/systemd/system/multi-user.target.wants" "$FIXTURE/var/lib/vpsmon"
+  for file in passwd group shadow gshadow subuid subgid; do
+    printf 'root:fixture\nvpsmon:fixture-secret-account\n' > "$FIXTURE/etc/$file"
+  done
   if [ "$scenario" != install ]; then
     printf 'a\nfixture-secret-old\nc\nkeep\ne\n' > "$FIXTURE/etc/vpsmon/config.json"
     printf '[Unit]\nDescription=old\n' > "$FIXTURE/etc/systemd/system/vpsmon-agent.service"
@@ -70,9 +73,19 @@ EOF
   cat > "$stage/uninstall-agent.sh" <<'EOF'
 #!/bin/sh
 rm -f "$FIXTURE/etc/vpsmon/config.json" "$FIXTURE/etc/systemd/system/vpsmon-agent.service" "$FIXTURE/opt/vpsmon/vpsmon-agent" "$FIXTURE/etc/systemd/system/multi-user.target.wants/vpsmon-agent.service" "$FIXTURE/active" "$FIXTURE/enabled"
+for file in passwd group shadow gshadow subuid subgid; do
+  sed '/^vpsmon:/d' "$FIXTURE/etc/$file" > "$FIXTURE/etc/$file.new"
+  mv "$FIXTURE/etc/$file.new" "$FIXTURE/etc/$file"
+done
 EOF
   sed -e "s#/opt/vpsmon#$FIXTURE/opt/vpsmon#g" -e "s#/etc/vpsmon#$FIXTURE/etc/vpsmon#g" \
       -e "s#/etc/systemd/system#$FIXTURE/etc/systemd/system#g" -e "s#/var/lib/vpsmon#$FIXTURE/var/lib/vpsmon#g" \
+      -e "s#/etc/passwd#$FIXTURE/etc/passwd#g" \
+      -e "s#/etc/group#$FIXTURE/etc/group#g" \
+      -e "s#/etc/shadow#$FIXTURE/etc/shadow#g" \
+      -e "s#/etc/gshadow#$FIXTURE/etc/gshadow#g" \
+      -e "s#/etc/subuid#$FIXTURE/etc/subuid#g" \
+      -e "s#/etc/subgid#$FIXTURE/etc/subgid#g" \
       "$script_dir/audit-agent.sh" > "$stage/audit-agent.sh"
   native_link=0
   [ ! -L "$FIXTURE/etc/systemd/system/multi-user.target.wants/vpsmon-agent.service" ] || native_link=1
@@ -96,7 +109,11 @@ EOF
       ;;
     attributes) grep -Fx "$(printf 'attributes\t%s/etc/vpsmon/config.json\ttext\t-\t-' "$FIXTURE")" "$report" ;;
     unchanged|rollback) [ "$(wc -l < "$report" | tr -d ' ')" = 2 ] ;;
-    uninstall) grep -Fx "$(printf 'removed\t%s/etc/vpsmon/config.json\ttext\t1-5\t-' "$FIXTURE")" "$report" ;;
+    uninstall) grep -Fx "$(printf 'removed\t%s/etc/vpsmon/config.json\ttext\t1-5\t-' "$FIXTURE")" "$report"
+      for file in passwd group shadow gshadow subuid subgid; do
+        grep -Fx "$(printf 'entries\t%s/etc/%s\ttext\t2\t-' "$FIXTURE" "$file")" "$report"
+      done
+      ;;
     stop)
       if [ "$native_link" = 1 ]; then
         grep -Fx "$(printf 'removed\t%s/etc/systemd/system/multi-user.target.wants/vpsmon-agent.service\tlink\t-\t-' "$FIXTURE")" "$report"
