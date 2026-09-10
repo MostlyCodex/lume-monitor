@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  validateLegacyReport,
   validateReport,
   validateReportEnvelope,
-  type LegacyReportMetadata,
 } from "../src/validation";
 
 function validReport(): Record<string, unknown> {
@@ -68,59 +66,6 @@ function validReport(): Record<string, unknown> {
       },
     ],
     agent: { queue_depth: 0, collect_errors: 0, send_errors: 0, started_at: 1_799_999_000 },
-  };
-}
-
-function legacyMetadata(): LegacyReportMetadata {
-  return {
-    node: {
-      id: "legacy-node",
-      display_name: "Legacy Node",
-      role: "Relay",
-      group: "default",
-      region: "Region 1",
-      stale_seconds: 180,
-      display_order: 10,
-      color: "green",
-      offline_severity: "P1",
-      ip_change_severity: "P2",
-    },
-    services: [{ name: "example.service", label: "Example", severity: "P1" }],
-    probes: [
-      {
-        name: "legacy_link",
-        label: "Legacy link",
-        category: "route",
-        target_node_id: "destination-node",
-        warning_ms: 50,
-        critical_ms: 100,
-        severity: "P2",
-        display_order: 10,
-        primary: true,
-      },
-    ],
-  };
-}
-
-function legacyReport(): Record<string, unknown> {
-  const current = validReport();
-  return {
-    ...current,
-    schema_version: 1,
-    node_id: "legacy-node",
-    role: "legacy",
-    node: undefined,
-    services: [{ name: "example.service", state: "active" }],
-    probes: [
-      {
-        name: "legacy_link",
-        kind: "icmp",
-        target: "example.com",
-        success: true,
-        duration_ms: 20,
-        checked_at: 1_800_000_000,
-      },
-    ],
   };
 }
 
@@ -244,32 +189,9 @@ describe("report validation", () => {
     expect(() => validateReport(report)).toThrow(/cpu_percent/);
   });
 
-  it("authenticates a legacy envelope before catalog normalization", () => {
-    expect(validateReportEnvelope(legacyReport())).toEqual({
-      schema_version: 1,
-      node_id: "legacy-node",
-      generated_at: 1_800_000_000,
-    });
-  });
-
-  it("normalizes a schema v1 report with catalog metadata", () => {
-    const report = validateLegacyReport(legacyReport(), legacyMetadata());
-    expect(report.schema_version).toBe(2);
-    expect(report.node.display_name).toBe("Legacy Node");
-    expect(report.services[0]).toMatchObject({ label: "Example", severity: "P1" });
-    expect(report.probes[0]).toMatchObject({
-      label: "Legacy link",
-      category: "node-link",
-      target_node_id: "destination-node",
-      warning_ms: 50,
-      primary: true,
-    });
-  });
-
-  it("rejects a legacy probe that is absent from the catalog", () => {
-    const metadata = legacyMetadata();
-    metadata.probes = [];
-    expect(() => validateLegacyReport(legacyReport(), metadata)).toThrow(/metadata is missing/);
+  it("rejects unsupported report schemas before storage", () => {
+    for (const schema_version of [1, 3, "2", null])
+      expect(() => validateReportEnvelope({ ...validReport(), schema_version })).toThrow(/schema_version/);
   });
 });
 

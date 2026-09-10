@@ -1,7 +1,6 @@
-import { testDatabaseUpdates } from "./database-updates.mjs";
-import { testVersionCompatibility } from "./version-compatibility.mjs";
+import { testDatabaseInitialization } from "./database-initialization.mjs";
+import { testAgentReport } from "./agent-report-integration.mjs";
 import { prepareDatabase } from "../../tools/database.mjs";
-import { contractIdentity, testSchemaTransitions } from "./schema-upgrade-integration.mjs";
 import { testPermanentDeletion } from "./node-deletion-integration.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -87,75 +86,6 @@ function query(config, persistence, sql, all = false) {
   return all ? results : results[0]?.results ?? [];
 }
 
-async function testProductionUpgrade(root) {
-  const persistence = join(root, "upgrade");
-  const config = "wrangler.upgrade-test.jsonc";
-  runWrangler([
-    "d1", "execute", "DB", "--local", "--config", config, "--persist-to", persistence,
-    "--file", "test/fixtures/v3-before-0006.sql", "--yes",
-  ], true);
-  runWrangler([
-    "d1", "execute", "DB", "--local", "--config", config, "--persist-to", persistence,
-    "--command", "UPDATE node_latest SET report_json=json_object('node',json_object('id','legacy-fixture','display_name','Legacy Fixture','short_mark','OLD'),'keep',42); " +
-      "UPDATE snapshots SET report_json=(SELECT report_json FROM node_latest WHERE node_id='legacy-fixture');", "--yes",
-  ], true);
-  await prepareDatabase({query:sql=>query(config,persistence,sql)});
-  const preserved = query(
-    config,
-    persistence,
-    "SELECT display_name, offline_severity, ip_change_severity, enabled FROM node_catalog WHERE node_id='legacy-fixture'",
-  );
-  if (
-    preserved.length !== 1 ||
-    preserved[0].display_name !== "Legacy Fixture" ||
-    preserved[0].offline_severity !== "P1" ||
-    preserved[0].ip_change_severity !== "P2" ||
-    preserved[0].enabled !== 0
-  ) {
-    throw new Error(`legacy node was not preserved correctly: ${JSON.stringify(preserved)}`);
-  }
-
-  const directory = query(
-    config,
-    persistence,
-    "SELECT catalog.retired_at, latest.received_at FROM node_catalog AS catalog " +
-      "LEFT JOIN node_latest AS latest ON latest.node_id = catalog.node_id WHERE catalog.node_id='legacy-fixture'",
-  );
-  if (directory.length !== 1 || directory[0].retired_at !== null) {
-    throw new Error("upgraded node directory must be readable and preserve the existing node without retiring it");
-  }
-
-  const latest = query(
-    config,
-    persistence,
-    "SELECT last_boot_id, recent_nonces_json FROM node_latest WHERE node_id='legacy-fixture'",
-  );
-  if (latest.length !== 1 || latest[0].last_boot_id !== "legacy-boot-id" || latest[0].recent_nonces_json !== "[]") {
-    throw new Error(`legacy latest state was not preserved correctly: ${JSON.stringify(latest)}`);
-  }
-
-  const invalidKinds = query(config, persistence, "SELECT COUNT(*) AS count FROM probe_catalog WHERE kind NOT IN ('icmp','tcp')");
-  if (Number(invalidKinds[0]?.count) !== 0) {
-    throw new Error(`obsolete probe kinds survived the upgrade: ${JSON.stringify(invalidKinds)}`);
-  }
-  // Pre-deployment migrations must still accept the old Worker's reads and writes.
-  query(config, persistence, "UPDATE node_catalog SET short_mark='OLD' WHERE node_id='legacy-fixture'");
-  const legacyMark=query(config, persistence, "SELECT short_mark FROM node_catalog WHERE node_id='legacy-fixture'");
-  if (legacyMark[0]?.short_mark !== "OLD") throw new Error("legacy Worker schema broken before deployment");
-  await contractIdentity(sql=>query(config,persistence,sql));
-  const columns=query(config,persistence,"PRAGMA table_info(node_catalog)").map(column=>column.name);
-  if (columns.includes("short_mark")) throw new Error("obsolete node column survived upgrade");
-  const indexes=query(config,persistence,"SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='node_catalog'").map(row=>row.name);
-  if (!indexes.includes("idx_node_catalog_order")) throw new Error("catalog index lost during upgrade");
-  for (const table of ["node_latest","snapshots"]) {
-    const rows=query(config,persistence,`SELECT report_json FROM ${table} WHERE node_id='legacy-fixture'`);
-    if (rows.length!==1) throw new Error("historical report lost");
-    const report=JSON.parse(rows[0].report_json);
-    if (report.node.id!=="legacy-fixture" || report.node.display_name!=="Legacy Fixture" || Object.hasOwn(report.node,"short_mark") || report.keep!==42) throw new Error("historical metadata migration failed");
-  }
-  console.log("production_upgrade_ok=true");
-}
-
 async function testFreshDatabase(root) {
   const persistence = join(root, "fresh");
   const config = "wrangler.test.jsonc";
@@ -163,8 +93,8 @@ async function testFreshDatabase(root) {
   runWrangler([
     "d1", "execute", "DB", "--local", "--config", config, "--persist-to", persistence,
     "--command",
-    "INSERT INTO metric_samples_v3 VALUES (1,'expired-fixture',1,'expired-boot',0,0,0,0,0,0,0,0,0,0,NULL,NULL,0,0,0,0,'[]'); " +
-      "INSERT INTO probe_rounds_v3 VALUES (1,'expired-fixture',1,'[]');",
+    "INSERT INTO metric_samples VALUES (1,'expired-fixture',1,'expired-boot',0,0,0,0,0,0,0,0,0,0,NULL,NULL,0,0,0,0); " +
+      "INSERT INTO probe_rounds VALUES (1,'expired-fixture',1,'[]');",
     "--yes",
   ], true);
 
@@ -191,7 +121,6 @@ async function testFreshDatabase(root) {
       throw new Error(`HTTP integration failed\n${result.stdout}\n${result.stderr}\n${output.join("")}`);
     }
     process.stdout.write(result.stdout);
-    await testSchemaTransitions({baseUrl,query:(sql,all)=>query(config,persistence,sql,all)});
     await testPermanentDeletion({baseUrl,query:(sql,all)=>query(config,persistence,sql,all)});
   } catch (error) {
     throw new Error("Worker schema/deletion integration failed\n" + output.join(""), {cause: error});
@@ -203,8 +132,8 @@ async function testFreshDatabase(root) {
     config,
     persistence,
     "SELECT " +
-      "(SELECT COUNT(*) FROM metric_samples_v3 WHERE node_id='expired-fixture') AS metrics, " +
-      "(SELECT COUNT(*) FROM probe_rounds_v3 WHERE node_id='expired-fixture') AS probes",
+      "(SELECT COUNT(*) FROM metric_samples WHERE node_id='expired-fixture') AS metrics, " +
+      "(SELECT COUNT(*) FROM probe_rounds WHERE node_id='expired-fixture') AS probes",
   );
   if (Number(expired[0]?.metrics) !== 0 || Number(expired[0]?.probes) !== 0) {
     throw new Error(`scheduled retention did not remove expired raw rows: ${JSON.stringify(expired)}`);
@@ -228,9 +157,8 @@ function workflowEscape(value) {
 
 async function main() {
   try {
-    await testDatabaseUpdates();
-    await testVersionCompatibility();
-    await testProductionUpgrade(temporaryRoot);
+    await testDatabaseInitialization();
+    await testAgentReport();
     await testFreshDatabase(temporaryRoot);
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 });

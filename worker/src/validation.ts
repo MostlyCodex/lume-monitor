@@ -8,27 +8,9 @@ import type {
 } from "./types";
 
 export interface ReportEnvelope {
-  schema_version: 1 | 2;
+  schema_version: 2;
   node_id: string;
   generated_at: number;
-}
-
-export interface LegacyReportMetadata {
-  node: NodeMetadata;
-  services: Array<{ name: string; label: string; severity: Severity }>;
-  probes: Array<{
-    name: string;
-    label: string;
-    category: string;
-    target_node_id?: string;
-    warning_ms: number;
-    critical_ms: number;
-    warning_failure_percent?: number;
-    critical_failure_percent?: number;
-    severity: Severity;
-    display_order: number;
-    primary: boolean;
-  }>;
 }
 
 const NODE_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
@@ -296,73 +278,11 @@ function probes(value: unknown): ProbeResult[] {
 
 export function validateReportEnvelope(value: unknown): ReportEnvelope {
   const v = record(value, "report");
-  if (v.schema_version !== 1 && v.schema_version !== 2) throw new Error("unsupported schema_version");
+  if (v.schema_version !== 2) throw new Error("unsupported schema_version");
   return {
     schema_version: v.schema_version,
     node_id: patternValue(v.node_id, "node_id", NODE_ID, 32),
     generated_at: integerValue(v.generated_at, "generated_at", 1),
-  };
-}
-
-export function validateLegacyReport(value: unknown, metadata: LegacyReportMetadata): AgentReport {
-  const v = record(value, "report");
-  const envelope = validateReportEnvelope(v);
-  if (envelope.schema_version !== 1) throw new Error("legacy report must use schema_version 1");
-  const node = nodeMetadata(metadata.node, envelope.node_id);
-  const serviceMetadata = new Map(metadata.services.map((entry) => [entry.name, entry]));
-  const probeMetadata = new Map(metadata.probes.map((entry) => [entry.name, entry]));
-  if (!Array.isArray(v.services) || v.services.length > 16) throw new Error("services must be an array up to 16 entries");
-  if (!Array.isArray(v.probes) || v.probes.length > 32) throw new Error("probes must be an array up to 32 entries");
-
-  const legacyServices = v.services.map((entry, index) => {
-    const item = record(entry, `services[${index}]`);
-    const name = patternValue(item.name, `services[${index}].name`, SERVICE_NAME, 80);
-    const meta = serviceMetadata.get(name);
-    return {
-      name,
-      label: stringValue(meta?.label ?? name, `services[${index}].label`, 80),
-      severity: severityValue(meta?.severity ?? "P1", `services[${index}].severity`),
-      state: stringValue(item.state, `services[${index}].state`, 32),
-    };
-  });
-
-  const enrichedProbes = v.probes.map((entry, index) => {
-    const item = record(entry, `probes[${index}]`);
-    const name = patternValue(item.name, `probes[${index}].name`, PROBE_NAME, 80);
-    const meta = probeMetadata.get(name);
-    if (!meta) throw new Error(`legacy probe metadata is missing for ${name}`);
-    return {
-      ...item,
-      name,
-      label: meta.label,
-      category: meta.target_node_id ? "node-link" : meta.category,
-      target_node_id: meta.target_node_id,
-      warning_ms: meta.warning_ms,
-      critical_ms: meta.critical_ms,
-      warning_failure_percent: meta.warning_failure_percent,
-      critical_failure_percent: meta.critical_failure_percent,
-      severity: meta.severity,
-      display_order: meta.display_order,
-      primary: meta.primary,
-    };
-  });
-  const agent = record(v.agent, "agent");
-
-  return {
-    schema_version: 2,
-    agent_version: stringValue(v.agent_version, "agent_version", 64),
-    node_id: envelope.node_id,
-    node,
-    generated_at: envelope.generated_at,
-    system: systemMetrics(v.system),
-    services: legacyServices,
-    probes: probes(enrichedProbes),
-    agent: {
-      queue_depth: integerValue(agent.queue_depth, "agent.queue_depth", 0, 10000),
-      collect_errors: integerValue(agent.collect_errors, "agent.collect_errors"),
-      send_errors: integerValue(agent.send_errors, "agent.send_errors"),
-      started_at: integerValue(agent.started_at, "agent.started_at", 1),
-    },
   };
 }
 

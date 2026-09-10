@@ -197,48 +197,16 @@ const repeatedProbeAccepted = await fetch(
 );
 assert(repeatedProbeAccepted.status === 202, `repeated probe report returned ${repeatedProbeAccepted.status}`);
 
-const legacyReport = structuredClone(rateReport);
-legacyReport.schema_version = 1;
-legacyReport.role = "legacy";
-delete legacyReport.node;
-legacyReport.generated_at += 60;
-legacyReport.system.network_rx_bytes += 6_000;
-legacyReport.system.network_tx_bytes += 12_000;
-legacyReport.services = legacyReport.services.map(({ name, state }) => ({ name, state }));
-legacyReport.probes = legacyReport.probes.map((probe) => {
-  const {
-    name,
-    kind,
-    target,
-    success,
-    duration_ms,
-    min_duration_ms,
-    max_duration_ms,
-    jitter_ms,
-    samples,
-    successful_samples,
-    remote_ip,
-  } = probe;
-  return {
-    name,
-    kind,
-    target,
-    success,
-    duration_ms,
-    min_duration_ms,
-    max_duration_ms,
-    jitter_ms,
-    samples,
-    successful_samples,
-    remote_ip,
-    checked_at: legacyReport.generated_at,
-  };
-});
-const legacyAccepted = await fetch(
-  `${base}/api/v1/report`,
-  signedRequest(JSON.stringify(legacyReport)),
-);
-assert(legacyAccepted.status === 202, `schema v1 compatibility returned ${legacyAccepted.status}: ${await legacyAccepted.text()}`);
+const nextReport = structuredClone(rateReport);
+nextReport.generated_at += 60;
+nextReport.system.network_rx_bytes += 6_000;
+nextReport.system.network_tx_bytes += 12_000;
+nextReport.probes.forEach(probe => { probe.checked_at += 60; });
+const nextAccepted = await fetch(`${base}/api/v1/report`, signedRequest(JSON.stringify(nextReport)));
+assert(nextAccepted.status === 202, "the next sample was not accepted");
+const unsupportedReport = { ...nextReport, schema_version: 1 };
+const unsupported = await fetch(`${base}/api/v1/report`, signedRequest(JSON.stringify(unsupportedReport)));
+assert(unsupported.status === 422, "unsupported report schema must be rejected");
 
 const optionalReport = structuredClone(rateReport);
 optionalReport.generated_at += 120;

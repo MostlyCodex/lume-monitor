@@ -1,23 +1,18 @@
-// Kept in step with the real Worker/Agent matrix in worker/test/version-compatibility.mjs.
-// A version label identifies a tested upstream contract, not arbitrary modified code.
-export const rollbackVersions = ["1.0.1", "1.0.2", "1.0.3"];
+import { DATABASE_SCHEMA } from "./database.mjs";
+
 export function workerVersion(metadata) {
   return metadata?.resources?.bindings?.find(
     (binding) =>
       binding.type === "plain_text" && binding.name === "APP_VERSION",
   )?.text;
 }
-export function assertRollbackVersion(version, columns) {
-  if (!rollbackVersions.includes(version))
-    throw Error(
-      "该 Worker 版本不在已验证的回滚范围（" +
-        rollbackVersions.join(" / ") +
-        "）；未改动代码或数据库。v1.0.0 不接受当前 Agent 的上报格式。",
-    );
-  if (version === "1.0.1" && columns.includes("short_mark"))
-    throw Error(
-      "数据库仍处于升级过渡状态；请先完成正常部署，再回滚到 v1.0.1。",
-    );
+export function assertRollbackVersion(metadata) {
+  const schema = metadata?.resources?.bindings?.find(
+    (binding) =>
+      binding.type === "plain_text" && binding.name === "DATABASE_SCHEMA",
+  )?.text;
+  if (!workerVersion(metadata) || schema !== DATABASE_SCHEMA)
+    throw Error("该 Worker 的数据库结构标识与当前版本不一致，未执行回滚。");
 }
 export function currentWorkerVersion(deployments) {
   const latest = [...deployments]
@@ -48,6 +43,7 @@ export async function waitForLiveReports({
       const { health, dashboard, inventory } = await read();
       if (
         health.ok &&
+        health.database_schema === DATABASE_SCHEMA &&
         health.version === version &&
         dashboard.app_version === version &&
         Array.isArray(dashboard.nodes) &&

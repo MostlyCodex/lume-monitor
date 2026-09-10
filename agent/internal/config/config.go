@@ -147,28 +147,18 @@ func Load(path string) (Config, error) {
 	return decode(raw)
 }
 
-// decode is the only upgrade boundary; retired fields never enter Config.
+// Decode strictly so misspelled monitoring settings cannot be silently ignored.
 func decode(raw []byte) (Config, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	// Accept only explicitly retired fields; all other unknown fields remain errors.
-	var document struct {
-		Config
-		Node struct {
-			Node
-			RetiredShortMark json.RawMessage `json:"short_mark"`
-		} `json:"node"`
-		RetiredCounters json.RawMessage `json:"nftables_counters"`
-	}
-	if err := decoder.Decode(&document); err != nil {
+	var cfg Config
+	if err := decoder.Decode(&cfg); err != nil {
 		return Config{}, fmt.Errorf("decode config: %w", err)
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return Config{}, errors.New("config must contain one JSON object")
 	}
-	cfg := document.Config
-	cfg.Node = document.Node.Node
 	cfg.Fingerprint = fmt.Sprintf("%x", sha256.Sum256(raw))
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err

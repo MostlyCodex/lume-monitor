@@ -1,3 +1,4 @@
+import { DATABASE_SCHEMA } from "../database.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import vm from "node:vm";
@@ -10,30 +11,24 @@ import {
   rollbackSafely,
 } from "../worker-rollback.mjs";
 
-test("only verified versions and compatible physical schema can be rolled back", () => {
-  for (const version of [undefined, "1.0.0", "1.0.4", "custom"])
-    assert.throws(() => assertRollbackVersion(version, []), /未改动/);
-  for (const version of ["1.0.1", "1.0.2", "1.0.3"])
-    assertRollbackVersion(version, []);
-  assert.throws(
-    () => assertRollbackVersion("1.0.1", ["short_mark"]),
-    /过渡状态/,
-  );
-  assertRollbackVersion("1.0.2", ["short_mark"]);
-  assert.equal(
-    workerVersion({
-      resources: {
-        bindings: [{ type: "plain_text", name: "APP_VERSION", text: "1.0.2" }],
-      },
-    }),
-    "1.0.2",
-  );
-  assert.equal(
-    workerVersion({
-      resources: { bindings: [{ type: "secret_text", name: "APP_VERSION" }] },
-    }),
+test("rollback requires a version and matching database identity", () => {
+  const metadata = (version, schema) => ({
+    resources: {
+      bindings: [
+        { type: "plain_text", name: "APP_VERSION", text: version },
+        { type: "plain_text", name: "DATABASE_SCHEMA", text: schema },
+      ],
+    },
+  });
+  assertRollbackVersion(metadata("1.1.0", DATABASE_SCHEMA));
+  for (const candidate of [
     undefined,
-  );
+    metadata(undefined, DATABASE_SCHEMA),
+    metadata("1.1.0", undefined),
+    metadata("1.1.0", "different"),
+  ])
+    assert.throws(() => assertRollbackVersion(candidate), /未执行回滚/);
+  assert.equal(workerVersion(metadata("1.1.0", DATABASE_SCHEMA)), "1.1.0");
 });
 
 test("the active deployment is selected by timestamp and split traffic is rejected", () => {
@@ -55,9 +50,9 @@ test("the active deployment is selected by timestamp and split traffic is reject
 });
 
 const sample = () => ({
-  health: { ok: true, version: "1.0.2" },
+  health: { ok: true, version: "1.1.0", database_schema: DATABASE_SCHEMA },
   dashboard: {
-    app_version: "1.0.2",
+    app_version: "1.1.0",
     nodes: [{ id: "public-a", online: true, reported_at: 102 }],
   },
   inventory: {
@@ -79,7 +74,7 @@ async function wait(read, selected = targets) {
   return waitForLiveReports({
     read,
     targets: selected,
-    version: "1.0.2",
+    version: "1.1.0",
     since: 100,
     now: () => time,
     sleep: async (ms) => {
@@ -176,7 +171,7 @@ test("failed rollback restores and verifies the original version, without claimi
   }
 });
 
-test("management rejects a legacy Worker before DDL, deployment or confirmation", async () => {
+test("management rejects a mismatched Worker before deployment or confirmation", async () => {
   const source = await readFile(
     new URL("../lumectl.mjs", import.meta.url),
     "utf8",
@@ -209,10 +204,8 @@ test("management rejects a legacy Worker before DDL, deployment or confirmation"
         }),
       };
     },
-    databaseQuery: async (_state, sql) => {
-      assert.match(sql, /^PRAGMA/);
+    prepareWorkerDatabase: async () => {
       calls.push("read-schema");
-      return [];
     },
     fail: (message) => {
       throw Error(message);
@@ -229,7 +222,7 @@ test("management rejects a legacy Worker before DDL, deployment or confirmation"
       "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
       new Map(),
     ),
-    /上报格式/,
+    /结构标识/,
   );
-  assert.deepEqual(calls, ["versions view", "read-schema"]);
+  assert.deepEqual(calls, ["versions view"]);
 });

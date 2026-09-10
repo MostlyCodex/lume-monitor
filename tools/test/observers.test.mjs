@@ -161,13 +161,12 @@ function procedure(name) {
   return next<0?remaining:remaining.slice(0,next+1);
 }
 
-function configurationHarness({pending=false, configured=false, failDeploy=false, legacy=false}={}) {
+function configurationHarness({pending=false, configured=false, failDeploy=false}={}) {
   const privateDir=join("memory",".lume"), statePath=join(privateDir,"state.json");
   const configPath=join(privateDir,"nodes","beta","config.json");
   const sourcePath=join(privateDir,"nodes","alpha","config.json");
   let state={nodes:{alpha:{sshTarget:"alpha"},beta:{sshTarget:"beta",pendingApply:pending}},nodeKeys:{beta:"beta-secret"}};
-  const counters=[{name:"hits",label:"Rule hits",family:"inet",table:"filter",chain:"input",protocol:"tcp",destination_port:443}];
-  const config={node:{id:"beta"},secret:"beta-secret",services:[{name:"nginx.service"}],probes:configured?structuredClone(carriers):[],...(legacy?{nftables_counters:counters}:{})};
+  const config={node:{id:"beta"},secret:"beta-secret",services:[{name:"nginx.service"}],probes:configured?structuredClone(carriers):[]};
   const files=new Map([[configPath,JSON.stringify(config)],[sourcePath,JSON.stringify({node:{id:"alpha"},secret:"source-secret",probes:carriers})]]);
   const writes=[],deployments=[],lines=[];
   const context=vm.createContext({
@@ -181,7 +180,7 @@ function configurationHarness({pending=false, configured=false, failDeploy=false
     applyNodes:async(_prompt,ids)=>{deployments.push(...ids);if(failDeploy)throw Error("sudo password required");state.nodes.beta.pendingApply=false;},
   });
   new vm.Script(["probeTargetNodes","availableProbeSources","configureNodeObservers"].map(procedure).join("\n")).runInContext(context);
-  return {files,writes,deployments,lines,configPath,counters,get state(){return state;},run:(prompt)=>context.configureNodeObservers(prompt,"beta")};
+  return {files,writes,deployments,lines,configPath,get state(){return state;},run:(prompt)=>context.configureNodeObservers(prompt,"beta")};
 }
 
 test("new-node wizard collects probes, previews them and installs from the same command",async()=>{
@@ -222,13 +221,12 @@ const reuseSteps=(save=true,deploy=true)=>[
   ["yes",false,/流量/],["yes",save,/保存/],...(save?[["yes",deploy,/部署/]]:[]),
 ];
 
-test("configuration wizard reuses three carriers, preserves services, removes retired settings, previews and deploys", async()=>{
-  const h=configurationHarness({legacy:true});
+test("configuration wizard reuses three carriers, preserves services, previews and deploys", async()=>{
+  const h=configurationHarness({});
   const prompt=scriptedPrompt(reuseSteps());
   await h.run(prompt);
   const saved=JSON.parse(h.files.get(h.configPath));
   assert.deepEqual(saved.probes,carriers);
-  assert.equal(Object.hasOwn(saved,"nftables_counters"),false);
   assert.deepEqual(saved.services,[{name:"nginx.service"}]);
   assert.equal(saved.secret,"beta-secret");
   assert.deepEqual(h.deployments,["beta"]);
@@ -296,7 +294,7 @@ test("cancelling or skipping a replacement retains existing probes; explicit del
 });
 
 test("cancelling a node configuration before preview saves nothing", async () => {
-  const h = configurationHarness({ legacy:true });
+  const h = configurationHarness({});
   await assert.rejects(h.run(scriptedPrompt([["yes",false],["text","/cancel"]])), PromptCancelled);
   assert.deepEqual(h.writes, []);
   assert.deepEqual(h.deployments, []);

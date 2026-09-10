@@ -47,7 +47,7 @@ export async function testPermanentDeletion({ query, baseUrl }) {
       if (key === "resolution") return sql("hour");
       if (key === "state") return sql("resolved");
       if (key === "kind")
-        return sql(name === "counter_catalog" ? "nftables-rule" : "icmp");
+        return sql("icmp");
       if (key === "unit") return sql("matches");
       if (key === "report_json")
         return sql(JSON.stringify({ node: { id }, probes: [] }));
@@ -91,10 +91,7 @@ export async function testPermanentDeletion({ query, baseUrl }) {
     }),
   );
   const probeTables = [
-    "probe_samples_v2",
-    "probe_sample_dedup",
     "probe_series_rollups",
-    "probe_rollups",
   ];
   for (const name of probeTables)
     statements.push(insert(name, { node_id: peer, probe_name: probe }));
@@ -113,7 +110,7 @@ export async function testPermanentDeletion({ query, baseUrl }) {
     }),
   );
   statements.push(
-    insert("probe_rounds_v3", {
+    insert("probe_rounds", {
       node_id: peer,
       round_at: marker,
       probes_json: JSON.stringify([[probe], ["kept-probe"]]),
@@ -124,19 +121,6 @@ export async function testPermanentDeletion({ query, baseUrl }) {
       source_node_id: peer,
       target_node_id: id,
       probe_name: probe,
-    }),
-  );
-  statements.push(
-    insert("alert_events", {
-      node_id: peer,
-      details_json: JSON.stringify({ probe_name: probe }),
-    }),
-  );
-  statements.push(
-    insert("alerts", {
-      alert_key: "purge-peer-alert",
-      node_id: peer,
-      details_json: JSON.stringify({ target_node_id: id }),
     }),
   );
   query(statements.join(" "));
@@ -219,26 +203,12 @@ export async function testPermanentDeletion({ query, baseUrl }) {
     probes: [{ name: "kept-probe", target: "example.com" }],
   });
   const packed = query(
-    "SELECT probes_json FROM probe_rounds_v3 WHERE node_id=" +
+    "SELECT probes_json FROM probe_rounds WHERE node_id=" +
       sql(peer) +
       " AND round_at=" +
       marker,
   )[0];
   assert.deepEqual(JSON.parse(packed.probes_json), [["kept-probe"]]);
-  assert.equal(
-    query(
-      "SELECT COUNT(*) AS n FROM alerts WHERE alert_key='purge-peer-alert'",
-    )[0].n,
-    0,
-  );
-  assert.equal(
-    query(
-      "SELECT COUNT(*) AS n FROM alert_events WHERE node_id=" +
-        sql(peer) +
-        " AND details_json LIKE '%purge-link%'",
-    )[0].n,
-    0,
-  );
   assert.equal(
     query(
       "SELECT COUNT(*) AS n FROM business_routes WHERE source_node_id=" +
@@ -250,7 +220,7 @@ export async function testPermanentDeletion({ query, baseUrl }) {
   );
   assert.equal(
     query(
-      "SELECT COUNT(*) AS n FROM metric_samples_v3 WHERE node_id=" + sql(peer),
+      "SELECT COUNT(*) AS n FROM metric_samples WHERE node_id=" + sql(peer),
     )[0].n > 0,
     true,
   );

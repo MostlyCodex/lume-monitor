@@ -2,7 +2,7 @@
 
 轻量、自托管的 Linux VPS 监控：资源状态、线路质量和历史图表，一个面板看清。
 
-源码 v1.0.3 · [在线体验](https://mostlycodex.github.io/lume-monitor/) · [部署与管理](docs/guide.md) · [参与开发](CONTRIBUTING.md)
+源码 v1.1.0 · [在线体验](https://mostlycodex.github.io/lume-monitor/) · [部署与管理](docs/guide.md) · [参与开发](CONTRIBUTING.md)
 
 演示网页使用虚构数据，无需登录，可体验节点详情、图表、深浅主题和自定义背景。
 
@@ -63,14 +63,10 @@ lume-monitor/
 │   │   │   └── demo/           # 虚构数据源
 │   │   └── static/             # 默认背景与第三方许可
 │   ├── public/                 # 安全响应头及自动生成的面板、演示资源
-│   ├── database/               # 数据库初始化、升级与部署后清理
-│   │   ├── initialize.sql      # 新库初始化
-│   │   ├── upgrade-v3.sql      # 早期数据库的一次性升级
-│   │   ├── updates/            # 所有部署共用的后续结构更新
-│   │   └── cleanup/            # 新 Worker 确认生效后的结构清理
+│   ├── database/               # 当前数据库结构
+│   │   └── schema.sql          # 一次创建全部表、索引和基础设置
 │   └── test/                   # 单元测试、集成测试与本地预览服务
-│       ├── browser/            # 浏览器交互与响应式界面测试
-│       └── fixtures/           # 数据库升级测试数据
+│       └── browser/            # 浏览器交互与响应式界面测试
 ├── tools/                      # 交互式管理工具与演示页构建器
 │   └── test/                   # 管理流程、输入校验与构建测试
 ├── deploy/                     # Agent 安装、升级、卸载脚本及配置示例

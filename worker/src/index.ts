@@ -1,4 +1,4 @@
-import { nodeCatalogStatement, writeReportBatch } from "./node-schema";
+import { nodeCatalogStatement } from "./node-catalog";
 import { NodeDeletionConflict, nodeDeletionSummary, permanentlyDeleteNode } from "./node-deletion";
 import { canonicalMessage, constantTimeEqual, hmacHex, parseNodeKeys, parseRevokedNodeIds } from "./auth";
 import { loadDashboardCatalog } from "./catalog";
@@ -29,7 +29,7 @@ import {
   type TelegramUpdate,
 } from "./telegram";
 import { formatTelegramStatusMessage, type TelegramStatusNodeRow } from "./telegram-status";
-import { recordDashboardOrigin, resolveDashboardBaseUrl } from "./settings";
+import { getSetting, recordDashboardOrigin, resolveDashboardBaseUrl } from "./settings";
 import type {
   AgentReport,
   Env,
@@ -38,10 +38,8 @@ import type {
   SourceIdentity,
 } from "./types";
 import {
-  validateLegacyReport,
   validateReport,
   validateReportEnvelope,
-  type LegacyReportMetadata,
   type ReportEnvelope,
 } from "./validation";
 
@@ -165,108 +163,6 @@ async function authenticateReport(
     return json({ error: "invalid signature" }, 401);
   }
   return { nonce };
-}
-
-async function loadLegacyReportMetadata(
-  env: Env,
-  nodeId: string,
-): Promise<LegacyReportMetadata | null> {
-  const node = await env.DB.prepare(
-    "SELECT node_id, display_name, role_label, group_name, region_label, stale_seconds, " +
-      "display_order, color_key, offline_severity, ip_change_severity FROM node_catalog " +
-      "WHERE node_id = ? AND enabled = 1",
-  )
-    .bind(nodeId)
-    .first<{
-      node_id: string;
-      display_name: string;
-      role_label: string;
-      group_name: string;
-      region_label: string;
-      stale_seconds: number;
-      display_order: number;
-      color_key: string;
-      offline_severity: Severity;
-      ip_change_severity: Severity;
-    }>();
-  if (!node) return null;
-  const [services, probes] = await Promise.all([
-    env.DB.prepare(
-      "SELECT service_name AS name, display_name AS label, severity FROM service_catalog " +
-        "WHERE node_id = ? AND enabled = 1 ORDER BY display_order, service_name",
-    )
-      .bind(nodeId)
-      .all<{ name: string; label: string; severity: Severity }>(),
-    env.DB.prepare(
-      "SELECT probe_name AS name, display_name AS label, category, target_node_id, " +
-        "COALESCE(warning_ms, 0) AS warning_ms, COALESCE(critical_ms, 0) AS critical_ms, " +
-        "warning_failure_percent, critical_failure_percent, severity, " +
-        "display_order, is_primary FROM probe_catalog WHERE node_id = ? AND enabled = 1 " +
-        "ORDER BY display_order, probe_name",
-    )
-      .bind(nodeId)
-      .all<{
-        name: string;
-        label: string;
-        category: string;
-        target_node_id: string | null;
-        warning_ms: number;
-        critical_ms: number;
-        warning_failure_percent: number;
-        critical_failure_percent: number;
-        severity: Severity;
-        display_order: number;
-        is_primary: number;
-      }>(),
-  ]);
-  return {
-    node: {
-      id: node.node_id,
-      display_name: node.display_name,
-      role: node.role_label,
-      group: node.group_name,
-      region: node.region_label,
-      stale_seconds: node.stale_seconds,
-      display_order: node.display_order,
-      color: node.color_key,
-      offline_severity: node.offline_severity,
-      ip_change_severity: node.ip_change_severity,
-    },
-    services: services.results,
-    probes: probes.results.map((probe) => ({
-      name: probe.name,
-      label: probe.label,
-      category: probe.category,
-      target_node_id: probe.target_node_id ?? undefined,
-      warning_ms: probe.warning_ms,
-      critical_ms: probe.critical_ms,
-      warning_failure_percent: probe.warning_failure_percent,
-      critical_failure_percent: probe.critical_failure_percent,
-      severity: probe.severity,
-      display_order: probe.display_order,
-      primary: probe.is_primary === 1,
-    })),
-  };
-}
-
-function metadataFromReport(report: AgentReport): LegacyReportMetadata {
-  return {
-    node: report.node,
-    services: report.services.map(({ name, label, severity }) => ({ name, label, severity })),
-    probes: report.probes.map((probe) => ({
-      name: probe.name,
-      label: probe.label,
-      category: probe.category,
-      target_node_id: probe.target_node_id,
-      warning_ms: probe.warning_ms,
-      critical_ms: probe.critical_ms,
-      warning_failure_percent: probe.warning_failure_percent,
-      critical_failure_percent: probe.critical_failure_percent,
-      severity: probe.severity,
-      display_order: probe.display_order,
-      primary: probe.primary === true,
-    })),
-  };
 }
 
 function catalogStatements(env: Env, report: AgentReport, now: number): D1PreparedStatement[] {
@@ -416,15 +312,8 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
   if (authentication instanceof Response) return authentication;
 
   let report: AgentReport;
-  let legacyMetadata: LegacyReportMetadata | null = null;
   try {
-    if (envelope.schema_version === 2) {
-      report = validateReport(rawReport);
-    } else {
-      legacyMetadata = await loadLegacyReportMetadata(env, envelope.node_id);
-      if (!legacyMetadata) throw new Error("legacy node metadata is unavailable");
-      report = validateLegacyReport(rawReport, legacyMetadata);
-    }
+    report = validateReport(rawReport);
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "invalid report" }, 422);
   }
@@ -459,10 +348,7 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
   try {
     if (prior?.report_json) {
       const previousRaw = JSON.parse(prior.report_json) as unknown;
-      const previousEnvelope = validateReportEnvelope(previousRaw);
-      previousReport = previousEnvelope.schema_version === 2
-        ? validateReport(previousRaw)
-        : validateLegacyReport(previousRaw, legacyMetadata ?? metadataFromReport(report));
+      previousReport = validateReport(previousRaw);
     }
   } catch {
     previousReport = null;
@@ -579,7 +465,7 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
       );
     }
   }
-  await writeReportBatch(env, report, now, statements);
+  await env.DB.batch(statements);
   return json({ ok: true, server_time: now, accepted_node: report.node_id }, 202);
 }
 
@@ -631,19 +517,13 @@ async function telegramCommandMessage(
 async function cleanup(env: Env, now: number): Promise<void> {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM snapshots WHERE received_at < ?").bind(now - 30 * DAY_SECONDS),
-    env.DB.prepare("DELETE FROM metric_rollups WHERE bucket < ?").bind(now - 30 * DAY_SECONDS),
-    env.DB.prepare("DELETE FROM probe_rollups WHERE bucket < ?").bind(now - 30 * DAY_SECONDS),
-    env.DB.prepare("DELETE FROM probe_sample_dedup WHERE ingested_at < ?").bind(now - 30 * DAY_SECONDS),
-    env.DB.prepare("DELETE FROM metric_samples_v2 WHERE received_at < ?").bind(now - 30 * DAY_SECONDS),
-    env.DB.prepare("DELETE FROM probe_samples_v2 WHERE received_at < ?").bind(now - 30 * DAY_SECONDS),
-    env.DB.prepare("DELETE FROM metric_samples_v3 WHERE received_at < ?").bind(now - 30 * DAY_SECONDS),
-    env.DB.prepare("DELETE FROM probe_rounds_v3 WHERE received_at < ?").bind(now - 30 * DAY_SECONDS),
+    env.DB.prepare("DELETE FROM metric_samples WHERE received_at < ?").bind(now - 30 * DAY_SECONDS),
+    env.DB.prepare("DELETE FROM probe_rounds WHERE received_at < ?").bind(now - 30 * DAY_SECONDS),
     env.DB.prepare("DELETE FROM metric_series_rollups WHERE resolution = 'hour' AND bucket < ?").bind(now - 400 * DAY_SECONDS),
     env.DB.prepare("DELETE FROM probe_series_rollups WHERE resolution = 'hour' AND bucket < ?").bind(now - 400 * DAY_SECONDS),
     env.DB.prepare("DELETE FROM metric_series_rollups WHERE resolution = 'day' AND bucket < ?").bind(now - 730 * DAY_SECONDS),
     env.DB.prepare("DELETE FROM probe_series_rollups WHERE resolution = 'day' AND bucket < ?").bind(now - 730 * DAY_SECONDS),
     env.DB.prepare("DELETE FROM observability_events WHERE occurred_at < ?").bind(now - 365 * DAY_SECONDS),
-    env.DB.prepare("DELETE FROM alert_events WHERE created_at < ?").bind(now - 365 * DAY_SECONDS),
     env.DB.prepare("DELETE FROM settings WHERE key LIKE 'telegram_webhook_update:%' AND updated_at < ?").bind(now - DAY_SECONDS),
   ]);
   await cleanupDashboardAuth(env, now);
@@ -841,7 +721,7 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/healthz") {
-      return json({ ok: true, node_identity_schema: 2, version: env.APP_VERSION });
+      return json({ ok: true, database_schema: await getSetting(env, "database_schema"), version: env.APP_VERSION });
     }
     if (request.method === "GET" && url.pathname === "/api/v1/canary") {
       const nonce = (url.searchParams.get("nonce") ?? "").slice(0, 128);

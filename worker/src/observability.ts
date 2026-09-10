@@ -139,7 +139,7 @@ export function metricSampleStatement(
     ? (report.system.swap_used_bytes / report.system.swap_total_bytes) * 100
     : 0;
   return env.DB.prepare(
-    "INSERT OR IGNORE INTO metric_samples_v3(" +
+    "INSERT OR IGNORE INTO metric_samples(" +
       "reported_at, node_id, received_at, boot_id, cpu_percent, memory_used_percent, " +
       "disk_used_percent, inode_used_percent, load1, load5, load15, swap_used_percent, " +
       "network_rx_bytes, network_tx_bytes, network_rx_rate_bps, network_tx_rate_bps, " +
@@ -170,14 +170,11 @@ export function metricSampleStatement(
 }
 
 export function metricSamplesRangeSourceSql(nodeFiltered = false): string {
-  const legacyNodeClause = nodeFiltered ? " AND node_id = ?" : "";
   const currentNodeClause = nodeFiltered ? " AND node_id = ?" : "";
   const columns = "node_id, reported_at, cpu_percent, memory_used_percent, disk_used_percent, " +
     "inode_used_percent, load1, network_rx_rate_bps, network_tx_rate_bps";
   return "(" +
-    "SELECT " + columns + " FROM metric_samples_v2 WHERE reported_at >= ? AND reported_at < ?" + legacyNodeClause +
-    " UNION ALL " +
-    "SELECT " + columns + " FROM metric_samples_v3 WHERE reported_at >= ? AND reported_at < ?" + currentNodeClause +
+    "SELECT " + columns + " FROM metric_samples WHERE reported_at >= ? AND reported_at < ?" + currentNodeClause +
     ")";
 }
 
@@ -187,8 +184,8 @@ export function metricSamplesRangeBindings(
   nodeId: string | null = null,
 ): Array<number | string> {
   return nodeId === null
-    ? [start, end, start, end]
-    : [start, end, nodeId, start, end, nodeId];
+    ? [start, end]
+    : [start, end, nodeId];
 }
 
 export function probeRoundStatement(
@@ -223,7 +220,7 @@ export function probeRoundStatement(
     ];
   });
   return env.DB.prepare(
-    "INSERT OR IGNORE INTO probe_rounds_v3(round_at, node_id, received_at, probes_json) VALUES (?, ?, ?, ?)",
+    "INSERT OR IGNORE INTO probe_rounds(round_at, node_id, received_at, probes_json) VALUES (?, ?, ?, ?)",
   ).bind(
     roundAt,
     nodeId,
@@ -233,14 +230,8 @@ export function probeRoundStatement(
 }
 
 export function probeSamplesRangeSourceSql(nodeFiltered = false): string {
-  const legacyNodeClause = nodeFiltered ? " AND node_id = ?" : "";
   const packedNodeClause = nodeFiltered ? " AND rounds.node_id = ?" : "";
   return "(" +
-    "SELECT node_id, probe_name, checked_at, success, duration_ms, average_duration_ms, p95_duration_ms, " +
-      "min_duration_ms, max_duration_ms, range_ms, jitter_ms, samples, attempted_samples, successful_samples, " +
-      "sample_failure_percent, packet_loss_percent, complete FROM probe_samples_v2 " +
-      "WHERE checked_at >= ? AND checked_at < ?" + legacyNodeClause +
-    " UNION ALL " +
     "SELECT rounds.node_id AS node_id, CAST(json_extract(sample.value, '$[0]') AS TEXT) AS probe_name, " +
       "CAST(json_extract(sample.value, '$[1]') AS INTEGER) AS checked_at, " +
       "CAST(json_extract(sample.value, '$[2]') AS INTEGER) AS success, " +
@@ -257,7 +248,7 @@ export function probeSamplesRangeSourceSql(nodeFiltered = false): string {
       "CAST(json_extract(sample.value, '$[13]') AS REAL) AS sample_failure_percent, " +
       "CAST(json_extract(sample.value, '$[14]') AS REAL) AS packet_loss_percent, " +
       "CAST(json_extract(sample.value, '$[15]') AS INTEGER) AS complete " +
-      "FROM probe_rounds_v3 AS rounds CROSS JOIN json_each(rounds.probes_json) AS sample " +
+      "FROM probe_rounds AS rounds CROSS JOIN json_each(rounds.probes_json) AS sample " +
       "WHERE rounds.round_at >= ? AND rounds.round_at < ?" + packedNodeClause +
     ")";
 }
@@ -268,8 +259,8 @@ export function probeSamplesRangeBindings(
   nodeId: string | null = null,
 ): Array<number | string> {
   return nodeId === null
-    ? [start, end, start, end]
-    : [start, end, nodeId, start, end, nodeId];
+    ? [start, end]
+    : [start, end, nodeId];
 }
 
 async function runBatches(env: Env, statements: D1PreparedStatement[]): Promise<void> {

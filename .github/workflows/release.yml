@@ -18,8 +18,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
           go-version-file: agent/go.mod
@@ -58,7 +56,7 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
-      - name: Verify Worker, fresh D1 and production upgrade path
+      - name: Verify Worker and fresh D1
         working-directory: worker
         run: |
           npm ci

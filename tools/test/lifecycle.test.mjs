@@ -21,9 +21,9 @@ function procedure(name) {
 // These tests never read private state, connect to SSH or contact Cloudflare.
 function harness() {
   const privateDir = join("memory", ".lume"), statePath = join(privateDir, "state.json");
-  const config = (id) => ({node:{id},endpoint:"https://monitor.example/api/v1/report",secret:`${id}-`.repeat(16),services:[],probes:[],nftables_counters:[]});
+  const config = (id) => ({node:{id},endpoint:"https://monitor.example/api/v1/report",secret:`${id}-`.repeat(16),services:[],probes:[]});
   const alpha = config("alpha"), beta = config("beta");
-  alpha.node.short_mark="OLD";
+  alpha.node.unexpected_display_field="ignored";
   beta.probes = [{name:"to-alpha",kind:"icmp",target_node_id:"alpha",target:"alpha.example"},{name:"reference",kind:"icmp",target:"reference.example"}];
   const files = new Map([[join(privateDir,"nodes","alpha","config.json"),JSON.stringify(alpha)],[join(privateDir,"nodes","beta","config.json"),JSON.stringify(beta)]]);
   let saved = {workerUrl:"https://monitor.example",nodeKeys:{alpha:alpha.secret,beta:beta.secret},nodes:{alpha:{sshTarget:"ssh-alpha",installed:true},beta:{sshTarget:"ssh-beta",installed:true}},revokedNodeIds:[]};
@@ -110,8 +110,7 @@ test("a failed restore retains its new key and can retry without double rotation
   h.failures.deploy="alpha";
   await assert.rejects(h.restore(),/SSH unavailable/);
   const stored=JSON.parse(h.files.get(join(h.privateDir,"nodes","alpha","config.json")));
-  assert.equal(Object.hasOwn(stored.node,"short_mark"),false);
-  assert.equal(Object.hasOwn(stored,"nftables_counters"),false);
+  assert.equal(Object.hasOwn(stored.node,"unexpected_display_field"),false);
   const pendingKey=h.state.nodeKeys.alpha;
   assert.equal(h.state.nodes.alpha.pendingRestore,true);
   await h.restore();
@@ -128,7 +127,7 @@ test("deployment confirmation ignores a report from before the deployment", asyn
   assert.equal(polls,2);
 });
 
-async function adoptHarness({wrongKey=false, changedDuringInput=false, missingInterface=false, migrationFailure=false, unauthorized=false}={}) {
+async function adoptHarness({wrongKey=false, changedDuringInput=false, missingInterface=false, databaseFailure=false, unauthorized=false}={}) {
   const secret="existing-key-".repeat(5);
   const inventory={keys:[{node_id:"alpha",proof:keyProof("alpha",secret)}],revoked_node_ids:[]};
   const writes=[];
@@ -146,16 +145,11 @@ async function adoptHarness({wrongKey=false, changedDuringInput=false, missingIn
       calls.push("read-nodes");
       return databaseReady?{ok:true,status:200,body:{nodes:[{node_id:"alpha",retired:false}]}}:{ok:false,status:500,body:{error:"node listing failed"}};
     },
-    prepareDatabase:async()=>{calls.push("migrate");if(migrationFailure)throw Error("migration interrupted");databaseReady=true;},
+    prepareDatabase:async()=>{calls.push("prepare-database");if(databaseFailure)throw Error("database verification interrupted");databaseReady=true;},
     databaseQuery:async()=>[],
     ensureCloudflareLogin:async()=>calls.push("login"),
     wrangler:async(args)=>{
-      if(args[0]==="d1") {
-        assert.equal(JSON.stringify(args),JSON.stringify(["d1","migrations","apply","monitor-db","--remote","--config","wrangler.jsonc"]));
-        calls.push("migrate");
-        if(migrationFailure)throw Error("migration interrupted");
-        databaseReady=true;
-      } else {
+      {
         assert.equal(args[0],"deploy");
         assert.ok(args.includes("--keep-vars"));
         assert.equal(databaseReady,true,"D1 must be upgraded before the Worker");
@@ -169,7 +163,7 @@ async function adoptHarness({wrongKey=false, changedDuringInput=false, missingIn
     },
     readNodeConfiguration:async()=>{
       calls.push("read-config");
-      return {target:"ssh-alpha",config:{node:{id:"alpha",short_mark:"OLD"},nftables_counters:[],secret:wrongKey?"wrong-".repeat(12):secret,endpoint:"https://monitor.example/api/v1/report",services:[],probes:[]}};
+      return {target:"ssh-alpha",config:{node:{id:"alpha",unexpected_display_field:"ignored"},secret:wrongKey?"wrong-".repeat(12):secret,endpoint:"https://monitor.example/api/v1/report",services:[],probes:[]}};
     },
     getServerInventory:async()=>changedDuringInput?{keys:[],revoked_node_ids:[]}:inventory,
     writePrivateJson:async(path,value)=>writes.push({path,value:structuredClone(value)}),
@@ -180,36 +174,35 @@ async function adoptHarness({wrongKey=false, changedDuringInput=false, missingIn
   return {run,writes,secret,calls};
 }
 
-test("adoption migrates an existing Worker database before reading its nodes and preserves credentials",async()=>{
+test("adoption verifies an existing Worker database before reading its nodes and preserves credentials",async()=>{
   const h=await adoptHarness();
   await h.run();
   const state=h.writes.find((entry)=>entry.path==="state.json").value;
   assert.equal(state.nodeKeys.alpha,h.secret);
   const stored=h.writes.find(entry=>entry.path.endsWith("config.json")).value;
-  assert.equal(Object.hasOwn(stored.node,"short_mark"),false);
-  assert.equal(Object.hasOwn(stored,"nftables_counters"),false);
+  assert.equal(Object.hasOwn(stored.node,"unexpected_display_field"),false);
   assert.equal(stored.secret,h.secret);
   assert.equal(state.databaseId,"existing-d1");
   assert.equal(state.nodes.alpha.sshTarget,"ssh-alpha");
-  assert.deepEqual(h.calls,["login","migrate","read-nodes","read-config"]);
+  assert.deepEqual(h.calls,["login","prepare-database","read-nodes","read-config"]);
 });
 
-test("adoption upgrades D1 before deploying a missing Worker management interface",async()=>{
+test("adoption verifies D1 before deploying a missing Worker management interface",async()=>{
   const h=await adoptHarness({missingInterface:true});
   await h.run();
-  assert.deepEqual(h.calls,["login","migrate","deploy-worker","read-nodes","read-config"]);
+  assert.deepEqual(h.calls,["login","prepare-database","deploy-worker","read-nodes","read-config"]);
 });
 
-test("adoption stops before node reads and local writes when migrations fail",async()=>{
+test("adoption stops before node reads and local writes when database verification fails",async()=>{
   for(const missingInterface of [false,true]) {
-    const h=await adoptHarness({missingInterface,migrationFailure:true});
-    await assert.rejects(h.run(),/migration interrupted/);
-    assert.deepEqual(h.calls,["login","migrate"]);
+    const h=await adoptHarness({missingInterface,databaseFailure:true});
+    await assert.rejects(h.run(),/database verification interrupted/);
+    assert.deepEqual(h.calls,["login","prepare-database"]);
     assert.equal(h.writes.length,0);
   }
 });
 
-test("adoption does not migrate or save state when authentication fails",async()=>{
+test("adoption does not initialize or save state when authentication fails",async()=>{
   const h=await adoptHarness({unauthorized:true});
   await assert.rejects(h.run(),/HTTP 401/);
   assert.deepEqual(h.calls,[]);
@@ -245,12 +238,12 @@ test("deployment upgrades missing acknowledgement or node metadata capabilities 
   const context=vm.createContext({
    line:()=>{},fail:message=>{throw Error(message);},wranglerConfigPath:"memory/wrangler.jsonc",
    adminFetch:async()=>({ok:initialStatus===200,status:initialStatus,body:{nodes:[],capabilities:updated?{config_fingerprint:1,node_metadata:2}:capabilities}}),
-   ensureCloudflareLogin:async()=>calls.push("login"),prepareWorkerDatabase:async()=>calls.push("migrate"),readVersion:async()=>"1.0.0",
-   deployWorker:async()=>{calls.push("migrate","update-worker");updated=true;},
+   ensureCloudflareLogin:async()=>calls.push("login"),prepareWorkerDatabase:async()=>calls.push("prepare-database"),readVersion:async()=>"1.0.0",
+   deployWorker:async()=>{calls.push("prepare-database","update-worker");updated=true;},
   });
   new vm.Script(procedure("ensureConfigurationReporting")).runInContext(context);
   if(initialStatus===401){await assert.rejects(context.ensureConfigurationReporting({}),/401/);assert.deepEqual(calls,[]);}
-  else {await context.ensureConfigurationReporting({});assert.deepEqual(calls,["login","migrate","update-worker"]);await context.ensureConfigurationReporting({});assert.equal(calls.length,3);}
+  else {await context.ensureConfigurationReporting({});assert.deepEqual(calls,["login","prepare-database","update-worker"]);await context.ensureConfigurationReporting({});assert.equal(calls.length,3);}
  }
 });
 

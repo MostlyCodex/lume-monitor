@@ -19,11 +19,11 @@ Agent 改动另在 `agent/` 执行 `go test ./...` 和 `go vet ./...`。Linux �
 
 - 管理工具：完整密钥核对、来源校验、部署失败续做、恢复探针冲突。
 - Worker：签名与重放保护、管理接口认证、节点退役、历史聚合和面板权限。
-- 本地集成：隔离 D1 数据库，验证新库初始化、旧库更新记录转换、失败重试与数据保留；不连接生产 D1。
+- 本地集成：隔离 D1 数据库，验证空库初始化、失败重试、重复部署的数据保留和节点彻底删除；不连接生产 D1。
 - 浏览器：实际面板、虚构数据、桌面及移动端、主题、图表和公开演示。
 - 性能：`bash scripts/benchmark-agent.sh`；结果不得包含真实节点或密钥。
 
-Linux CI 从固定 Git 提交构建 1.0.0、1.0.1、1.0.2 与当前 Agent，运行实际采集，再发送至对应 Worker，验证入库和面板读取；Windows 跳过真实 Agent 版本矩阵。完整矩阵需要 Git 历史，浅克隆先执行 `git fetch --unshallow`。
+Linux CI 构建当前 Agent，运行真实采集，再向当前 Worker 上报，验证新库入库及面板查询。Windows 跳过依赖 Linux 采集器的端到端用例。
 
 ## 前端开发
 
@@ -76,44 +76,33 @@ npm --prefix worker run preview:dashboard
 
 仓库维护者在 GitHub Settings → Pages 选择 GitHub Actions 作为发布源。`.github/workflows/demo.yml` 会在相关改动推送到 main 后构建并发布，也可手动触发。Fork 使用各自的 Pages 地址。
 
-## 数据库脚本
+## 数据库结构
 
-数据库脚本统一放在 `worker/database/`，由 `tools/database.mjs` 识别库结构和已完成记录：
+唯一结构文件为 `worker/database/schema.sql`，包含当前版本全部表、索引和基础设置。节点目录由认证后的 Agent 上报自动建立。
 
-| 路径 | 执行时机 |
-| --- | --- |
-| `initialize.sql` | 空库，仅执行一次 |
-| `upgrade-v3.sql` | 早期固定节点结构的一次性升级，保留已有数据 |
-| `updates/` | 新库和旧库共用，按编号执行尚未完成的兼容更新 |
-| `cleanup/` | 新 Worker 部署并通过版本检查后，执行结构清理 |
+`tools/database.mjs` 在空库中一次提交完整结构；失败时整批回滚，可以重试。已初始化的库核对表、索引及结构标识后继续使用，重复部署保留数据。结构不匹配时停止，需明确绑定空库后重新部署。
 
-后续兼容更新只在 `updates/` 添加一份 SQL。已发布 SQL 的执行内容不改写；旧更新记录保留，并映射到统一编号，避免重复建表或加列。单个更新与完成标记在同一 D1 批次提交，失败后可重跑。未知数据库在初始化前停止。
-
-Wrangler 的 `migrations_dir` 配置和 `d1_migrations` 记录表名称属于工具接口，继续保留；管理工具会自动备份并更新旧目录配置。使用 `npm run deploy` 或本地 `npm run db:local`，无需自行选择脚本目录。
+生产部署使用 `npm run deploy`；本地开发在 `worker/` 执行 `npm run db:local`。这两个入口共用同一结构文件。修改表或索引定义时，同时更新 SQL 中的 `database_schema` 和管理工具的 `DATABASE_SCHEMA`，并通过空库测试。
 
 ## 更新与回滚 Worker
 
-在 `worker/` 执行 `npm run deploy`，管理菜单共用以下流程，`APP_VERSION` 自动取包版本：
+在 `worker/` 执行 `npm run deploy`，管理菜单共用以下流程：
 
-1. 初始化数据库或应用兼容更新。
-2. 构建 Vue 前端并部署 Worker。新代码须可读写清理前后的结构。
-3. 核对线上版本与结构能力后执行清理。部署或核验失败时保留过渡字段，重试即可。
+1. 初始化空库，或核对已就绪的数据库。
+2. 构建 Vue 前端并部署 Worker，自动写入包版本与数据库结构标识。
+3. 核验线上版本和实际数据库绑定。之后可用菜单 **6** 更新 Agent，确认新上报与面板状态。
 
-清理不能放在新代码上线之前；重试时检查实际结构，不能只依赖完成标记。部署完成后先更新一个 Agent，确认配置、面板与上报，再更新其余节点。
+回滚先用 `npx wrangler versions list` 查看版本 ID，再执行 `npm run worker:rollback -- <版本ID>`：
 
-回滚使用 `npx wrangler versions list` 查看版本 ID，然后运行 `npm run worker:rollback -- <版本ID>`：
+- 目标与当前部署须绑定同一 D1、声明相同的数据库结构标识，且由单一版本承接全部流量。
+- 切换后检查线上版本、面板读取和此前在线节点的新采集报告；最长等待约 20 分钟。
+- 验证失败时恢复原 Worker 并再次核验。Secrets 变化或并发部署会阻止切换；数据库和 Agent 不随 Worker 回滚。
 
-- 已验证的 Worker 源码版本为 **1.0.1、1.0.2、1.0.3**，均验证接收 1.0.0 至当前 Agent 的报告。版本号需对应项目原始代码；自改同名版本不在测试保证内。
-- 1.0.0 Worker 不接受新版 Agent 的上报字段，即使补回旧数据库列也不兼容，管理命令会提前拒绝。过渡结构下也拒绝回滚至 1.0.1。
-- 仅处理同一 D1、单版本承接 100% 流量的部署。内部用 `wrangler versions deploy` 切换已保存版本，不强制覆盖 Cloudflare 对 Secrets 变化的阻止。
-- 回滚后核对实际版本、面板读取，以及操作前在线节点的新采集报告；旧暂存报告不能完成确认。最长等待约 20 分钟，以覆盖最大上报间隔；原先离线的节点不计入。
-- 验证失败时尝试恢复原版本，并再次核验。发生其他并发部署时停止自动恢复。该流程不回滚 Agent、数据库数据或已删除记录。
-
-版本策略在 `tools/worker-rollback.mjs`，真实版本矩阵在 `worker/test/version-compatibility.mjs`。新增可回滚版本时同步更新矩阵，不能仅凭 `/healthz` 可用就宣称兼容。
+回滚检查在 `tools/worker-rollback.mjs`。修改上报格式时须同步验证 Agent、Worker 和允许回滚的版本。
 
 ## 发布版本
 
-当前源码版本为 **v1.0.3**。根目录与 `worker/` 的 `package.json` 和锁文件、`wrangler.example.jsonc` 中的 `APP_VERSION` 使用同一版本。
+当前源码版本为 **v1.1.0**。根目录与 `worker/` 的 `package.json` 和锁文件、`wrangler.example.jsonc` 中的 `APP_VERSION` 使用同一版本。
 
 源码更新：同步包版本与相关手册，测试后提交并推送 `main`。仅发布源码无需创建标签；需要发布预编译 Agent 时，另行创建并推送 `vX.Y.Z` 标签，已发布标签不复用。
 

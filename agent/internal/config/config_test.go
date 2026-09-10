@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestLoadDiscardsRetiredObserverAndStillRejectsUnknownFields(t *testing.T) {
+func TestLoadPreservesConfigurationAndRejectsUnknownFields(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Load requires Unix file permissions")
 	}
@@ -21,7 +21,6 @@ func TestLoadDiscardsRetiredObserverAndStillRejectsUnknownFields(t *testing.T) {
 	if err := json.Unmarshal(body, &values); err != nil {
 		t.Fatal(err)
 	}
-	values["nftables_counters"] = []any{map[string]any{"name": "old-rule"}}
 	path := filepath.Join(t.TempDir(), "config.json")
 	write := func() {
 		t.Helper()
@@ -39,15 +38,7 @@ func TestLoadDiscardsRetiredObserverAndStillRejectsUnknownFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(cfg.Probes) != 1 || cfg.Secret != original.Secret {
-		t.Fatal("upgrade lost current configuration")
-	}
-	body, _ = json.Marshal(cfg)
-	var current map[string]any
-	if err := json.Unmarshal(body, &current); err != nil {
-		t.Fatal(err)
-	}
-	if _, exists := current["nftables_counters"]; exists {
-		t.Fatal("retired field survived upgrade")
+		t.Fatal("load lost current configuration")
 	}
 	values["unknown_field"] = true
 	write()
@@ -237,7 +228,7 @@ func TestFingerprintAcknowledgesTheExactLoadedFile(t *testing.T) {
 	}
 }
 
-func TestDecodeUpgradeDiscardsOnlyRetiredFields(t *testing.T) {
+func TestDecodeFingerprintAndUnknownFields(t *testing.T) {
 	original := baseConfig()
 	original.Probes = []Probe{{Name: "reference", Kind: "icmp", Target: "192.0.2.1"}}
 	raw, _ := json.Marshal(original)
@@ -245,9 +236,7 @@ func TestDecodeUpgradeDiscardsOnlyRetiredFields(t *testing.T) {
 	if err := json.Unmarshal(raw, &document); err != nil {
 		t.Fatal(err)
 	}
-	document["nftables_counters"] = []any{map[string]any{"name": "old-rule"}}
 	node := document["node"].(map[string]any)
-	node["short_mark"] = "OLD"
 	raw, _ = json.Marshal(document)
 	cfg, err := decode(raw)
 	if err != nil {
@@ -258,15 +247,6 @@ func TestDecodeUpgradeDiscardsOnlyRetiredFields(t *testing.T) {
 	}
 	if cfg.Fingerprint != fmt.Sprintf("%x", sha256.Sum256(raw)) {
 		t.Fatal("fingerprint must identify the actual input file")
-	}
-	clean, _ := json.Marshal(cfg)
-	var result map[string]any
-	json.Unmarshal(clean, &result)
-	if _, found := result["nftables_counters"]; found {
-		t.Fatal("retired counters were serialized")
-	}
-	if _, found := result["node"].(map[string]any)["short_mark"]; found {
-		t.Fatal("retired node metadata was serialized")
 	}
 	for _, scope := range []map[string]any{document, node} {
 		scope["unexpected_option"] = true

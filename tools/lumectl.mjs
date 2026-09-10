@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import { prepareDatabase, cleanDatabase } from "./database.mjs";
-import { deployInPhases } from "./schema-lifecycle.mjs";
+import { prepareDatabase, DATABASE_SCHEMA } from "./database.mjs";
 import { assertRollbackVersion, workerVersion, currentWorkerVersion, waitForLiveReports, rollbackSafely } from "./worker-rollback.mjs";
 import { deleteManagedNode } from "./node-deletion.mjs";
 import { nodeFilePlan, applyNodeFilePlan } from "./private-node-data.mjs";
@@ -174,7 +173,6 @@ export function createWranglerConfig({ workerName, databaseName, databaseId, das
       binding: "DB",
       database_name: databaseName,
       database_id: databaseId,
-      migrations_dir: "database/updates",
     }],
     triggers: { crons: ["* * * * *", "0 1 * * *"] },
   };
@@ -592,33 +590,10 @@ async function ensureCloudflareLogin() {
 }
 
 async function prepareWorkerDatabase(state, options = {}) {
-  const source = await readFile(wranglerConfigPath, "utf8");
-  const config = parseJsonc(source);
-  const binding = config.d1_databases?.find((entry) => entry.binding === "DB");
-  line("检查数据库初始化与升级状态…");
   await prepareDatabase({
     query: (sql) => databaseQuery(state, sql, options),
-    historyTable: binding?.migrations_table,
     line,
   });
-  if (
-    binding?.migrations_dir &&
-    binding.migrations_dir !== "database/updates"
-  ) {
-    if ((await readFile(wranglerConfigPath, "utf8")) !== source)
-      fail("数据库已就绪，但配置文件被其他进程修改；请重试以更新配置入口。");
-    await writePrivateJson(
-      join(privateDir, "backups", `worker-config-${Date.now()}.json`),
-      config,
-    );
-    binding.migrations_dir = "database/updates";
-    await writeFile(
-      wranglerConfigPath,
-      JSON.stringify(config, null, 2) + "\n",
-      "utf8",
-    );
-    line("✓ 数据库脚本入口已统一为 database/updates");
-  }
 }
 
 async function databaseQuery(state, sql, { local = false } = {}) {
@@ -639,18 +614,8 @@ async function databaseQuery(state, sql, { local = false } = {}) {
   return responses[0]?.results ?? [];
 }
 
-async function contractNodeIdentity(state) {
-  const config = parseJsonc(await readFile(wranglerConfigPath, "utf8"));
-  const binding = config.d1_databases?.find((entry) => entry.binding === "DB");
-  await cleanDatabase({
-    query: (sql) => databaseQuery(state, sql),
-    historyTable: binding?.migrations_table,
-  });
-  line("✓ 新 Worker 已确认，数据库清理完成。");
-}
-
 async function verifyDeployedWorker(url, version) {
-  if (!url) fail("未识别部署地址，未执行 schema 清理。");
+  if (!url) fail("未识别部署地址，无法核验 Worker。");
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     try {
@@ -663,41 +628,29 @@ async function verifyDeployedWorker(url, version) {
         response.ok &&
         health.ok === true &&
         health.version === version &&
-        health.node_identity_schema === 2
+        health.database_schema === DATABASE_SCHEMA
       )
         return;
     } catch {
-      /* Wait for the newly deployed version; never contract on uncertainty. */
+      /* Wait for the newly deployed version and its database binding. */
     }
     await sleep(1000);
   }
-  fail("新 Worker 尚未通过版本与 schema 兼容检查；旧字段保留，可重试部署。");
+  fail("新 Worker 未通过版本与数据库检查，请检查部署状态后重试。");
 }
 
 async function deployWorker(state) {
   const version = await readVersion();
-  return deployInPhases({
-    expand: () => prepareWorkerDatabase(state),
-    deploy: () =>
-      wrangler(
-        [
-          "deploy",
-          "--config",
-          wranglerConfigPath,
-          "--keep-vars",
-          "--var",
-          `APP_VERSION:${version}`,
-        ],
-        { capture: true, echo: true },
-      ),
-    verify: (result) =>
-      verifyDeployedWorker(
-        extractWorkerUrl(`${result.stdout}\n${result.stderr}`) ||
-          state.workerUrl,
-        version,
-      ),
-    contract: () => contractNodeIdentity(state),
-  });
+  await prepareWorkerDatabase(state);
+  const result = await wrangler([
+    "deploy", "--config", wranglerConfigPath, "--keep-vars",
+    "--var", `APP_VERSION:${version}`, "--var", `DATABASE_SCHEMA:${DATABASE_SCHEMA}`,
+  ], { capture: true, echo: true });
+  await verifyDeployedWorker(
+    extractWorkerUrl(`${result.stdout}\n${result.stderr}`) || state.workerUrl,
+    version,
+  );
+  return result;
 }
 
 async function ensureKeyInventory(state) {
@@ -758,10 +711,8 @@ async function rollbackWorker(prompt, versionId, options) {
     );
   const targetMetadata = await metadata(versionId);
   const targetVersion = workerVersion(targetMetadata);
-  const columns = (
-    await databaseQuery(state, "PRAGMA table_info(node_catalog)")
-  ).map((row) => row.name);
-  assertRollbackVersion(targetVersion, columns);
+  assertRollbackVersion(targetMetadata);
+  await prepareWorkerDatabase(state);
   const originalId = await active();
   if (originalId === versionId) {
     line("当前已运行该 Worker 版本。");
@@ -769,6 +720,7 @@ async function rollbackWorker(prompt, versionId, options) {
   }
   const originalMetadata = await metadata(originalId);
   const originalVersion = workerVersion(originalMetadata);
+  assertRollbackVersion(originalMetadata);
   const databaseBinding = (data) =>
     data.resources?.bindings?.find(
       (binding) => binding.name === "DB" && binding.type === "d1",
@@ -1234,7 +1186,6 @@ async function configureNodeObservers(prompt, id) {
     Object.assign(config,await promptAccounting(prompt,config,{discover:()=>readNetworkInventory(state.nodes[id].sshTarget),line}));
   }
   // A saved configuration upgrade drops the retired observer field.
-  delete config.nftables_counters;
   const changed = JSON.stringify(config) !== original;
   if (changed) {
     printObserverSummary(config, line);
@@ -1842,7 +1793,7 @@ async function showStatus() {
   const revoked = Array.isArray(state.revokedNodeIds) ? state.revokedNodeIds : [];
   if (revoked.length > 0) line(`已撤销  ${revoked.join("、")}`);
   if (remote) {
-    // Retirement and catalog visibility are independent. Disabled legacy rows
+    // Retirement and catalog visibility are independent. Disabled catalog rows
     // can retain history without representing enabled monitoring nodes.
     const unmanaged = remote.filter((node) => !node.retired && !state.nodes[node.node_id]);
     const enabled = unmanaged.filter((node) => node.enabled === true);

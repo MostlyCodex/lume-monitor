@@ -63,7 +63,7 @@ D1 contains no seeded node topology. Catalog tables are data-driven:
 - `probe_catalog`: zero or more ICMP/TCP probes per node;
 - `business_routes`: derived node-to-node relationships.
 
-Other tables store the latest report, metric/probe samples, long-term series rollups, operational events, source-IP history and dashboard login tokens. Current raw history uses time-leading `WITHOUT ROWID` tables: one row per node resource report and one compact JSON row per node communication-probe round. This avoids per-probe and secondary-index write amplification while history queries transparently merge pre-upgrade rows until they expire. Recent replay nonces and current network rates share the already-updated latest-state row instead of creating another write per report. Compatibility tables remain in the schema so an upgrade does not destroy existing data. Legacy alert tables likewise remain for upgrade compatibility but are not read or written by the runtime. Scheduled Worker jobs maintain retention and long-term rollups.
+Other tables store the latest report, metric/probe samples, long-term series rollups, operational events, source-IP history and dashboard login tokens. Current raw history uses time-leading `WITHOUT ROWID` tables: one row per node resource report and one compact JSON row per node communication-probe round. This avoids per-probe and secondary-index write amplification and keeps history queries on one storage format. Recent replay nonces and current network rates share the already-updated latest-state row instead of creating another write per report. Scheduled Worker jobs maintain retention and long-term rollups.
 
 ### Telegram and dashboard
 
@@ -83,7 +83,7 @@ Display settings stay in browser storage, with separate keys for production and 
 
 The communication contract supports `icmp` and `tcp`. Optional collectors must remain configuration-driven, default off, preserve the required host report and use the same generic Agent binary.
 
-All SQL lives in `worker/database/`: one empty-database initializer, a one-time v3 upgrade, a shared `updates/` chain, and deployment-gated `cleanup/`. The updater maps historical completion names without replaying completed SQL; each update and its marker share one D1 batch. Deployment applies compatible updates, deploys and verifies the Worker, then cleans obsolete structure. Published SQL execution contents remain unchanged. Managed rollback accepts only versions covered by the real Worker/Agent matrix, preserves the D1 binding, refuses forced Secrets changes, and verifies fresh reports plus dashboard reads. Failure triggers a verified return to the previous deployment unless another deployment has intervened. The `probe_catalog` schema enforces `CHECK (kind IN ('icmp', 'tcp'))`.
+`worker/database/schema.sql` defines the complete current database. The management tool initializes an empty D1 in one atomic batch, verifies existing definitions and schema identity on subsequent deployments, then deploys the Worker and checks its live version and database binding. Initialization failure rolls back the whole batch; a mismatched nonempty database stops deployment without changing data. Managed rollback requires the same D1 binding and schema identity, refuses forced Secrets changes, and verifies fresh reports plus dashboard reads. Failed verification restores and rechecks the previous deployment unless another deployment has intervened. The `probe_catalog` schema enforces `CHECK (kind IN ('icmp', 'tcp'))`.
 
 Examples:
 

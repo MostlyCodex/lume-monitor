@@ -70,7 +70,6 @@ test("generated Agent config is pure-host monitoring by default", () => {
   assert.equal(config.report_interval_seconds, 60);
   assert.deepEqual(config.services, []);
   assert.deepEqual(config.probes, []);
-  assert.equal(Object.hasOwn(config, "nftables_counters"), false);
   assert.equal(config.secret.length, 64);
 });
 
