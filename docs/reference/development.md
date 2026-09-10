@@ -90,7 +90,7 @@ npm --prefix worker run preview:dashboard
 
 ## 发布版本
 
-当前发布版本为 **v1.0.2**。源码标签、根目录与 `worker/` 的 `package.json` 和锁文件、`wrangler.example.jsonc` 中的 `APP_VERSION` 使用同一版本。
+当前源码版本为 **v1.0.2**。源码标签、根目录与 `worker/` 的 `package.json` 和锁文件、`wrangler.example.jsonc` 中的 `APP_VERSION` 使用同一版本。
 
 后续发布先更新版本和相关手册，提交后推送 `main`，再创建并推送对应的 `vX.Y.Z` 标签。版本标签发布后不复用。
 

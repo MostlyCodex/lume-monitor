@@ -2,7 +2,7 @@
 
 轻量、自托管的 Linux VPS 监控：资源状态、线路质量和历史图表，一个面板看清。
 
-[v1.0.2](https://github.com/MostlyCodex/lume-monitor/releases/tag/v1.0.2) · [在线体验](https://mostlycodex.github.io/lume-monitor/) · [部署与管理](docs/guide.md) · [参与开发](CONTRIBUTING.md)
+源码 v1.0.2 · [在线体验](https://mostlycodex.github.io/lume-monitor/) · [部署与管理](docs/guide.md) · [参与开发](CONTRIBUTING.md)
 
 演示网页使用虚构数据，无需登录，可体验节点详情、图表、深浅主题和自定义背景。
 
