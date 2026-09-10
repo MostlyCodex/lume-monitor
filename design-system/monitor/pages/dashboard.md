@@ -60,6 +60,10 @@ project-specific interpretation of the generated glassmorphism direction.
   total memory and root filesystem capacity in a compact responsive definition list.
 - Node facts start with operating system and kernel, then hardware capacity, hostname
   and Agent health. Transfer rates and totals belong to the fleet cards.
+- All detail sections place their headings above the glass surface, including node
+  facts and events; use the same heading scale and spacing throughout.
+- Missing service reports use a neutral empty state and never imply Agent or service
+  health. Overall node status reflects report freshness and configured checks.
 - Facts reflow into multiple columns where space permits, wrap long values, and size
   independently of the neighboring events card.
 - A node detail opens immediately from already-loaded fleet history for 6-hour and 24-hour

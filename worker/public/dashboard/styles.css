@@ -709,7 +709,6 @@ html[data-theme="light"] .range-switch { box-shadow: 0 7px 20px rgba(34, 52, 78,
 .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 14px; padding: 0 3px; }
 .section-heading h2 { margin: 0; font-size: 23px; letter-spacing: -0.035em; }
 .section-heading > p { max-width: 520px; margin: 0; color: var(--muted); font-size: 12px; text-align: right; }
-.compact-heading { margin-bottom: 18px; }
 .probe-picker { margin-bottom: 10px; }
 .probe-picker-head { display: flex; min-height: 28px; align-items: center; justify-content: flex-end; padding: 0 2px 7px; }
 .probe-picker-actions { display: flex; flex: 0 0 auto; gap: 5px; }
@@ -765,9 +764,8 @@ html[data-theme="light"] .probe-picker-actions button { box-shadow: 0 6px 18px r
 .plot-host-network { height: 390px; }
 .network-chart-card .chart-title > span { display: inline-flex; align-items: center; min-height: 25px; padding: 0 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--glass-control-bg); }
 .chart-empty { position: absolute; inset: 64px 18px 18px; display: grid; place-items: center; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); font-size: 12px; }
-.detail-bottom-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px; }
+.detail-bottom-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 38px 14px; }
 .info-card { padding: 20px; }
-.info-card .compact-heading { margin-bottom: 8px; }
 .detail-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); gap: 0 16px; margin: 0; }
 .detail-fact { display: grid; align-content: start; min-width: 0; gap: 3px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .detail-fact dt { color: var(--text-soft); font-size: 12px; line-height: 1.5; }

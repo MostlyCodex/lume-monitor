@@ -25,6 +25,21 @@ function factValue(page, label) {
 }
 
 async function expectCompactFacts(page) {
+  await expect(page.locator(".info-card h2")).toHaveCount(0);
+  const headings = await page.locator(".detail-bottom-grid > section").evaluateAll((sections) => sections.map((section) => {
+    const heading = section.querySelector(".section-heading");
+    const card = section.querySelector(".info-card");
+    const reference = document.querySelector("#network-section-title");
+    return {
+      gap: card.getBoundingClientRect().top - heading.getBoundingClientRect().bottom,
+      sameHeadingSize: getComputedStyle(heading.querySelector("h2")).fontSize === getComputedStyle(reference).fontSize,
+    };
+  }));
+  expect(headings).toHaveLength(2);
+  for (const heading of headings) {
+    expect(heading.gap).toBeGreaterThanOrEqual(12);
+    expect(heading.sameHeadingSize).toBe(true);
+  }
   const geometry = await page.locator("#detail-facts").evaluate((element) => {
     const cells = [...element.children].map((cell) => cell.getBoundingClientRect());
     return {
@@ -52,7 +67,7 @@ test("node facts show hardware capacity in a compact grid in both themes", async
     if (theme === "light") await page.locator("#theme-button").click();
     await expectCompactFacts(page);
     await testInfo.attach(`node-facts-${theme}`, {
-      body: await page.locator(".info-card").first().screenshot({ animations: "disabled" }),
+      body: await page.locator(".detail-bottom-grid").screenshot({ animations: "disabled" }),
       contentType: "image/png",
     });
   }

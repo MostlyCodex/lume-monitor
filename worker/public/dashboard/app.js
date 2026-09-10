@@ -510,7 +510,7 @@
 
   function serviceSummary(node) {
     const services = Array.isArray(node?.services) ? node.services : [];
-    if (!services.length) return { label: "基础监测", text: "Agent 正常", severity: "neutral" };
+    if (!services.length) return { label: "服务监测", text: "暂无上报", severity: "neutral" };
     const unhealthy = services.find((service) => service.state !== "active");
     if (services.length === 1) {
       return {
@@ -650,7 +650,7 @@
 
   function detailServiceList(node) {
     const services = Array.isArray(node?.services) ? node.services : [];
-    if (!services.length) return '<div class="detail-service-list"><span class="detail-service is-healthy"><i></i><b>Agent</b><em>基础监测正常</em></span></div>';
+    if (!services.length) return '<div class="detail-service-list"><span class="detail-service is-neutral"><b>服务监测</b><em>暂无上报</em></span></div>';
     return `<div class="detail-service-list">${services.map((entry) => {
       const severity = entry.state === "active" ? "healthy" : entry.state === "failed" ? "critical" : "warning";
       return `<span class="detail-service is-${severity}"><i></i><b>${escapeHtml(serviceDisplayLabel(entry))}</b><em>${escapeHtml(serviceStateText(entry.state))}</em></span>`;

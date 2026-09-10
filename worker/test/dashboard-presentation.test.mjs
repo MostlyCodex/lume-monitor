@@ -188,7 +188,7 @@ describe("dashboard presentation hierarchy", () => {
     expect(html).not.toContain("点击目标卡片显示或隐藏");
     expect(html).not.toContain("资源与网络速率仅在详情中展示历史");
     expect(html).not.toContain("只监控，不自动切换线路或远程控制节点");
-    expect(html).toContain("<h2>事件</h2>");
+    expect(html).toContain('<h2 id="detail-events-title">事件</h2>');
     expect(html).not.toContain("<h2>区间事件</h2>");
     expect(styles).toContain("--probe-unicom: #f26f8f");
     expect(styles).toContain('html[data-theme="light"] .search-control');

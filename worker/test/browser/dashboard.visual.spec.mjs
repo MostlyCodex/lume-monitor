@@ -29,6 +29,7 @@ test("public demo works without authentication or telemetry requests", async ({ 
   await expect(page.locator(".demo-notice")).toContainText("虚构数据");
   await page.locator('.node-card[data-node="transit-la"]').click();
   await expect(page.locator("#node-detail")).toBeVisible();
+  await expect(page.locator(".detail-service")).toContainText(["nftables运行正常"]);
   await expect(page.locator("#network-plot .uplot")).toBeVisible();
   await page.locator('#detail-range-switch button[data-hours="168"]').click();
   await expect(page.locator("#network-plot .uplot")).toBeVisible();
@@ -49,6 +50,24 @@ async function openDashboard(page) {
   await expect(page.locator("#loading-view")).toBeHidden();
   await expect(page.locator("#dashboard-view")).toBeVisible();
   await expect(page.locator(".node-card")).toHaveCount(6);
+}
+
+for (const online of [true, false]) {
+  test(`missing service reports stay neutral when the node is ${online ? "online" : "offline"}`, async ({ page }) => {
+    await page.route("**/api/v1/dashboard/latest*", async (route) => {
+      const response = await route.fetch();
+      const data = await response.json();
+      Object.assign(data.nodes[0], { services: [], probes: [], online });
+      await route.fulfill({ response, json: data });
+    });
+    await openDashboard(page);
+    await page.locator(".node-card").first().click();
+    await expect(page.locator("#detail-hero .node-status")).toHaveText(online ? "正常" : "上报中断");
+    await expect(page.locator(".detail-service")).toHaveClass("detail-service is-neutral");
+    await expect(page.locator(".detail-service b")).toHaveText("服务监测");
+    await expect(page.locator(".detail-service em")).toHaveText("暂无上报");
+    await expect(page.locator("#detail-hero")).not.toContainText("基础监测正常");
+  });
 }
 
 async function expectNoHorizontalOverflow(page) {
