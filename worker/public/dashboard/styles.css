@@ -764,7 +764,7 @@ html[data-theme="light"] .probe-picker-actions button { box-shadow: 0 6px 18px r
 .info-card { padding: 20px; }
 .info-card .compact-heading { margin-bottom: 8px; }
 .detail-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); gap: 0 16px; margin: 0; }
-.detail-fact { display: grid; align-content: start; min-width: 0; gap: 3px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.detail-fact { display: grid; align-content: start; min-width: 0; gap: 3px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .detail-fact dt { color: var(--text-soft); font-size: 12px; line-height: 1.5; }
 .detail-fact dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-family: var(--mono); font-size: 13px; font-weight: 600; line-height: 1.5; }
 .timeline-list { display: grid; gap: 8px; }
