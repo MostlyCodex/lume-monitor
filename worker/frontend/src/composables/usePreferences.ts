@@ -12,6 +12,7 @@ export function usePreferences() {
     }
   }
   const layout = shallowRef(read());
+  let knownIds: Set<string> | undefined;
   watch(
     layout,
     (value) => {
@@ -21,6 +22,11 @@ export function usePreferences() {
   );
   function save(value: DashboardLayout) {
     const next = normalizeLayout(value);
+    const allowed = knownIds;
+    if (allowed) {
+      next.nodes = Object.fromEntries(Object.entries(next.nodes).filter(([id]) => allowed.has(id)));
+      next.order = next.order.filter((id) => allowed.has(id));
+    }
     try {
       localStorage.setItem(LAYOUT_KEY, JSON.stringify(next));
     } catch {
@@ -29,6 +35,14 @@ export function usePreferences() {
     // Commit only after storage succeeds; failed saves retain the current layout.
     layout.value = next;
     return true;
+  }
+  function pruneNodes(ids: string[]) {
+    const allowed = (knownIds = new Set(ids));
+    if (
+      Object.keys(layout.value.nodes).some((id) => !allowed.has(id)) ||
+      layout.value.order.some((id) => !allowed.has(id))
+    )
+      save(layout.value);
   }
   function reset() {
     try {
@@ -42,5 +56,5 @@ export function usePreferences() {
   function discardUnreadableBackground(value: string) {
     if (layout.value.background === value) layout.value = { ...layout.value, background: "" };
   }
-  return { layout, save, reset, discardUnreadableBackground };
+  return { layout, save, reset, pruneNodes, discardUnreadableBackground };
 }

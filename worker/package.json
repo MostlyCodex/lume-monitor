@@ -20,6 +20,7 @@
     "node:configure": "node ../tools/lumectl.mjs node configure",
     "node:install": "node ../tools/lumectl.mjs node install",
     "node:remove": "node ../tools/lumectl.mjs node remove",
+    "node:delete": "node ../tools/lumectl.mjs node delete",
     "node:revoke": "node ../tools/lumectl.mjs node revoke",
     "node:sync": "node ../tools/lumectl.mjs node sync-keys",
     "preview:dashboard": "npm run build:frontend && node test/dashboard-preview-server.mjs",

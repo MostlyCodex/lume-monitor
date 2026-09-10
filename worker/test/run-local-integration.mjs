@@ -1,3 +1,4 @@
+import { testPermanentDeletion } from "./node-deletion-integration.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -73,12 +74,13 @@ async function stopWorker(child) {
   }
 }
 
-function query(config, persistence, sql) {
+function query(config, persistence, sql, all = false) {
   const raw = runWrangler([
     "d1", "execute", "DB", "--local", "--config", config,
     "--persist-to", persistence, "--command", sql, "--json",
   ], true);
-  return JSON.parse(raw)[0]?.results ?? [];
+  const results = JSON.parse(raw);
+  return all ? results : results[0]?.results ?? [];
 }
 
 function testProductionUpgrade(root) {
@@ -186,6 +188,7 @@ async function testFreshDatabase(root) {
       throw new Error(`HTTP integration failed\n${result.stdout}\n${result.stderr}\n${output.join("")}`);
     }
     process.stdout.write(result.stdout);
+    await testPermanentDeletion({baseUrl,query:(sql,all)=>query(config,persistence,sql,all)});
   } finally {
     await stopWorker(child);
   }

@@ -90,7 +90,7 @@ test("retirement resumes even when writing the peer configuration was interrupte
 test("restoration rotates credentials, waits for a fresh report, then restores peers", async()=>{
   const h=harness();
   const oldKey=h.state.nodeKeys.alpha;
-  await h.remove(new Map([["uninstall",true]]));
+  await h.remove();
   h.calls.length=0;
   await h.restore();
   assert.notEqual(h.state.nodeKeys.alpha,oldKey);

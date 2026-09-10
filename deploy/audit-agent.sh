@@ -26,7 +26,7 @@ paths() {
     /etc/systemd/system/vpsmon-agent.service \
     /etc/systemd/system/vpsmon-nftables-snapshot.service \
     /etc/systemd/system/vpsmon-nftables-snapshot.timer \
-    /var/lib/vpsmon/nftables-counters.json
+    /var/lib/vpsmon/nftables-counters.json /var/lib/vpsmon/pending.json /var/lib/vpsmon/traffic.json
   find /etc/systemd/system -mindepth 2 -maxdepth 2 -type l \
     \( -name vpsmon-agent.service -o -name vpsmon-nftables-snapshot.service -o -name vpsmon-nftables-snapshot.timer \) -print
 }
@@ -52,6 +52,17 @@ kind_of() {
 paths | LC_ALL=C sort -u > "$snapshot/paths"
 backups > "$snapshot/backups"
 service_before=$(service_state)
+# Record account line numbers only; never copy the system password databases.
+: > "$snapshot/account-lines"
+if [ "$action" = uninstall ]; then
+  for file in /etc/passwd /etc/group /etc/shadow /etc/gshadow /etc/subuid /etc/subgid; do
+    [ ! -f "$file" ] || awk -F: -v path="$file" '$1 == "vpsmon" {printf "%s\t%d\n", path, NR}' "$file" >> "$snapshot/account-lines"
+  done
+fi
+: > "$snapshot/directories"
+for path in /etc/vpsmon /opt/vpsmon /var/lib/vpsmon /etc/systemd/system/vpsmon-agent.service.d /etc/systemd/system/vpsmon-nftables-snapshot.service.d /etc/systemd/system/vpsmon-nftables-snapshot.timer.d; do
+  [ ! -d "$path" ] || printf '%s\n' "$path" >> "$snapshot/directories"
+done
 while IFS= read -r path; do
   if [ -f "$path" ] || [ -L "$path" ]; then
     mkdir -p "$snapshot/files$(dirname -- "$path")"
@@ -129,6 +140,15 @@ finish() {
     while IFS= read -r path; do
       grep -Fxq -- "$path" "$snapshot/after-backups" || printf 'pruned\t%s\tdirectory\t-\t-\n' "$path"
     done < "$snapshot/backups"
+    while IFS= read -r path; do
+      [ -d "$path" ] || printf 'pruned\t%s\tdirectory\t-\t-\n' "$path"
+    done < "$snapshot/directories"
+    while IFS="$(printf '\t')" read -r file number; do
+      [ -n "$file" ] || continue
+      if ! awk -F: '$1 == "vpsmon" {found=1} END {exit !found}' "$file"; then
+        printf 'entries\t%s\ttext\t%s\t-\n' "$file" "$number"
+      fi
+    done < "$snapshot/account-lines"
     service_after=$(service_state)
     [ "$service_before" = "$service_after" ] || printf 'service\tvpsmon-agent.service\t%s\t%s\n' "$service_before" "$service_after"
     printf 'END\n'
@@ -145,7 +165,7 @@ trap 'exit 143' TERM
 
 case "$action" in
   install|upgrade) sh "$stage/$action-agent.sh" "$stage" ;;
-  uninstall) sh "$stage/uninstall-agent.sh" --confirm ;;
+  uninstall) if [ -f "$stage/expected-node-id" ]; then sh "$stage/uninstall-agent.sh" --confirm "$stage/expected-node-id"; else sh "$stage/uninstall-agent.sh" --confirm; fi ;;
   stop)
     systemctl disable --now vpsmon-agent.service
     systemctl disable --now vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true

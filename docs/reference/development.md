@@ -61,6 +61,8 @@ npm run format:frontend    # 统一 Vue / TypeScript / CSS 格式
 
 下线保存配置与被移除的对端探针；恢复轮换密钥并等待部署后的上报。下发失败保留待处理标记，已经完成的节点不必重新处理。
 
+永久删除由 `tools/node-deletion.mjs` 编排：撤销凭据、核对并卸载远端 Agent、清理本地备份与对端配置，最后调用 `worker/src/node-deletion.ts` 原子清理 D1。进度保存在 `pendingDeletes`，全部成功后移除；永久删除不会生成恢复档案。相关测试覆盖隔离数据库的所有节点数据表、卸载安全检查及中断续做。
+
 ## 演示网页
 
 `worker/frontend/src/demo/data.js` 是共享的虚构数据源，浏览器测试和公开演示使用同一套数据。演示模式不请求监控数据 API。

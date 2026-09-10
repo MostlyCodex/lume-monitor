@@ -323,6 +323,8 @@ export async function compactObservabilityRange(
     }
   }
 
+  // A concurrent permanent deletion may remove the catalog after these samples
+  // were read. Guard the INSERT so an in-flight rebuild cannot resurrect rows.
   const statements: D1PreparedStatement[] = [];
   for (const group of metricGroups.values()) {
     const summary = summarizeNumbers(group.values);
@@ -330,7 +332,7 @@ export async function compactObservabilityRange(
     statements.push(
       env.DB.prepare(
         "INSERT INTO metric_series_rollups(node_id, metric_key, resolution, bucket, samples, average, minimum, maximum, p50, p95) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+          "SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM node_catalog WHERE node_id=?) " +
           "ON CONFLICT(node_id, metric_key, resolution, bucket) DO UPDATE SET " +
           "samples=excluded.samples, average=excluded.average, minimum=excluded.minimum, " +
           "maximum=excluded.maximum, p50=excluded.p50, p95=excluded.p95",
@@ -345,6 +347,7 @@ export async function compactObservabilityRange(
         summary.maximum,
         summary.p50,
         summary.p95,
+        group.nodeId,
       ),
     );
   }
@@ -370,7 +373,8 @@ export async function compactObservabilityRange(
           "node_id, probe_name, resolution, bucket, rounds, successes, latency_average, latency_minimum, " +
           "latency_maximum, latency_p50, latency_p95, jitter_average, jitter_maximum, successful_sample_percent, " +
           "sample_coverage_percent" +
-          ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+          ") SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? " +
+          "WHERE EXISTS (SELECT 1 FROM probe_catalog WHERE node_id=? AND probe_name=?) " +
           "ON CONFLICT(node_id, probe_name, resolution, bucket) DO UPDATE SET " +
           "rounds=excluded.rounds, successes=excluded.successes, latency_average=excluded.latency_average, " +
           "latency_minimum=excluded.latency_minimum, latency_maximum=excluded.latency_maximum, " +
@@ -394,6 +398,8 @@ export async function compactObservabilityRange(
         jitter?.maximum ?? null,
         totalSamples > 0 ? (100 * successfulSamples) / totalSamples : 0,
         requestedSamples > 0 ? (100 * totalSamples) / requestedSamples : 0,
+        group.nodeId,
+        group.probeName,
       ),
     );
   }

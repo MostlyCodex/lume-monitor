@@ -117,6 +117,7 @@ function publicCatalog(catalog: DashboardCatalog): Record<string, unknown> {
   const nodeByInternal = new Map(catalog.nodes.map((node) => [node.node_id, node]));
   const probes = probeMap(catalog);
   return {
+    known_node_ids: catalog.knownNodeIds,
     nodes: catalog.nodes.map(publicNodeCatalogEntry),
     services: catalog.services.map((service) => ({
       node_id: nodeByInternal.get(service.node_id)?.public_id ?? service.node_id,

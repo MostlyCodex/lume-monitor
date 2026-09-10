@@ -142,9 +142,10 @@ test("installing a node uses one connection to read the architecture and stage",
   assert.doesNotMatch(tool, /scp[\s\S]{0,400}?mkdir -m 700/);
 });
 
-test("uninstall keeps recoverable state and never touches monitored services", async () => {
+test("permanent uninstall clears dedicated Agent state and never touches monitored services", async () => {
   const uninstaller = await readFile(new URL("../../deploy/uninstall-agent.sh", import.meta.url), "utf8");
   assert.match(uninstaller, /vpsmon-agent\.service/);
   assert.doesNotMatch(uninstaller, /nft\s+(add|delete|flush)/);
-  assert.doesNotMatch(uninstaller, /userdel/);
+  assert.match(uninstaller, /userdel vpsmon/);
+  assert.match(uninstaller, /--one-file-system/);
 });

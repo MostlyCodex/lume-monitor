@@ -1,6 +1,8 @@
-const managedPath = /^\/(?:opt\/vpsmon\/vpsmon-agent|etc\/vpsmon\/config\.json|etc\/systemd\/system\/(?:[a-zA-Z0-9_.@-]+\.(?:wants|requires)\/)?vpsmon-(?:agent\.service|nftables-snapshot\.(?:service|timer))|var\/lib\/vpsmon\/(?:nftables-counters\.json|upgrade-backup\.[0-9]{8}T[0-9]{6}Z))$/;
+const accountPath = /^\/etc\/(?:passwd|group|shadow|gshadow|subuid|subgid)$/;
+const directoryPath = /^\/(?:etc\/vpsmon|opt\/vpsmon|var\/lib\/vpsmon|etc\/systemd\/system\/vpsmon-(?:agent\.service|nftables-snapshot\.(?:service|timer))\.d)$/;
+const managedPath = /^\/(?:opt\/vpsmon\/vpsmon-agent|etc\/vpsmon\/config\.json|etc\/systemd\/system\/(?:[a-zA-Z0-9_.@-]+\.(?:wants|requires)\/)?vpsmon-(?:agent\.service|nftables-snapshot\.(?:service|timer))|var\/lib\/vpsmon\/(?:nftables-counters\.json|pending\.json|traffic\.json|upgrade-backup\.[0-9]{8}T[0-9]{6}Z))$/;
 const lineRanges = /^(?:-|[1-9][0-9]*(?:-[1-9][0-9]*)?(?:,[1-9][0-9]*(?:-[1-9][0-9]*)?)*)$/;
-const actions = { added: "新增", changed: "更新", removed: "删除", attributes: "属性", backup: "备份", pruned: "清理" };
+const actions = { added: "新增", changed: "更新", removed: "删除", attributes: "属性", backup: "备份", pruned: "清理", entries: "账号条目" };
 const kinds = new Set(["text", "binary", "link", "directory"]);
 
 // Only metadata crosses the SSH boundary: never include configuration lines,
@@ -15,7 +17,7 @@ export function parseRemoteChanges(raw) {
       return { action: "service", path: fields[1], before: fields[2], after: fields[3] };
     }
     const [action, path, kind, before, after] = fields;
-    if (fields.length !== 5 || !Object.hasOwn(actions, action) || !managedPath.test(path) || !kinds.has(kind) || !lineRanges.test(before) || !lineRanges.test(after)) throw Error("远端变更清单格式无效");
+    if (fields.length !== 5 || !Object.hasOwn(actions, action) || !(managedPath.test(path) || (kind === "directory" && directoryPath.test(path)) || (action === "entries" && kind === "text" && accountPath.test(path))) || !kinds.has(kind) || !lineRanges.test(before) || !lineRanges.test(after)) throw Error("远端变更清单格式无效");
     return { action, path, kind, before, after };
   });
 }
@@ -23,6 +25,7 @@ export function parseRemoteChanges(raw) {
 export function formatRemoteChange(change) {
   const { action, path, kind, before, after } = change;
   if (action === "service") return `  服务  ${path}  ${before} → ${after}`;
+  if (action === "entries") return `  账号条目  ${path}（删除原行 ${before}）`;
   let location = path;
   if (kind === "text") {
     if (action === "removed") location += before === "-" ? "（空文件）" : `（原行 ${before}）`;

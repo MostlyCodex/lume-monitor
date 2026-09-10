@@ -1,3 +1,4 @@
+import { NodeDeletionConflict, nodeDeletionSummary, permanentlyDeleteNode } from "./node-deletion";
 import { canonicalMessage, constantTimeEqual, hmacHex, parseNodeKeys, parseRevokedNodeIds } from "./auth";
 import { loadDashboardCatalog } from "./catalog";
 import { keyInventory } from "./key-inventory";
@@ -460,6 +461,10 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
     return json({ error: error instanceof Error ? error.message : "invalid report" }, 422);
   }
 
+  // Credentials are the current node directory for links. Old queued peer
+  // reports cannot recreate observations pointing at a permanently deleted node.
+  const activeKeys = parseNodeKeys(env.NODE_KEYS);
+  report.probes = report.probes.filter(probe => !probe.target_node_id || Object.hasOwn(activeKeys,probe.target_node_id));
   const source = sourceIdentity(request);
   const prior = await env.DB.prepare(
     "SELECT approved_ip, source_ip, reported_at, last_boot_id, report_json, recent_nonces_json " +
@@ -708,7 +713,7 @@ async function adminNodes(env: Env, now: number): Promise<Response> {
   ).all<NodeCatalogAdminRow>();
   return json({
     server_time: now,
-    capabilities: { config_fingerprint: 1, node_metadata: 2 },
+    capabilities: { config_fingerprint: 1, node_metadata: 2, permanent_delete: 1 },
     nodes: rows.results.map((row) => ({
       ...configurationSummary(row.report_json),
       node_id: row.node_id,
@@ -986,6 +991,15 @@ export default {
         return await adminNodes(env, nowSeconds());
       } catch {
         return json({ error: "node listing failed" }, 500);
+      }
+    }
+    const deletion = /^\/api\/v1\/admin\/nodes\/([a-z0-9][a-z0-9_-]{0,31})(\/deletion)?$/.exec(url.pathname);
+    if (deletion && ((request.method === "GET" && deletion[2]) || (request.method === "DELETE" && !deletion[2]))) {
+      if (!isAdmin(request,env)) return json({error:"unauthorized"},401);
+      try {
+        return json(request.method === "GET" ? await nodeDeletionSummary(env,deletion[1]) : await permanentlyDeleteNode(env,deletion[1]));
+      } catch (error) {
+        return error instanceof NodeDeletionConflict ? json({error:error.message},409) : json({error:"node deletion failed; safe to retry"},500);
       }
     }
     if (request.method === "POST") {

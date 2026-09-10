@@ -84,7 +84,7 @@ export interface LatestSnapshot {
   schema_version: number;
   server_time: number;
   nodes: NodeSnapshot[];
-  catalog: { nodes: CatalogNode[] };
+  catalog: { nodes: CatalogNode[]; known_node_ids?: string[] };
   cadence?: { resources_seconds: number; probes_seconds: number };
 }
 export interface ProbeHistoryRow extends ProbeThresholds {

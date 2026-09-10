@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { deleteManagedNode } from "./node-deletion.mjs";
+import { nodeFilePlan, applyNodeFilePlan } from "./private-node-data.mjs";
 import { buildFrontend } from "./build-frontend.mjs";
 import { terminalFor } from "./terminal-output.mjs";
 import { createRemoteChangeLog } from "./remote-changes.mjs";
@@ -1235,7 +1237,7 @@ async function runAgentOperation(target, remoteStage, action, { activate = false
   }
 }
 
-async function runRemoteMaintenance(target, action) {
+async function runRemoteMaintenance(target, action, nodeId = "") {
   const localStage = await mkdtemp(join(tmpdir(), "lume-maintenance-"));
   const remoteStage = `/tmp/vpsmon-stage.${randomBytes(8).toString("hex")}`;
   try {
@@ -1243,6 +1245,11 @@ async function runRemoteMaintenance(target, action) {
     const scripts = action === "uninstall" ? ["audit-agent.sh", "uninstall-agent.sh"] : ["audit-agent.sh"];
     for (const script of scripts) {
       await writeFile(join(localStage, script), await readFile(join(deployDir, script)), { mode: 0o700 });
+    }
+    if (action === "uninstall") {
+      if (!validateNodeId(nodeId)) fail("永久卸载必须指定节点 ID");
+      await writeFile(join(localStage,"expected-node-id"),nodeId+"\n",{mode:0o600});
+      scripts.push("expected-node-id");
     }
     await run("scp", [...scripts.map(script => join(localStage, script)), `${target}:${remoteStage}/`]);
     await runAgentOperation(target, remoteStage, action);
@@ -1280,6 +1287,7 @@ async function peersTargeting(state, id) {
 }
 
 async function removeNode(prompt, id, options) {
+  if (options.get("uninstall") === true) return deleteNode(prompt,id,options);
   if (!validateNodeId(id)) fail("节点 ID 格式无效");
   const state = await loadState();
   if (!state.nodes[id] && state.retiredNodes?.[id]) {
@@ -1302,7 +1310,6 @@ async function removeNode(prompt, id, options) {
   if (!state.nodes[id] && !state.nodeKeys[id]) fail(`本地状态中没有节点 ${id}`);
   const keyAlreadyRevoked = !state.nodeKeys[id];
   const assumeYes = options.get("yes") === true;
-  const uninstall = options.get("uninstall") === true;
   const sshFlag = options.get("ssh");
   const target = typeof sshFlag === "string" ? sshFlag : (state.nodes[id]?.sshTarget || "");
   if (target && !validateSshTarget(target)) fail("SSH 目标格式无效");
@@ -1310,7 +1317,7 @@ async function removeNode(prompt, id, options) {
 
   line(`将下线节点：${id}`);
   line(target
-    ? `  1. 通过 SSH ${target} ${uninstall ? "卸载 Agent（同时停用服务）" : "停止并停用 Agent"}`
+    ? `  1. 通过 SSH ${target} 停止并停用 Agent`
     : "  1. 跳过远端停机：未提供 SSH 目标，请自行确认该 VPS 上的 Agent 已停止");
   line("  2. 从完整 NODE_KEYS 中移除该节点密钥并重新提交");
   line("  3. 在 Worker 上标记退役，隐藏该节点及所有指向它的探针与链路");
@@ -1325,18 +1332,13 @@ async function removeNode(prompt, id, options) {
     const archivedPath = join(privateDir, "retired", id, "config.json");
     const currentConfig = JSON.parse(await readFile(join(privateDir, "nodes", id, "config.json"), "utf8"));
     await writePrivateJson(archivedPath, currentConfig);
-    state.retiredNodes[id] = { configPath: archivedPath, sshTarget: target, uninstalled: uninstall, peerProbes: Object.fromEntries(peers.map((peer) => [peer.peerId, peer.config.probes.filter((probe) => probe.target_node_id === id)])) };
+    state.retiredNodes[id] = { configPath: archivedPath, sshTarget: target, uninstalled: false, peerProbes: Object.fromEntries(peers.map((peer) => [peer.peerId, peer.config.probes.filter((probe) => probe.target_node_id === id)])) };
     await writePrivateJson(statePath, state);
   }
 
   if (target) {
-    if (uninstall) {
-      line(`卸载 ${target} 上的 Agent…`);
-      await runRemoteMaintenance(target, "uninstall");
-    } else {
-      line(`停止 ${target} 上的 Agent…`);
-      await runRemoteMaintenance(target, "stop");
-    }
+    line(`停止 ${target} 上的 Agent…`);
+    await runRemoteMaintenance(target, "stop");
   }
 
   // The key is revoked first and the local node record is kept until the
@@ -1356,7 +1358,7 @@ async function removeNode(prompt, id, options) {
   delete state.nodes[id];
   state.retiredNodes = {
     ...(state.retiredNodes ?? {}),
-    [id]: { ...state.retiredNodes[id], retiredAt: Math.floor(Date.now() / 1000), sshTarget: target, uninstalled: uninstall },
+    [id]: { ...state.retiredNodes[id], retiredAt: Math.floor(Date.now() / 1000), sshTarget: target, uninstalled: false },
   };
   await writePrivateJson(statePath, state);
   line("✓ 已在 Worker 标记退役：面板、/status 以及所有指向它的链路立即隐藏");
@@ -1374,9 +1376,77 @@ async function removeNode(prompt, id, options) {
   await applyNodes(prompt, peers.map((peer) => peer.peerId), state);
 }
 
+async function deleteNode(prompt, id, options) {
+  const state = await loadState();
+  const required = async (path, method = "GET") => {
+    const result = await adminFetch(state, path, { method });
+    if (!result.ok) fail(`节点清理接口失败（HTTP ${result.status}），请检查后重试。`);
+    return result.body;
+  };
+  await deleteManagedNode(id, {
+    state,
+    options,
+    prompt,
+    io: {
+      line,
+      save: (value) => writePrivateJson(statePath, value),
+      assertInventory: assertServerInventory,
+      ensureBackend: async () => {
+        const response = await adminFetch(state, "/api/v1/admin/nodes");
+        if (!response.ok) fail("无法读取后端，已停止永久删除。");
+        if (response.body?.capabilities?.permanent_delete === 1) return;
+        line("更新 Worker 以启用节点永久删除…");
+        await ensureCloudflareLogin();
+        await applyDatabaseMigrations(state);
+        await wrangler([
+          "deploy",
+          "--config",
+          wranglerConfigPath,
+          "--keep-vars",
+          "--var",
+          `APP_VERSION:${await readVersion()}`,
+        ]);
+        if ((await required("/api/v1/admin/nodes")).capabilities?.permanent_delete !== 1)
+          fail("Worker 尚未支持永久删除。");
+      },
+      summary: (_state, node) => required(`/api/v1/admin/nodes/${node}/deletion`),
+      remoteChoice: async (target, absent, yes) => {
+        if (absent) return { sshTarget: "", agentAbsent: true };
+        if (yes) {
+          if (!validateSshTarget(target))
+            fail("永久删除需要 --ssh，或明确指定 --agent-absent（VPS 已销毁 / 从未安装 Agent）。");
+          return { sshTarget: target, agentAbsent: false };
+        }
+        line("远端处理：1. 通过 SSH 彻底卸载 / 2. VPS 已销毁或从未安装 Agent");
+        const choice = await choiceValue(prompt, "选择远端处理方式", ["1", "2"], "1", { line });
+        return choice === "2"
+          ? { sshTarget: "", agentAbsent: true }
+          : { sshTarget: await promptSshTarget(prompt, "SSH 目标", target), agentAbsent: false };
+      },
+      plan: (node) => nodeFilePlan(privateDir, node),
+      clean: (plan) => applyNodeFilePlan(plan, writePrivateJson),
+      checkPeer: async (node) => {
+        const path = join(privateDir, "nodes", node, "config.json");
+        const config = JSON.parse(await readFile(path, "utf8"));
+        if (config.node?.id !== node) fail("关联节点配置不完整，请先接管或修复：" + node);
+      },
+      publishKeys: publishNodeKeys,
+      publishRevocations: publishRevokedNodeIds,
+      retire: async (_state, node) => {
+        const response = await adminFetch(state, `/api/v1/admin/nodes/${node}/retire`, { method: "POST" });
+        if (!response.ok && response.status !== 404) fail("撤销上报后标记退役失败，请从菜单 9 重试。");
+      },
+      uninstall: (target) => runRemoteMaintenance(target, "uninstall", id),
+      applyPeers: (ids, value) => applyNodes(prompt, ids, value),
+      purge: (_state, node) => required(`/api/v1/admin/nodes/${node}`, "DELETE"),
+    },
+  });
+}
+
 async function restoreNode(prompt, id, options) {
   if (!validateNodeId(id)) fail("节点 ID 格式无效");
   const state = await loadState();
+  if (state.pendingDeletes?.[id]) fail("节点正在永久删除，请从菜单 9 继续，不能恢复。");
   const archived = state.retiredNodes?.[id];
   if (!archived) fail(`节点 ${id} 不在退役记录中`);
   if (!(options.get("yes") === true) && !(await prompt.yes(`恢复 ${id} 并自动恢复相关对端探针`, true))) return;
@@ -1493,6 +1563,8 @@ async function showStatus() {
     line(`  ${node.installed ? "✓" : "·"} ${id}${node.sshTarget ? `  (${node.sshTarget})` : ""}  ${remote === null ? "后端暂时不可达" : detail} · ${configState}${node.pendingRestore ? " · 恢复待完成" : ""}`);
     if (seen?.network_interfaces?.length) line(`    统计网卡：${seen.network_interfaces.join("、")}${seen.network_valid === false ? "（采集异常）" : ""}`);
   }
+  const pendingDeletes = Object.keys(state.pendingDeletes ?? {});
+  if (pendingDeletes.length) line("永久删除待完成（菜单 9 继续）：" + pendingDeletes.join("、"));
   const retiredLocal = Object.keys(state.retiredNodes ?? {});
   if (retiredLocal.length > 0) line(`已下线  ${retiredLocal.join("、")}`);
   const revoked = Array.isArray(state.revokedNodeIds) ? state.revokedNodeIds : [];
@@ -1528,7 +1600,8 @@ function usage() {
   node tools/lumectl.mjs node apply [NODE_ID] [--pending]
   node tools/lumectl.mjs node restore [NODE_ID] [--ssh 别名]
   node tools/lumectl.mjs node install <NODE_ID> --ssh <SSH别名>
-  node tools/lumectl.mjs node remove <NODE_ID> [--ssh 别名] [--uninstall] [--yes]
+  node tools/lumectl.mjs node remove <NODE_ID> [--ssh 别名] [--yes]
+  node tools/lumectl.mjs node delete <NODE_ID> [--ssh 别名 | --agent-absent] [--yes]
   node tools/lumectl.mjs node revoke <NODE_ID> [--undo]
   node tools/lumectl.mjs node sync-keys
 
@@ -1536,14 +1609,16 @@ function usage() {
   [{"id":"hk-01","name":"HK 01","role":"中转","region":"HK","ssh":"hk-01"}]
 
 快捷入口（worker 目录）：npm run doctor / npm run setup / npm run node:add /
-npm run node:install / npm run node:remove / npm run node:revoke
+npm run node:install / npm run node:remove / npm run node:delete / npm run node:revoke
 
 安全说明：Secret 只写入 Cloudflare 和 ${privateDirName}/ 私有目录；该目录已被 Git 忽略。`);
 }
 
-async function pickNode(prompt, { retired = false } = {}) {
+async function pickNode(prompt, { retired = false, deleting = false } = {}) {
   const state = await loadState();
-  const ids = Object.keys(retired ? state.retiredNodes || {} : state.nodes);
+  const ids = deleting
+    ? [...new Set([...Object.keys(state.nodes),...Object.keys(state.retiredNodes || {}),...Object.keys(state.pendingDeletes || {}),...(await adminNodeList(state)).map(node=>node.node_id)])]
+    : Object.keys(retired ? state.retiredNodes || {} : state.nodes).filter(id=>!state.pendingDeletes?.[id]);
   if (!ids.length) fail(retired ? "没有可恢复的退役节点" : "没有已登记节点，请先接管部署或新增节点");
   ids.forEach((id, index) => line(`  ${index + 1}. ${id}`));
   return inputValue(prompt, "选择节点编号或输入节点 ID", {
@@ -1558,7 +1633,7 @@ async function pickNode(prompt, { retired = false } = {}) {
 
 async function manage(prompt) {
   while (true) {
-    line("\nLume 管理\n  1. 从零部署\n  2. 接管已有部署\n  3. 查看状态\n  4. 新增 VPS\n  5. 配置节点\n  6. 部署配置 / 更新 Agent\n  7. 下线节点\n  8. 恢复节点\n  9. 下线并卸载 Agent\n  0. 退出");
+    line("\nLume 管理\n  1. 从零部署\n  2. 接管已有部署\n  3. 查看状态\n  4. 新增 VPS\n  5. 配置节点\n  6. 部署配置 / 更新 Agent\n  7. 下线节点\n  8. 恢复节点\n  9. 永久删除节点 / 卸载 Agent\n  0. 退出");
     const choice = await choiceValue(prompt, "选择操作", ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], "0", { line, showChoices: false });
     if (choice === "0") return;
     try {
@@ -1568,7 +1643,8 @@ async function manage(prompt) {
       else if (choice === "4") await addNode(prompt, new Map());
       else if (choice === "5") await configureNodeObservers(prompt, await pickNode(prompt));
       else if (choice === "6") await applyNodes(prompt, [await pickNode(prompt)]);
-      else if (choice === "7" || choice === "9") await removeNode(prompt, await pickNode(prompt), new Map(choice === "9" ? [["uninstall", true]] : []));
+      else if (choice === "7") await removeNode(prompt, await pickNode(prompt), new Map());
+      else if (choice === "9") await deleteNode(prompt, await pickNode(prompt,{deleting:true}), new Map());
       else if (choice === "8") await restoreNode(prompt, await pickNode(prompt, { retired: true }), new Map());
       else line("请输入 0–9。");
     } catch (error) {
@@ -1621,6 +1697,7 @@ async function main() {
         const state = await loadState();
         return await installNode(id, await nodeTarget(prompt, state, id, flags.get("ssh")), { state });
       }
+      if (action === "delete") return await deleteNode(prompt,nodeId || await pickNode(prompt,{deleting:true}),flags);
       if (action === "remove") {
         return await removeNode(prompt, nodeId || await pickNode(prompt), flags);
       }

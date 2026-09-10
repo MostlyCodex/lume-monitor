@@ -90,6 +90,17 @@ export function useDashboard(api: DashboardApi, notify: Notice) {
   function canRefresh() {
     return !disposed && !document.hidden && view.value === "dashboard";
   }
+  function retainKnownHistory(data: HistorySnapshot): HistorySnapshot {
+    const ids = latest.value?.catalog.known_node_ids;
+    if (!ids) return data;
+    const known = new Set(ids);
+    return {
+      ...data,
+      metrics: data.metrics.filter((row) => known.has(row.node_id)),
+      probes: data.probes.filter((row) => known.has(row.node_id)),
+      annotations: data.annotations.filter((row) => known.has(row.node_id)),
+    };
+  }
   async function loadLatest(initial = false) {
     if (!initial && !canRefresh()) return false;
     return request(
@@ -97,6 +108,12 @@ export function useDashboard(api: DashboardApi, notify: Notice) {
       (signal) => api.latest(signal),
       (data) => {
         latest.value = data;
+        if (data.catalog.known_node_ids) {
+          for (const cachedKey of cache.keys())
+            if (!data.catalog.known_node_ids.includes(cachedKey.split(":")[0]))
+              cache.delete(cachedKey);
+          if (fleetHistory.value) fleetHistory.value = retainKnownHistory(fleetHistory.value);
+        }
         view.value = "dashboard";
         startTimers();
         if (selectedId.value && !data.catalog.nodes.some((node) => node.id === selectedId.value))
@@ -110,7 +127,7 @@ export function useDashboard(api: DashboardApi, notify: Notice) {
       "fleet",
       (signal) => api.history(24, null, signal),
       (data) => {
-        fleetHistory.value = data;
+        fleetHistory.value = retainKnownHistory(data);
         fleetLoadedAt = Date.now();
       },
     );
@@ -148,6 +165,11 @@ export function useDashboard(api: DashboardApi, notify: Notice) {
       `detail:${requestedKey}`,
       (signal) => api.history(range, node, signal),
       (data) => {
+        if (
+          latest.value?.catalog.known_node_ids &&
+          !latest.value.catalog.known_node_ids.includes(node)
+        )
+          return;
         cache.delete(requestedKey);
         cache.set(requestedKey, { data, loadedAt: Date.now() });
         // Bound memory when users inspect many nodes and ranges in one session.

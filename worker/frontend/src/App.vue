@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { createDashboardApi } from "./services/dashboardApi";
 import { DEMO_MODE } from "./runtime";
 import { useDashboard } from "./composables/useDashboard";
@@ -18,7 +18,7 @@ import NodeDetail from "./components/NodeDetail.vue";
 import SettingsDialog from "./components/SettingsDialog.vue";
 
 const { toast, notify } = useToast();
-const { layout, save, reset, discardUnreadableBackground } = usePreferences();
+const { layout, save, reset, pruneNodes, discardUnreadableBackground } = usePreferences();
 const { theme, toggleTheme } = useTheme();
 const {
   latest,
@@ -36,6 +36,12 @@ const {
   refresh,
   logout,
 } = useDashboard(createDashboardApi(DEMO_MODE), notify);
+watch(
+  () => latest.value?.catalog.known_node_ids,
+  (ids) => {
+    if (Array.isArray(ids)) pruneNodes(ids);
+  },
+);
 const scene = ref<HTMLElement | null>(null);
 useSceneViewport(scene);
 const settingsOpen = ref(false),

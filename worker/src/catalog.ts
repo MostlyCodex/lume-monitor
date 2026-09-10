@@ -68,6 +68,7 @@ export interface BusinessRouteRow {
 }
 
 export interface DashboardCatalog {
+  knownNodeIds?: string[];
   nodes: NodeCatalogRow[];
   services: ServiceCatalogRow[];
   probes: ProbeCatalogRow[];
@@ -76,15 +77,15 @@ export interface DashboardCatalog {
 }
 
 export async function loadDashboardCatalog(env: Env): Promise<DashboardCatalog> {
-  const [nodes, retired, services, probes, metrics, routes] = await Promise.all([
+  const [nodes, known, services, probes, metrics, routes] = await Promise.all([
     env.DB.prepare(
       "SELECT node_id, public_id, display_name, role_label, group_name, region_label, " +
         "stale_seconds, display_order, color_key, offline_severity, ip_change_severity, enabled, retired_at " +
         "FROM node_catalog WHERE enabled = 1 AND retired_at IS NULL ORDER BY display_order, display_name",
     ).all<NodeCatalogRow>(),
     env.DB.prepare(
-      "SELECT node_id FROM node_catalog WHERE retired_at IS NOT NULL",
-    ).all<{ node_id: NodeId }>(),
+      "SELECT node_id,public_id,retired_at FROM node_catalog",
+    ).all<{ node_id: NodeId; public_id: string; retired_at: number | null }>(),
     env.DB.prepare(
       "SELECT node_id, service_name, display_name, severity, display_order, enabled " +
         "FROM service_catalog WHERE enabled = 1 ORDER BY node_id, display_order, display_name",
@@ -109,11 +110,13 @@ export async function loadDashboardCatalog(env: Env): Promise<DashboardCatalog> 
   // reports a node-link probe toward it would re-enable that probe and its
   // route on every report. Filtering on read makes retirement independent of
   // whether every peer configuration has been updated yet.
-  const retiredNodeIds = new Set(retired.results.map((row) => row.node_id));
+  const retiredNodeIds = new Set(known.results.filter((row) => row.retired_at !== null).map((row) => row.node_id));
   const visibleNode = (nodeId: NodeId): boolean => !retiredNodeIds.has(nodeId);
   const visibleTarget = (targetNodeId: NodeId | null): boolean =>
     targetNodeId === null || !retiredNodeIds.has(targetNodeId);
   return {
+    // Include recoverable nodes so browsers only prune permanently deleted IDs.
+    knownNodeIds: known.results.map((row) => row.public_id),
     nodes: nodes.results,
     services: services.results.filter((service) => visibleNode(service.node_id)),
     probes: probes.results.filter(
