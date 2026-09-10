@@ -5,6 +5,8 @@ worker/.wrangler/
 worker/.private-backups/
 worker/dist/
 worker/dist-webhook/
+worker/public/dashboard/
+worker/public/demo/
 playwright-report/
 worker/playwright-report/
 test-results/

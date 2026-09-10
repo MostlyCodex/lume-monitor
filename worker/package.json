@@ -1,9 +1,9 @@
 {
   "name": "lume-worker",
-  "version": "1.5.1",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Cloudflare Worker, D1 schema and dashboard for Lume. Deploying needs Wrangler only; the test toolchain lives in the repository root package.",
+  "description": "Cloudflare Worker, Vue 3 dashboard, and deployment tools for Lume.",
   "scripts": {
     "manage": "node ../tools/lumectl.mjs manage",
     "demo:build": "node ../tools/build-demo.mjs",
@@ -12,8 +12,8 @@
     "node:restore": "node ../tools/lumectl.mjs node restore",
     "doctor": "node ../tools/lumectl.mjs doctor",
     "setup": "node ../tools/lumectl.mjs setup",
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
+    "deploy": "npm run build:frontend && wrangler deploy",
+    "dev": "npm run build:frontend && wrangler dev",
     "db:local": "wrangler d1 migrations apply lume --local",
     "monitor:status": "node ../tools/lumectl.mjs status",
     "node:add": "node ../tools/lumectl.mjs node add",
@@ -22,14 +22,28 @@
     "node:remove": "node ../tools/lumectl.mjs node remove",
     "node:revoke": "node ../tools/lumectl.mjs node revoke",
     "node:sync": "node ../tools/lumectl.mjs node sync-keys",
-    "preview:dashboard": "node test/dashboard-preview-server.mjs",
-    "check": "tsc --noEmit && node --check public/dashboard/app.js && node --check test/integration.mjs && node --check test/run-local-integration.mjs && node --test ../tools/test/*.test.mjs && vitest run",
-    "test": "vitest run",
-    "test:integration": "node test/run-local-integration.mjs",
-    "test:browser": "playwright test",
-    "test:ci": "npm run check && npm run test:integration && npm run test:browser"
+    "preview:dashboard": "npm run build:frontend && node test/dashboard-preview-server.mjs",
+    "check": "npm run build:frontend && tsc --noEmit && npm run check:frontend && npm --prefix .. run check:format && node --check test/integration.mjs && node --check test/run-local-integration.mjs && node --test ../tools/test/*.test.mjs && vitest run",
+    "test": "npm run build:frontend && vitest run",
+    "test:integration": "npm run build:frontend && node test/run-local-integration.mjs",
+    "test:browser": "npm run build:frontend && playwright test",
+    "test:ci": "npm run check && node test/run-local-integration.mjs && playwright test",
+    "build:frontend": "node ../tools/build-frontend.mjs",
+    "check:frontend": "vue-tsc --noEmit -p frontend/tsconfig.json",
+    "dev:frontend": "vite --config frontend/vite.config.mjs"
   },
   "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.8",
+    "typescript": "5.9.3",
+    "vite": "8.2.2",
+    "vue-tsc": "3.3.11",
     "wrangler": "4.124.0"
+  },
+  "dependencies": {
+    "uplot": "1.6.32",
+    "vue": "3.5.42"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

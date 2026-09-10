@@ -1,4 +1,4 @@
-import { createDemoData } from "../public/demo/data.js";
+import { createDemoData } from "../frontend/src/demo/data.js";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";

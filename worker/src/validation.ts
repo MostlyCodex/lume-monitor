@@ -101,9 +101,44 @@ function nodeMetadata(value: unknown, expectedId: string): NodeMetadata {
   };
 }
 
+function networkFields(v: Record<string, unknown>): Partial<SystemMetrics> {
+ const result: Partial<SystemMetrics> = {};
+ if (v.traffic_cycle_enabled !== undefined) {
+  if (typeof v.traffic_cycle_enabled !== "boolean") throw new Error("traffic cycle enabled must be a boolean");
+  result.traffic_cycle_enabled = v.traffic_cycle_enabled;
+ }
+ if (v.network_valid !== undefined) {
+  if (typeof v.network_valid !== "boolean") throw new Error("system.network_valid must be a boolean");
+  result.network_valid = v.network_valid;
+ }
+ if (v.network_interfaces !== undefined) {
+  if (!Array.isArray(v.network_interfaces) || v.network_interfaces.length > 16) throw new Error("system.network_interfaces must be an array up to 16 entries");
+  const names = v.network_interfaces.map(name => patternValue(name,"network interface",/^(?!lo$|\.{1,2}$)[A-Za-z0-9_.:-]{1,15}$/,15));
+  if (new Set(names).size !== names.length) throw new Error("network interfaces must be unique");
+  result.network_interfaces = names.sort();
+ }
+ if (v.network_scope !== undefined) result.network_scope = patternValue(v.network_scope,"system.network_scope",/^[a-f0-9]{64}$/,64);
+ if (result.network_valid === true && (!result.network_interfaces?.length || !result.network_scope)) throw new Error("valid network metrics require interface identities");
+ if (v.traffic_cycle !== undefined) {
+  if (result.network_valid !== true || result.traffic_cycle_enabled === false) throw new Error("traffic cycle requires enabled accounting and valid network metrics");
+  const c = record(v.traffic_cycle,"system.traffic_cycle");
+  if (c.time_zone !== "UTC" && c.time_zone !== "Asia/Shanghai") throw new Error("traffic cycle timezone is invalid");
+  if (typeof c.partial !== "boolean") throw new Error("traffic cycle partial must be a boolean");
+  const start = integerValue(c.period_start,"traffic cycle start",1);
+  const end = integerValue(c.period_end,"traffic cycle end",start + 1,start + 32 * 86400);
+  result.traffic_cycle = {
+   reset_day:integerValue(c.reset_day,"traffic cycle reset day",1,31), time_zone:c.time_zone,
+   period_start:start,period_end:end,observed_since:integerValue(c.observed_since,"traffic observed since",start,end-1),
+   rx_bytes:integerValue(c.rx_bytes,"traffic cycle RX"),tx_bytes:integerValue(c.tx_bytes,"traffic cycle TX"),partial:c.partial,
+  };
+ }
+ return result;
+}
+
 function systemMetrics(value: unknown): SystemMetrics {
   const v = record(value, "system");
   return {
+    ...networkFields(v),
     hostname: stringValue(v.hostname, "system.hostname", 128),
     os: stringValue(v.os, "system.os", 256),
     kernel: stringValue(v.kernel, "system.kernel", 128),
@@ -350,6 +385,7 @@ export function validateReport(value: unknown): AgentReport {
     services: services(v.services),
     probes: probes(v.probes),
     agent: {
+      config_fingerprint: agent.config_fingerprint === undefined ? undefined : patternValue(agent.config_fingerprint,"agent.config_fingerprint",/^[a-f0-9]{64}$/,64),
       queue_depth: integerValue(agent.queue_depth, "agent.queue_depth", 0, 10000),
       collect_errors: integerValue(agent.collect_errors, "agent.collect_errors"),
       send_errors: integerValue(agent.send_errors, "agent.send_errors"),

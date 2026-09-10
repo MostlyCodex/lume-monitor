@@ -4,7 +4,7 @@ Contributions are welcome through issues and pull requests.
 
 1. Do not submit production credentials, host inventories, raw monitoring exports, or account-specific configuration.
 2. Keep the Agent outbound-only and preserve the rule that it must not modify monitored services.
-3. Add or update tests for behavior changes.
+3. Add or update tests for behavior changes. For the Vue frontend, keep components, request lifecycles and pure domain logic separate; use strict types and explain non-obvious constraints with comments.
 4. Run `go test ./...` and `go vet ./...` in `agent/`, then install Playwright Chromium and run `npm run test:ci` in `worker/`, before opening a pull request.
 5. Use generic node names and example domains in tests and documentation.
 6. Keep communication probes limited to the reviewed `icmp` and `tcp` primitives. Preserve the distinction among ICMP packet loss, TCP connect failure and incomplete sample coverage; update `docs/reference/monitoring-methodology.md` when measurement semantics change.

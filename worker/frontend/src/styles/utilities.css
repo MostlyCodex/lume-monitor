@@ -1,0 +1,84 @@
+.dashboard-footer {
+  position: relative;
+  isolation: isolate;
+  display: block;
+  width: calc(100% + 36px);
+  min-height: 112px;
+  margin: 56px -18px 0;
+  overflow: hidden;
+  padding: 30px max(26px, calc((100vw - 1600px) / 2)) calc(34px + env(safe-area-inset-bottom));
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+}
+.dashboard-footer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: var(--glass-footer-bg);
+  pointer-events: none;
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  mask-image: linear-gradient(to bottom, transparent, #000 38px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 38px);
+}
+.toast {
+  position: fixed;
+  z-index: 200;
+  right: 24px;
+  bottom: 24px;
+  max-width: min(380px, calc(100% - 32px));
+  padding: 12px 15px;
+  border: 1px solid color-mix(in srgb, var(--green) 30%, var(--line));
+  border-radius: 12px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  -webkit-backdrop-filter: blur(14px) saturate(108%);
+  backdrop-filter: blur(14px) saturate(108%);
+  font-size: 12px;
+}
+html[data-theme="light"] .toast {
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+.toast.is-error {
+  border-color: color-mix(in srgb, var(--red) 38%, var(--line));
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ridge-reveal {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes horizon-travel {
+  0% {
+    transform: translateX(-34px);
+    opacity: 0;
+  }
+  18%,
+  82% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(114px);
+    opacity: 0;
+  }
+}
+@keyframes energy-scan {
+  0%,
+  58% {
+    transform: translateX(-130%);
+  }
+  82%,
+  100% {
+    transform: translateX(130%);
+  }
+}

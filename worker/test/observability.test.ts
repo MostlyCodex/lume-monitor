@@ -153,3 +153,13 @@ describe("observability statistics", () => {
     expect(summary.anomalies[0]).toMatchObject({ severity: "warning", reason: "建连失败率 33.3%" });
   });
 });
+
+it("starts a new rate baseline when selected interfaces change, disappear or are recreated",()=>{
+ const before=report(100,"boot",1000,2000),after=report(160,"boot",1600,2600);
+ before.system.network_interfaces=["eth0"];before.system.network_scope="a".repeat(64);before.system.network_valid=true;
+ after.system.network_interfaces=["eth0"];after.system.network_scope="a".repeat(64);after.system.network_valid=true;
+ expect(computeNetworkRates(after,before)).toEqual({rxBps:10,txBps:10});
+ after.system.network_scope="b".repeat(64);expect(computeNetworkRates(after,before)).toEqual({rxBps:null,txBps:null});
+ after.system.network_scope=before.system.network_scope;after.system.network_interfaces=["eth1"];expect(computeNetworkRates(after,before)).toEqual({rxBps:null,txBps:null});
+ after.system.network_interfaces=["eth0"];after.system.network_valid=false;expect(computeNetworkRates(after,before)).toEqual({rxBps:null,txBps:null});
+});

@@ -14,32 +14,55 @@ type NodeMetadata struct {
 	IPChangeSeverity string `json:"ip_change_severity"`
 }
 
+type InterfaceCounters struct {
+	RX    uint64 `json:"rx"`
+	TX    uint64 `json:"tx"`
+	Index int    `json:"index"`
+}
+
+type TrafficCycle struct {
+	ResetDay      int    `json:"reset_day"`
+	TimeZone      string `json:"time_zone"`
+	PeriodStart   int64  `json:"period_start"`
+	PeriodEnd     int64  `json:"period_end"`
+	ObservedSince int64  `json:"observed_since"`
+	RXBytes       uint64 `json:"rx_bytes"`
+	TXBytes       uint64 `json:"tx_bytes"`
+	Partial       bool   `json:"partial"`
+}
+
 type SystemMetrics struct {
-	Hostname             string  `json:"hostname"`
-	OS                   string  `json:"os"`
-	Kernel               string  `json:"kernel"`
-	Arch                 string  `json:"arch"`
-	BootID               string  `json:"boot_id"`
-	UptimeSeconds        float64 `json:"uptime_seconds"`
-	CPUPercent           float64 `json:"cpu_percent"`
-	CPUCount             int     `json:"cpu_count,omitempty"`
-	Load1                float64 `json:"load1"`
-	Load5                float64 `json:"load5"`
-	Load15               float64 `json:"load15"`
-	MemoryTotalBytes     uint64  `json:"memory_total_bytes"`
-	MemoryAvailableBytes uint64  `json:"memory_available_bytes"`
-	SwapTotalBytes       uint64  `json:"swap_total_bytes"`
-	SwapUsedBytes        uint64  `json:"swap_used_bytes"`
-	RootTotalBytes       uint64  `json:"root_total_bytes"`
-	RootFreeBytes        uint64  `json:"root_free_bytes"`
-	RootUsedPercent      float64 `json:"root_used_percent"`
-	RootInodeUsedPercent float64 `json:"root_inode_used_percent"`
-	NetworkRXBytes       uint64  `json:"network_rx_bytes"`
-	NetworkTXBytes       uint64  `json:"network_tx_bytes"`
-	NetworkRXErrors      uint64  `json:"network_rx_errors"`
-	NetworkTXErrors      uint64  `json:"network_tx_errors"`
-	NetworkRXDrops       uint64  `json:"network_rx_drops"`
-	NetworkTXDrops       uint64  `json:"network_tx_drops"`
+	TrafficCycleEnabled  bool                         `json:"traffic_cycle_enabled"`
+	NetworkInterfaces    []string                     `json:"network_interfaces"`
+	NetworkValid         bool                         `json:"network_valid"`
+	NetworkScope         string                       `json:"network_scope,omitempty"`
+	NetworkCounters      map[string]InterfaceCounters `json:"-"`
+	TrafficCycle         *TrafficCycle                `json:"traffic_cycle,omitempty"`
+	Hostname             string                       `json:"hostname"`
+	OS                   string                       `json:"os"`
+	Kernel               string                       `json:"kernel"`
+	Arch                 string                       `json:"arch"`
+	BootID               string                       `json:"boot_id"`
+	UptimeSeconds        float64                      `json:"uptime_seconds"`
+	CPUPercent           float64                      `json:"cpu_percent"`
+	CPUCount             int                          `json:"cpu_count,omitempty"`
+	Load1                float64                      `json:"load1"`
+	Load5                float64                      `json:"load5"`
+	Load15               float64                      `json:"load15"`
+	MemoryTotalBytes     uint64                       `json:"memory_total_bytes"`
+	MemoryAvailableBytes uint64                       `json:"memory_available_bytes"`
+	SwapTotalBytes       uint64                       `json:"swap_total_bytes"`
+	SwapUsedBytes        uint64                       `json:"swap_used_bytes"`
+	RootTotalBytes       uint64                       `json:"root_total_bytes"`
+	RootFreeBytes        uint64                       `json:"root_free_bytes"`
+	RootUsedPercent      float64                      `json:"root_used_percent"`
+	RootInodeUsedPercent float64                      `json:"root_inode_used_percent"`
+	NetworkRXBytes       uint64                       `json:"network_rx_bytes"`
+	NetworkTXBytes       uint64                       `json:"network_tx_bytes"`
+	NetworkRXErrors      uint64                       `json:"network_rx_errors"`
+	NetworkTXErrors      uint64                       `json:"network_tx_errors"`
+	NetworkRXDrops       uint64                       `json:"network_rx_drops"`
+	NetworkTXDrops       uint64                       `json:"network_tx_drops"`
 }
 
 type ServiceStatus struct {
@@ -84,10 +107,11 @@ type ProbeResult struct {
 }
 
 type AgentHealth struct {
-	QueueDepth    int    `json:"queue_depth"`
-	CollectErrors uint64 `json:"collect_errors"`
-	SendErrors    uint64 `json:"send_errors"`
-	StartedAt     int64  `json:"started_at"`
+	ConfigFingerprint string `json:"config_fingerprint,omitempty"`
+	QueueDepth        int    `json:"queue_depth"`
+	CollectErrors     uint64 `json:"collect_errors"`
+	SendErrors        uint64 `json:"send_errors"`
+	StartedAt         int64  `json:"started_at"`
 }
 
 type Report struct {

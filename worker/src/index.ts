@@ -680,29 +680,48 @@ async function cleanup(env: Env, now: number): Promise<void> {
   await cleanupDashboardAuth(env, now);
 }
 
+function configurationSummary(raw: string | null): Record<string, unknown> {
+ try {
+  const report = validateReport(JSON.parse(raw ?? "null"));
+  return {
+   config_fingerprint: report.agent.config_fingerprint ?? null,
+   agent_version: report.agent_version,
+   services: report.services.map(service => ({name:service.name,state:service.state})),
+   probes: report.probes.map(probe => ({name:probe.name,kind:probe.kind})),
+   network_interfaces: report.system.network_interfaces ?? null,
+   network_valid: report.system.network_valid ?? null,
+  };
+ } catch { return {config_fingerprint:null}; }
+}
+
 interface NodeCatalogAdminRow {
   node_id: NodeId;
   display_name: string;
   enabled: number;
   retired_at: number | null;
   received_at: number | null;
+  reported_at: number | null;
+  report_json: string | null;
 }
 
 async function adminNodes(env: Env, now: number): Promise<Response> {
   const rows = await env.DB.prepare(
-    "SELECT catalog.node_id, catalog.display_name, catalog.enabled, catalog.retired_at, latest.received_at " +
+    "SELECT catalog.node_id, catalog.display_name, catalog.enabled, catalog.retired_at, latest.received_at, latest.reported_at, latest.report_json " +
       "FROM node_catalog AS catalog LEFT JOIN node_latest AS latest ON latest.node_id = catalog.node_id " +
       "ORDER BY catalog.display_order, catalog.node_id",
   ).all<NodeCatalogAdminRow>();
   return json({
     server_time: now,
+    capabilities: { config_fingerprint: 1 },
     nodes: rows.results.map((row) => ({
+      ...configurationSummary(row.report_json),
       node_id: row.node_id,
       display_name: row.display_name,
       enabled: row.enabled === 1,
       retired: row.retired_at !== null,
       retired_at: row.retired_at,
       last_report_at: row.received_at,
+      generated_at: row.reported_at,
       last_report_age_seconds: row.received_at === null ? null : Math.max(0, now - row.received_at),
     })),
   });

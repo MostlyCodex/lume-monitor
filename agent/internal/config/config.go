@@ -1,6 +1,8 @@
 package config
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +21,7 @@ var servicePattern = regexp.MustCompile(`^[A-Za-z0-9_.@-]{1,80}$`)
 var probeNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,79}$`)
 var categoryPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
 var markPattern = regexp.MustCompile(`^[A-Za-z0-9]{1,4}$`)
+var interfaceNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,15}$`)
 var colorPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,23}$`)
 
 type Node struct {
@@ -62,16 +65,29 @@ type Probe struct {
 	Primary                bool    `json:"primary,omitempty"`
 }
 
+type TrafficCycle struct {
+	Enabled  bool   `json:"enabled"`
+	ResetDay int    `json:"reset_day"`
+	TimeZone string `json:"time_zone"`
+}
+
+func ValidInterfaceName(value string) bool {
+	return value != "lo" && value != "." && value != ".." && interfaceNamePattern.MatchString(value)
+}
+
 type Config struct {
-	Node                  Node      `json:"node"`
-	Endpoint              string    `json:"endpoint"`
-	Secret                string    `json:"secret"`
-	ReportIntervalSeconds int       `json:"report_interval_seconds"`
-	ProbeIntervalSeconds  int       `json:"probe_interval_seconds"`
-	Services              []Service `json:"services"`
-	Probes                []Probe   `json:"probes"`
-	SpoolPath             string    `json:"spool_path"`
-	AllowHTTPForTests     bool      `json:"allow_http_for_tests,omitempty"`
+	Fingerprint           string       `json:"-"`
+	NetworkInterfaces     []string     `json:"network_interfaces,omitempty"`
+	TrafficCycle          TrafficCycle `json:"traffic_cycle"`
+	Node                  Node         `json:"node"`
+	Endpoint              string       `json:"endpoint"`
+	Secret                string       `json:"secret"`
+	ReportIntervalSeconds int          `json:"report_interval_seconds"`
+	ProbeIntervalSeconds  int          `json:"probe_interval_seconds"`
+	Services              []Service    `json:"services"`
+	Probes                []Probe      `json:"probes"`
+	SpoolPath             string       `json:"spool_path"`
+	AllowHTTPForTests     bool         `json:"allow_http_for_tests,omitempty"`
 }
 
 func validSeverity(value string) bool {
@@ -123,7 +139,14 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("open config: %w", err)
 	}
 	defer file.Close()
-	decoder := json.NewDecoder(io.LimitReader(file, maxConfigBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(file, maxConfigBytes+1))
+	if err != nil {
+		return Config{}, fmt.Errorf("read config: %w", err)
+	}
+	if len(raw) > maxConfigBytes {
+		return Config{}, errors.New("config exceeds 64 KiB")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	// Accept the retired field when upgrading an existing configuration. It is
 	// discarded at this boundary and never reaches collection or serialization.
@@ -134,7 +157,12 @@ func Load(path string) (Config, error) {
 	if err := decoder.Decode(&document); err != nil {
 		return Config{}, fmt.Errorf("decode config: %w", err)
 	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return Config{}, errors.New("config must contain one JSON object")
+	}
 	cfg := document.Config
+	cfg.Fingerprint = fmt.Sprintf("%x", sha256.Sum256(raw))
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -323,6 +351,28 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	if len(c.NetworkInterfaces) > 16 {
+		return errors.New("network_interfaces allows at most 16 interfaces")
+	}
+	seenInterfaces := map[string]bool{}
+	for _, name := range c.NetworkInterfaces {
+		if !ValidInterfaceName(name) || seenInterfaces[name] {
+			return fmt.Errorf("invalid or duplicate network interface %q", name)
+		}
+		seenInterfaces[name] = true
+	}
+	if c.TrafficCycle.ResetDay == 0 {
+		c.TrafficCycle.ResetDay = 1
+	}
+	if c.TrafficCycle.TimeZone == "" {
+		c.TrafficCycle.TimeZone = "UTC"
+	}
+	if c.TrafficCycle.ResetDay < 1 || c.TrafficCycle.ResetDay > 31 {
+		return errors.New("traffic_cycle.reset_day must be between 1 and 31")
+	}
+	if c.TrafficCycle.TimeZone != "UTC" && c.TrafficCycle.TimeZone != "Asia/Shanghai" {
+		return errors.New("traffic_cycle.time_zone must be UTC or Asia/Shanghai")
+	}
 	if c.SpoolPath == "" {
 		c.SpoolPath = "/var/lib/vpsmon/pending.json"
 	}

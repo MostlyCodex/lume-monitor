@@ -274,3 +274,12 @@ describe("report validation", () => {
     expect(() => validateLegacyReport(legacyReport(), metadata)).toThrow(/metadata is missing/);
   });
 });
+
+it("validates interface identities, optional traffic periods and configuration fingerprints",()=>{
+ const input=validReport();const system=input.system as Record<string,unknown>;const agent=input.agent as Record<string,unknown>;
+ Object.assign(system,{network_interfaces:["eth0"],network_valid:true,network_scope:"a".repeat(64),traffic_cycle:{reset_day:1,time_zone:"UTC",period_start:100,period_end:2678500,observed_since:200,rx_bytes:123,tx_bytes:456,partial:true}});
+ agent.config_fingerprint="b".repeat(64);
+ const report=validateReport(input);expect(report.system.traffic_cycle?.rx_bytes).toBe(123);expect(report.agent.config_fingerprint).toBe("b".repeat(64));
+ for (const patch of [{network_interfaces:["eth0","eth0"]},{network_interfaces:["../secret"]},{network_interfaces:["."]},{network_interfaces:[".."]},{network_valid:"true"},{network_valid:false},{network_scope:"invalid"},{traffic_cycle:{...(system.traffic_cycle as object),reset_day:32}},{traffic_cycle:{...(system.traffic_cycle as object),partial:"yes"}},{traffic_cycle:{...(system.traffic_cycle as object),time_zone:"local"}}]) expect(()=>validateReport({...input,system:{...system,...patch}})).toThrow();
+ agent.config_fingerprint="untrusted";expect(()=>validateReport(input)).toThrow(/fingerprint/);
+});

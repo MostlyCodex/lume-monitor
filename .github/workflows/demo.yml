@@ -3,7 +3,7 @@ name: Public demo
 on:
   push:
     branches: [main]
-    paths: ["worker/public/**", "tools/build-demo.mjs", ".github/workflows/demo.yml"]
+    paths: ["worker/frontend/**", "worker/public/**", "worker/package*.json", "tools/build-frontend.mjs", "tools/demo-html.mjs", "tools/build-demo.mjs", ".github/workflows/demo.yml"]
   workflow_dispatch:
 
 permissions:
@@ -21,6 +21,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
+      - run: npm ci
+        working-directory: worker
       - run: node tools/build-demo.mjs
       - uses: actions/upload-pages-artifact@v4
         with:

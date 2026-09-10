@@ -18,5 +18,11 @@
   "probe_interval_seconds": 60,
   "services": [],
   "probes": [],
-  "spool_path": "/var/lib/vpsmon/pending.json"
+  "spool_path": "/var/lib/vpsmon/pending.json",
+  "network_interfaces": [],
+  "traffic_cycle": {
+    "enabled": false,
+    "reset_day": 1,
+    "time_zone": "UTC"
+  }
 }

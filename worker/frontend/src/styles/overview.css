@@ -1,0 +1,201 @@
+.app-shell {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  padding: 0 18px;
+}
+.command-bar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: grid;
+  width: calc(100% + 36px);
+  min-height: 66px;
+  margin: 0 -18px;
+  padding: 10px max(32px, calc((100vw - 1652px) / 2));
+  grid-template-columns: minmax(220px, 1fr) auto minmax(220px, 1fr);
+  align-items: center;
+  border: 0;
+  border-radius: 0;
+  background: var(--glass-chrome-bg);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.1);
+}
+.fleet-health {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 14px;
+  border: 1px solid color-mix(in srgb, var(--green) 25%, transparent);
+  border-radius: 999px;
+  color: var(--green);
+}
+.fleet-health > div {
+  display: grid;
+}
+.fleet-health strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.25;
+}
+.fleet-health span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.fleet-health.is-warning {
+  border-color: color-mix(in srgb, var(--amber) 32%, transparent);
+  color: var(--amber);
+}
+.fleet-health.is-critical {
+  border-color: color-mix(in srgb, var(--red) 34%, transparent);
+  color: var(--red);
+}
+.command-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+.last-refresh {
+  margin-right: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.page-shell {
+  width: min(1600px, calc(100% - 16px));
+  margin: 0 auto;
+  padding: 48px 0 0;
+}
+
+.fleet-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 28px;
+  margin-bottom: 24px;
+}
+.fleet-heading.is-summary-only {
+  justify-content: flex-end;
+  margin-bottom: 18px;
+}
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--primary);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+.fleet-heading h1 {
+  margin: 0;
+  font-size: clamp(34px, 4vw, 52px);
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+.fleet-heading > div:first-child > p:last-child {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.summary-strip {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.summary-item {
+  display: grid;
+  min-width: 112px;
+  padding: 10px 14px;
+  border-left: 1px solid var(--line);
+}
+.summary-item:first-child {
+  border-left: 0;
+}
+.summary-item span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.summary-item strong {
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.summary-item.is-warning strong {
+  color: var(--amber);
+}
+.summary-item.is-critical strong {
+  color: var(--red);
+}
+
+.fleet-toolbar {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 0;
+}
+.range-switch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.range-switch button {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.range-switch button:hover {
+  color: var(--text);
+}
+.range-switch button.is-active {
+  background: rgba(var(--primary-rgb), 0.13);
+  color: var(--primary);
+}
+.search-control {
+  display: flex;
+  width: min(320px, 100%);
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: var(--glass-control-bg);
+  color: var(--muted);
+  box-shadow: none;
+  -webkit-backdrop-filter: var(--glass-filter-compact);
+  backdrop-filter: var(--glass-filter-compact);
+}
+.search-control > svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.search-control input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+}
+.search-control input::placeholder {
+  color: var(--muted);
+}
+html[data-theme="light"] .search-control {
+  box-shadow: 0 7px 20px rgba(34, 52, 78, 0.035);
+}

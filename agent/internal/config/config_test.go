@@ -1,7 +1,9 @@
 package config
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -184,5 +186,53 @@ func TestValidateRejectsImpossibleSampleSchedule(t *testing.T) {
 	}}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected samples that cannot start before the round timeout to be rejected")
+	}
+}
+
+func TestAccountingConfigurationValidation(t *testing.T) {
+	for _, names := range [][]string{{"lo"}, {"eth0", "eth0"}, {"../eth0"}, {"."}, {".."}, {"a very long name"}} {
+		cfg := baseConfig()
+		cfg.NetworkInterfaces = names
+		if cfg.Validate() == nil {
+			t.Fatalf("accepted %v", names)
+		}
+	}
+	cfg := baseConfig()
+	cfg.NetworkInterfaces = []string{"eth0", "wg0"}
+	cfg.TrafficCycle = TrafficCycle{Enabled: true, ResetDay: 31, TimeZone: "Asia/Shanghai"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.TrafficCycle.ResetDay = 32
+	if cfg.Validate() == nil {
+		t.Fatal("accepted invalid reset day")
+	}
+	cfg.TrafficCycle.ResetDay = 1
+	cfg.TrafficCycle.TimeZone = "arbitrary"
+	if cfg.Validate() == nil {
+		t.Fatal("accepted unsupported timezone")
+	}
+}
+func TestFingerprintAcknowledgesTheExactLoadedFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Load requires Unix file permissions")
+	}
+	cfg := baseConfig()
+	body, _ := json.MarshalIndent(cfg, "", "  ")
+	body = append(body, '\n')
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Fingerprint != fmt.Sprintf("%x", sha256.Sum256(body)) {
+		t.Fatal("fingerprint does not match loaded bytes")
+	}
+	os.WriteFile(path, append(body, []byte("{}")...), 0600)
+	if _, err := Load(path); err == nil {
+		t.Fatal("trailing configuration data was accepted")
 	}
 }

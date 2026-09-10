@@ -390,7 +390,16 @@ for (const offsetDays of [0, 1]) {
 const dashboardPage = await fetch(`${base}/dashboard/`);
 assert(dashboardPage.status === 200 && (dashboardPage.headers.get("content-type") ?? "").includes("text/html"), "dashboard asset failed");
 const dashboardHtml = await dashboardPage.text();
-assert(dashboardHtml.includes("Lume") && dashboardHtml.includes("node-detail"), "generic dashboard interface is missing");
+assert(dashboardHtml.includes("Lume") && dashboardHtml.includes('<div id="app"></div>'), "dashboard mount is missing");
+// Vue renders the interface in the browser. Verify the Worker serves the compiled entry assets.
+const frontendAssets = [...dashboardHtml.matchAll(/(?:src|href)="(\.\/assets\/[^"<>]+)"/g)].map(match => match[1]);
+assert(frontendAssets.some(path => path.endsWith(".js")) && frontendAssets.some(path => path.endsWith(".css")), "compiled frontend entries are missing");
+for (const asset of frontendAssets) {
+  const response = await fetch(new URL(asset, dashboardPage.url));
+  const expectedType = asset.endsWith(".css") ? "text/css" : "javascript";
+  assert(response.ok && (response.headers.get("content-type") ?? "").includes(expectedType), "compiled frontend asset is not served correctly");
+  assert((await response.text()).length > 0, "compiled frontend asset is empty");
+}
 
 const logout = await fetch(`${base}/auth/logout`, { method: "POST" });
 assert(logout.status === 204 && (logout.headers.get("set-cookie") ?? "").includes("Max-Age=0"), "dashboard logout failed");
@@ -555,5 +564,30 @@ assert(scheduled.status === 200, `scheduled handler returned ${scheduled.status}
 
 const dailyScheduled = await fetch(`${base}/cdn-cgi/local/scheduled?cron=0+1+*+*+*&format=json`);
 assert(dailyScheduled.status === 200, `daily scheduled handler returned ${dailyScheduled.status}`);
+
+// An authenticated configuration acknowledgement survives D1 storage and stays
+// restricted to the management API. Public metrics retain the selected scope.
+const accountingReport = report("alpha-vps");
+accountingReport.generated_at = Math.max(Math.floor(Date.now() / 1000), staleLinkAlpha.generated_at + 1);
+accountingReport.probes.forEach(probe => {probe.checked_at = accountingReport.generated_at;});
+accountingReport.agent.config_fingerprint = "d".repeat(64);
+const accountingDate = new Date(accountingReport.generated_at * 1000);
+Object.assign(accountingReport.system, {
+  network_valid:true, network_interfaces:["eth0"], network_scope:"a".repeat(64),traffic_cycle_enabled:true,
+  traffic_cycle:{reset_day:1,time_zone:"UTC",period_start:Date.UTC(accountingDate.getUTCFullYear(),accountingDate.getUTCMonth(),1)/1000,period_end:Date.UTC(accountingDate.getUTCFullYear(),accountingDate.getUTCMonth()+1,1)/1000,observed_since:accountingReport.generated_at,rx_bytes:123,tx_bytes:456,partial:true},
+});
+const accountingAccepted = await fetch(`${base}/api/v1/report`,signedRequest(JSON.stringify(accountingReport)));
+assert(accountingAccepted.status === 202,`accounting report returned ${accountingAccepted.status}: ${await accountingAccepted.text()}`);
+const configNodes = await (await fetch(`${base}/api/v1/admin/nodes`,{headers:adminHeaders})).json();
+const configNode = configNodes.nodes.find(node=>node.node_id === "alpha-vps");
+assert(configNodes.capabilities.config_fingerprint === 1,"configuration capability missing");
+assert(configNode.config_fingerprint === accountingReport.agent.config_fingerprint,"actual configuration fingerprint was lost");
+assert(configNode.generated_at === accountingReport.generated_at,"configuration acknowledgement used receipt time instead of sample time");
+assert(configNode.network_interfaces.join(",") === "eth0" && configNode.network_valid === true,"actual network interfaces missing");
+const accountingDashboard = await (await fetch(`${base}/api/v1/dashboard/latest`,{headers:adminHeaders})).json();
+const accountingNode = accountingDashboard.nodes.find(node=>node.id === "alpha-vps");
+assert(accountingNode.metrics.traffic_cycle.rx_bytes === 123 && accountingNode.metrics.traffic_cycle_enabled,"cycle accounting was lost in the dashboard");
+assert(accountingNode.metrics.network_rx_rate_bps === null,"changing network scope fabricated a rate");
+assert(!JSON.stringify(accountingDashboard).includes(accountingReport.agent.config_fingerprint),"private config fingerprint leaked into the dashboard");
 
 console.log("integration_ok=true");

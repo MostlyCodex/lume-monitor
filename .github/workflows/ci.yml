@@ -41,7 +41,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             worker/package-lock.json
-      # The test toolchain lives in the repository root; worker/ installs Wrangler only.
+      # Install the shared tests and the Worker/frontend build toolchain.
       - run: npm ci
         working-directory: .
       - run: npm ci

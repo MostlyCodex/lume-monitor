@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { demoHtml } from "../build-demo.mjs";
-import { createDemoData } from "../../worker/public/demo/data.js";
+import { createDemoData } from "../../worker/frontend/src/demo/data.js";
 
 test("demo keeps assets within a Pages subpath and separates browser preferences", async () => {
   const template = await readFile(new URL("../../worker/public/dashboard/index.html", import.meta.url), "utf8");
   const html = demoHtml(template, "./dashboard/");
   assert.match(html, /data-demo="true"/);
   assert.doesNotMatch(html, /(?:src|href)="\/dashboard\//);
-  assert.match(html, /公开演示 · 虚构数据/);
-  assert.match(html, /id="logout-button"[^>]*hidden/);
+  assert.match(html, /体验 Lume/);
+  assert.match(html, /src="\.\/dashboard\/assets\//);
 });
 
 test("demo history is generated locally for both overview and node details", () => {

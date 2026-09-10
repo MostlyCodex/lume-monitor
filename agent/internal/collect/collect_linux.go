@@ -137,37 +137,6 @@ func diskMetrics() (total, free uint64, usedPercent, inodeUsedPercent float64, e
 	return total, free, usedPercent, inodeUsedPercent, nil
 }
 
-func networkMetrics() (rxBytes, txBytes, rxErrors, txErrors, rxDrops, txDrops uint64, err error) {
-	file, err := os.Open("/proc/net/dev")
-	if err != nil {
-		return 0, 0, 0, 0, 0, 0, err
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "lo" {
-			continue
-		}
-		fields := strings.Fields(parts[1])
-		if len(fields) < 16 {
-			continue
-		}
-		parse := func(index int) uint64 {
-			value, _ := strconv.ParseUint(fields[index], 10, 64)
-			return value
-		}
-		rxBytes += parse(0)
-		rxErrors += parse(2)
-		rxDrops += parse(3)
-		txBytes += parse(8)
-		txErrors += parse(10)
-		txDrops += parse(11)
-	}
-	return rxBytes, txBytes, rxErrors, txErrors, rxDrops, txDrops, scanner.Err()
-}
-
 func (c *Collector) Collect() (model.SystemMetrics, []error) {
 	errorsFound := []error{}
 	hostname, err := os.Hostname()
@@ -206,7 +175,7 @@ func (c *Collector) Collect() (model.SystemMetrics, []error) {
 	if err != nil {
 		errorsFound = append(errorsFound, err)
 	}
-	rx, tx, rxErr, txErr, rxDrop, txDrop, err := networkMetrics()
+	network, err := ReadNetwork(c.networkInterfaces)
 	if err != nil {
 		errorsFound = append(errorsFound, err)
 	}
@@ -216,7 +185,8 @@ func (c *Collector) Collect() (model.SystemMetrics, []error) {
 		MemoryTotalBytes: memTotal, MemoryAvailableBytes: memAvailable,
 		SwapTotalBytes: swapTotal, SwapUsedBytes: swapUsed,
 		RootTotalBytes: rootTotal, RootFreeBytes: rootFree, RootUsedPercent: rootUsed, RootInodeUsedPercent: inodeUsed,
-		NetworkRXBytes: rx, NetworkTXBytes: tx, NetworkRXErrors: rxErr, NetworkTXErrors: txErr,
-		NetworkRXDrops: rxDrop, NetworkTXDrops: txDrop,
+		NetworkRXBytes: network.RX, NetworkTXBytes: network.TX, NetworkRXErrors: network.RXErrors, NetworkTXErrors: network.TXErrors,
+		NetworkRXDrops: network.RXDrops, NetworkTXDrops: network.TXDrops,
+		NetworkInterfaces: network.Interfaces, NetworkValid: err == nil, NetworkScope: network.Scope, NetworkCounters: network.Counters,
 	}, errorsFound
 }

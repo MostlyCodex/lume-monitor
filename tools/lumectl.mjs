@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { buildFrontend } from "./build-frontend.mjs";
 
 import { createHash, randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
@@ -10,6 +11,8 @@ import { fileURLToPath } from "node:url";
 import { applyPending, keyProof, parseJsonc, restorePeerProbes, validateImportedConfig, verifyKeyInventory, workerOrigin } from "./management.mjs";
 import { editObserverEntries, externalProbes, parseServices, printObserverSummary, promptNetworkProbes, promptServices } from "./observers.mjs";
 import { InputError, PromptCancelled, PromptClosed, choiceValue, displayValue, inputValue, makePrompter } from "./prompts.mjs";
+
+import { configFingerprint, configurationStatus, matchesAppliedReport, networkInventoryCommand, normalizeAccounting, parseNetworkInventory, printAccountingSummary, promptAccounting, serializeAgentConfig } from "./network-accounting.mjs";
 
 const toolFile = fileURLToPath(import.meta.url);
 const repoRoot = resolve(dirname(toolFile), "..");
@@ -23,7 +26,8 @@ const wranglerConfigPath = join(workerDir, "wrangler.jsonc");
 const wranglerBin = join(workerDir, "node_modules", "wrangler", "bin", "wrangler.js");
 const releaseRepository = process.env.LUME_RELEASE_REPOSITORY || "MostlyCodex/lume-monitor";
 const maxDownloadBytes = 64 * 1024 * 1024;
-const cacheDir = join(privateDir, "cache");
+// Isolate the stable Agent distribution from binaries cached before the version reset.
+const cacheDir = join(privateDir, "cache", "agents-v1");
 
 class DownloadUnavailableError extends Error {}
 
@@ -172,6 +176,8 @@ export function createAgentConfig({
   secret,
   services = [],
   probes = [],
+  network_interfaces = [],
+  traffic_cycle,
 }) {
   if (!validateNodeId(id)) fail("节点 ID 必须匹配 [a-z0-9][a-z0-9_-]{0,31}");
   if (typeof secret !== "string" || secret.length < 32) fail("节点密钥无效");
@@ -200,6 +206,7 @@ export function createAgentConfig({
     probe_interval_seconds: 60,
     services,
     probes,
+    ...normalizeAccounting({network_interfaces,traffic_cycle}),
     spool_path: "/var/lib/vpsmon/pending.json",
   };
 }
@@ -291,7 +298,8 @@ function run(command, args, options = {}) {
   });
 }
 
-function wrangler(args, options = {}) {
+async function wrangler(args, options = {}) {
+  if (args[0] === "deploy") await buildFrontend();
   return run(process.execPath, [wranglerBin, ...args], { cwd: workerDir, ...options });
 }
 
@@ -500,13 +508,13 @@ async function adminNodeList(state) {
   return result.body.nodes;
 }
 
-async function waitForFirstReport(state, id, timeoutSeconds = 90, since = 0) {
+async function waitForFirstReport(state, id, timeoutSeconds = 90, since = 0, fingerprint = null, version = null) {
   const deadline = Date.now() + timeoutSeconds * 1000;
   while (Date.now() < deadline) {
     try {
       const nodes = await adminNodeList(state);
       const node = nodes?.find((entry) => entry.node_id === id);
-      if (node && Number(node.last_report_at) >= since && node.last_report_at !== null) return node;
+      if (fingerprint ? matchesAppliedReport(node,{fingerprint,since,version}) : node && Number(node.last_report_at) >= since && node.last_report_at !== null) return node;
     } catch {
       // Keep polling; the node is what is being waited on, not the network.
     }
@@ -515,10 +523,31 @@ async function waitForFirstReport(state, id, timeoutSeconds = 90, since = 0) {
   return null;
 }
 
+async function ensureConfigurationReporting(state) {
+  const supports = response => response.ok && response.body?.capabilities?.config_fingerprint === 1;
+  const initial = await adminFetch(state,"/api/v1/admin/nodes");
+  if (supports(initial)) return;
+  if (!initial.ok) fail(`后端检查失败（HTTP ${initial.status}），已停止部署。请先核对 Worker 地址与 ADMIN_TOKEN。`);
+  line("后端需要支持配置生效确认，先更新 Worker…");
+  await ensureCloudflareLogin();
+  await applyDatabaseMigrations(state);
+  await wrangler(["deploy","--config",wranglerConfigPath,"--keep-vars","--var",`APP_VERSION:${await readVersion()}`]);
+  if (!supports(await adminFetch(state,"/api/v1/admin/nodes"))) fail("Worker 尚未提供配置确认能力，Agent 部署已停止。请检查部署地址和版本。");
+  line("✓ Worker 已支持配置核验，继续部署 Agent。");
+}
+
+async function readNetworkInventory(target) {
+ if (!validateSshTarget(target || "")) return null;
+ try {
+  const result = await run("ssh",["-o","BatchMode=yes","-o","ConnectTimeout=8",target,networkInventoryCommand],{capture:true});
+  return parseNetworkInventory(result.stdout);
+ } catch { line("! 暂时无法通过 SSH 读取网卡，可保留当前设置或使用自动模式。"); return null; }
+}
+
 async function doctor({ quiet = false } = {}) {
   const checks = [];
-  const nodeMajor = Number(process.versions.node.split(".")[0]);
-  checks.push({ name: "Node.js 22+", ok: nodeMajor >= 22, detail: `v${process.versions.node}` });
+  const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
+  checks.push({ name: "Node.js 22.12+", ok: nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 12), detail: `v${process.versions.node}` });
   checks.push({ name: "Worker 依赖", ok: await exists(wranglerBin), detail: await exists(wranglerBin) ? "已安装" : "请先在 worker 目录运行 npm ci" });
   for (const [name, command, args] of [
     ["Git", "git", ["--version"]],
@@ -775,6 +804,7 @@ export function normalizeNodeSpec(spec) {
     services,
     ssh,
     probes: Array.isArray(spec.probes) ? spec.probes : [],
+    ...normalizeAccounting(spec),
   };
 }
 
@@ -807,6 +837,8 @@ async function createNodeRecords(state, specs) {
       secret: entry.secret,
       services: parseServices(entry.spec.services),
       probes: entry.spec.probes,
+      network_interfaces: entry.spec.network_interfaces,
+      traffic_cycle: entry.spec.traffic_cycle,
     });
     state.nodeKeys[entry.spec.id] = entry.secret;
     state.nodes[entry.spec.id] = {
@@ -871,7 +903,9 @@ async function addNode(prompt, options) {
     const services = await promptServices(prompt, { line });
     const optionalObservers = await promptOptionalObservers(prompt, { state, excludeNodeId: id });
     const target = await promptSshTarget(prompt, "SSH 部署目标", "", true);
+    const accounting = await promptAccounting(prompt, {}, {discover:()=>readNetworkInventory(target),line});
     printObserverSummary({ node: { id, display_name: displayName }, services, probes: optionalObservers.probes }, line);
+    printAccountingSummary(accounting,line);
     line(`  部署目标：${target || "暂不安装，稍后在管理菜单部署"}`);
     if (!(await prompt.yes("按以上配置新增节点并继续部署", true))) return;
     specs = [normalizeNodeSpec({
@@ -883,6 +917,7 @@ async function addNode(prompt, options) {
       services: services.map((service) => service.name),
       ssh: target,
       probes: optionalObservers.probes,
+      ...accounting,
     })];
   }
   await createNodeRecords(state, specs);
@@ -902,6 +937,7 @@ async function configureNodeObservers(prompt, id) {
   assertPlainObject(config, "节点配置");
   const original = JSON.stringify(config);
   printObserverSummary(config, line);
+  printAccountingSummary(config,line);
   if (state.nodes[id].pendingApply) line("! 这份本地配置仍待部署；本次向导可以继续下发。");
   if (await prompt.yes("修改 systemd 服务列表（新列表替换原列表，留空清空）", false)) config.services = await promptServices(prompt, { line });
   config.probes = await editObserverEntries(prompt, {
@@ -909,11 +945,15 @@ async function configureNodeObservers(prompt, id) {
     fallback: config.probes.length ? "1" : "2",
     create: async ({ existing }) => promptNetworkProbes(prompt, { sources: await availableProbeSources(state, id), nodes: probeTargetNodes(state, id), existing, line }),
   });
+  if (await prompt.yes("修改流量统计网卡与周期", !Object.hasOwn(config,"network_interfaces"))) {
+    Object.assign(config,await promptAccounting(prompt,config,{discover:()=>readNetworkInventory(state.nodes[id].sshTarget),line}));
+  }
   // A saved configuration upgrade drops the retired observer field.
   delete config.nftables_counters;
   const changed = JSON.stringify(config) !== original;
   if (changed) {
     printObserverSummary(config, line);
+    printAccountingSummary(config,line);
     if (!(await prompt.yes("保存以上监测配置", true))) return;
     await writePrivateJson(join(privateDir, "backups", `${id}-config-${Date.now()}.json`), JSON.parse(original));
     await writePrivateJson(configPath, config);
@@ -940,7 +980,7 @@ async function applyNodes(prompt, ids, state = null) {
     save: (value) => writePrivateJson(statePath, value),
     deploy: async (id) => {
       const target = await nodeTarget(prompt, state, id);
-      await installNode(id, target, { upgrade: Boolean(state.nodes[id].installed), reconcile: true, state });
+      return await installNode(id, target, { upgrade: Boolean(state.nodes[id].installed), reconcile: true, state });
     },
   });
 }
@@ -1052,6 +1092,7 @@ async function installNode(id, target, options = {}) {
   if (!state.nodes[id] || !state.nodeKeys[id]) fail(`本地状态中没有节点 ${id}`);
   const configPath = join(privateDir, "nodes", id, "config.json");
   if (!(await exists(configPath))) fail(`节点配置不存在：${configPath}`);
+  await ensureConfigurationReporting(state);
   const version = await readVersion();
   let installer = options.upgrade ? "upgrade-agent.sh" : "install-agent.sh";
   const resuming = Boolean(state.nodes[id].deploymentStarted || options.reconcile);
@@ -1081,9 +1122,10 @@ async function installNode(id, target, options = {}) {
 
     await obtainAgentBinary(version, architecture, join(localStage, "vpsmon-agent"));
     const originalConfig = await readFile(configPath, "utf8");
-    const stagedConfig = JSON.parse(originalConfig);
-    delete stagedConfig.nftables_counters;
-    await writeFile(join(localStage, "config.json"), `${JSON.stringify(stagedConfig, null, 2)}\n`, { mode: 0o600 });
+    const stagedText = serializeAgentConfig(JSON.parse(originalConfig));
+    const stagedConfig = JSON.parse(stagedText);
+    const expectedFingerprint = configFingerprint(stagedText);
+    await writeFile(join(localStage, "config.json"), stagedText, { mode: 0o600 });
     for (const unit of ["vpsmon-agent.service"]) {
       await writeFile(join(localStage, unit), await readFile(join(deployDir, unit)), { mode: 0o644 });
     }
@@ -1102,9 +1144,14 @@ async function installNode(id, target, options = {}) {
     ]);
 
     state.nodes[id].deploymentStarted = true;
+    state.nodes[id].pendingApply = true;
+    state.nodes[id].expectedConfigFingerprint = expectedFingerprint;
+    delete state.nodes[id].applyError;
     await writePrivateJson(statePath, state);
     line(`${installer === "upgrade-agent.sh" ? "备份并更新" : "安装"} Agent；若 sudo 需要密码，请在提示中输入。`);
     const deployedAfter = Math.floor(Date.now() / 1000);
+    state.nodes[id].deployedAfter = deployedAfter;
+    await writePrivateJson(statePath,state);
     await run("ssh", ["-t", target, [
       `chmod 700 ${remoteStage}/vpsmon-agent ${remoteStage}/${installer}`,
       `chmod 600 ${remoteStage}/config.json ${remoteStage}/checksums.sha256`,
@@ -1124,7 +1171,7 @@ async function installNode(id, target, options = {}) {
 
     // Only update the local copy after successful installation, and do not
     // overwrite a configuration edited by another terminal during deployment.
-    if (await readFile(configPath, "utf8") === originalConfig && Object.hasOwn(JSON.parse(originalConfig), "nftables_counters")) {
+    if (await readFile(configPath, "utf8") === originalConfig && originalConfig !== stagedText) {
       await writePrivateJson(join(privateDir, "backups", `${id}-config-${Date.now()}.json`), JSON.parse(originalConfig));
       await writePrivateJson(configPath, stagedConfig);
     }
@@ -1134,23 +1181,34 @@ async function installNode(id, target, options = {}) {
     line(`✓ ${id} 已部署。`);
     if (!active) {
       delete state.nodes[id].deploymentStarted;
-      delete state.nodes[id].pendingApply;
+      state.nodes[id].pendingConfirmation = true;
       await writePrivateJson(statePath, state);
-      line("Agent 原先已停用，配置已更新并保留停用状态。");
-      return;
+      line("Agent 原先已停用，配置已写入，待启动后核验生效状态。");
+      return false;
     }
 
     // The Agent sends its first report before starting the interval timer, so
     // this normally confirms in a few seconds rather than a full interval.
-    line("等待首份认证上报…");
-    const reported = await waitForFirstReport(state, id, 90, deployedAfter);
+    line("等待 Agent 上报并核对实际配置…");
+    const reported = await waitForFirstReport(state, id, 90, deployedAfter, expectedFingerprint, version);
     if (reported) {
+      const currentFingerprint = configFingerprint(serializeAgentConfig(JSON.parse(await readFile(configPath,"utf8"))));
+      if (currentFingerprint !== expectedFingerprint) fail("部署期间本地配置已被其他进程修改，当前新配置仍待部署。");
+      delete state.nodes[id].pendingConfirmation;
+      delete state.nodes[id].applyError;
       delete state.nodes[id].pendingApply;
       delete state.nodes[id].deploymentStarted;
       await writePrivateJson(statePath, state);
-      line(`✓ ${id} 已上线，Worker 已接受部署后的新上报。`);
+      line(`✓ ${id} 已上线，Agent 实际配置与本次部署一致。`);
+      line(`  已加载 ${reported.services?.length ?? 0} 个服务、${reported.probes?.length ?? 0} 个网络探针；统计网卡：${reported.network_interfaces?.join("、") || "待识别"}`);
+      if (reported.network_valid === false) line("! 网卡采集异常，请通过“配置节点”选择实际网卡。");
     }
-    else fail(`未收到 ${id} 部署后的新上报。检查 ssh ${target} journalctl -u vpsmon-agent.service -n 30 --no-pager，然后运行 npm run node:apply 重试。`);
+    else fail(`未能确认 ${id} 的新配置已生效。请检查 Agent 日志，再通过“查看状态”核对或运行 npm run node:apply 重试。`);
+  } catch (error) {
+    state.nodes[id].pendingApply = true;
+    state.nodes[id].applyError = true;
+    await writePrivateJson(statePath,state);
+    throw error;
   } finally {
     if (remoteStagePresent) {
       await run("ssh", [target, `rm -rf -- ${remoteStage}`], { capture: true, allowFailure: true }).catch(() => {});
@@ -1405,7 +1463,11 @@ async function showStatus() {
       : reported === null
         ? "尚未上报"
         : `${reported} 秒前上报`;
-    line(`  ${node.installed ? "✓" : "·"} ${id}${node.sshTarget ? `  (${node.sshTarget})` : ""}  ${detail}${node.pendingApply ? " · 配置待部署" : ""}${node.pendingRestore ? " · 恢复待完成" : ""}`);
+    let expected = null;
+    try { expected = configFingerprint(serializeAgentConfig(JSON.parse(await readFile(join(privateDir,"nodes",id,"config.json"),"utf8")))); } catch {}
+    const configState = expected ? configurationStatus(node,seen,expected,remote !== null) : "本地配置缺失或无效";
+    line(`  ${node.installed ? "✓" : "·"} ${id}${node.sshTarget ? `  (${node.sshTarget})` : ""}  ${remote === null ? "后端暂时不可达" : detail} · ${configState}${node.pendingRestore ? " · 恢复待完成" : ""}`);
+    if (seen?.network_interfaces?.length) line(`    统计网卡：${seen.network_interfaces.join("、")}${seen.network_valid === false ? "（采集异常）" : ""}`);
   }
   const retiredLocal = Object.keys(state.retiredNodes ?? {});
   if (retiredLocal.length > 0) line(`已下线  ${retiredLocal.join("、")}`);

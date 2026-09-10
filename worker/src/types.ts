@@ -56,7 +56,23 @@ export interface ProbeResult {
   checked_at: number;
 }
 
+export interface TrafficCycle {
+ reset_day: number;
+ time_zone: "UTC" | "Asia/Shanghai";
+ period_start: number;
+ period_end: number;
+ observed_since: number;
+ rx_bytes: number;
+ tx_bytes: number;
+ partial: boolean;
+}
+
 export interface SystemMetrics {
+ network_interfaces?: string[];
+ network_valid?: boolean;
+ network_scope?: string;
+ traffic_cycle?: TrafficCycle;
+ traffic_cycle_enabled?: boolean;
   hostname: string;
   os: string;
   kernel: string;
@@ -85,6 +101,7 @@ export interface SystemMetrics {
 }
 
 export interface AgentHealth {
+ config_fingerprint?: string;
   queue_depth: number;
   collect_errors: number;
   send_errors: number;

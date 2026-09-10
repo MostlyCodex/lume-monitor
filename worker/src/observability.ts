@@ -113,7 +113,9 @@ export function summarizeNumbers(values: Array<number | null | undefined>): Nume
 }
 
 export function computeNetworkRates(current: AgentReport, previous: AgentReport | null): NetworkRates {
-  if (!previous || current.system.boot_id !== previous.system.boot_id) return { rxBps: null, txBps: null };
+  if (!previous || current.system.boot_id !== previous.system.boot_id || current.system.network_valid === false || previous.system.network_valid === false ||
+      (current.system.network_scope ?? "") !== (previous.system.network_scope ?? "") ||
+      JSON.stringify(current.system.network_interfaces ?? []) !== JSON.stringify(previous.system.network_interfaces ?? [])) return { rxBps: null, txBps: null };
   const elapsed = current.generated_at - previous.generated_at;
   if (elapsed <= 0 || elapsed > 3600) return { rxBps: null, txBps: null };
   const rxDelta = current.system.network_rx_bytes - previous.system.network_rx_bytes;

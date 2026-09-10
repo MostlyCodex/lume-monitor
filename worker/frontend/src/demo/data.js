@@ -73,7 +73,7 @@ function latestData() {
     },
     services: [{ name: definition.service[0], label: definition.service[1], state: "active" }],
     probes: probeDefinitions(definition).map((probe, index) => currentProbe(definition, probe, index)),
-    agent: { version: "1.0.0-preview", queue_depth: 0, collect_errors: 0, send_errors: 0 },
+    agent: { version: "1.0.0", queue_depth: 0, collect_errors: 0, send_errors: 0 },
   }));
   return {
     schema_version: 2,

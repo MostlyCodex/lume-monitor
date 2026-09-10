@@ -20,6 +20,7 @@ import (
 	"github.com/MostlyCodex/lume-monitor/agent/internal/probe"
 	"github.com/MostlyCodex/lume-monitor/agent/internal/sender"
 	"github.com/MostlyCodex/lume-monitor/agent/internal/spool"
+	"github.com/MostlyCodex/lume-monitor/agent/internal/traffic"
 )
 
 var version = "dev"
@@ -33,6 +34,7 @@ type application struct {
 	sendErrors    atomic.Uint64
 	lastProbeAt   time.Time
 	lastProbes    []model.ProbeResult
+	traffic       *traffic.Tracker
 }
 
 func (a *application) runOnce(parent context.Context, dryRun bool) error {
@@ -56,7 +58,16 @@ func (a *application) runOnce(parent context.Context, dryRun bool) error {
 	}
 
 	system, collectionErrors := a.collector.Collect()
+	system.TrafficCycleEnabled = a.config.TrafficCycle.Enabled
 	a.collectErrors.Add(uint64(len(collectionErrors)))
+	if a.traffic != nil {
+		var trafficErr error
+		system.TrafficCycle, trafficErr = a.traffic.Observe(time.Now(), a.config.TrafficCycle, system, !dryRun)
+		if trafficErr != nil {
+			a.collectErrors.Add(1)
+			log.Printf("traffic accounting unavailable: %v", trafficErr)
+		}
+	}
 	services := check.Services(ctx, a.config.Services)
 	probeInterval := time.Duration(a.config.ProbeIntervalSeconds) * time.Second
 	probeSlack := time.Duration(a.config.ReportIntervalSeconds) * time.Second / 10
@@ -86,10 +97,11 @@ func (a *application) runOnce(parent context.Context, dryRun bool) error {
 		Services:    services,
 		Probes:      a.lastProbes,
 		Agent: model.AgentHealth{
-			QueueDepth:    queueDepth,
-			CollectErrors: a.collectErrors.Load(),
-			SendErrors:    a.sendErrors.Load(),
-			StartedAt:     a.startedAt,
+			ConfigFingerprint: a.config.Fingerprint,
+			QueueDepth:        queueDepth,
+			CollectErrors:     a.collectErrors.Load(),
+			SendErrors:        a.sendErrors.Load(),
+			StartedAt:         a.startedAt,
 		},
 	}
 	body, err := json.Marshal(report)
@@ -139,7 +151,8 @@ func main() {
 	}
 	app := &application{
 		config:    cfg,
-		collector: collect.New(),
+		collector: collect.New(cfg.NetworkInterfaces...),
+		traffic:   traffic.New("/var/lib/vpsmon/traffic.json"),
 		sender:    sender.New(cfg.Endpoint, cfg.Node.ID, cfg.Secret, version),
 		startedAt: time.Now().Unix(),
 	}

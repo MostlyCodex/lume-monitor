@@ -223,3 +223,18 @@ test("adoption writes no management state if a key is wrong or the server change
     assert.equal(h.writes.length,0);
   }
 });
+
+test("deployment upgrades a missing configuration-acknowledgement capability before touching the Agent",async()=>{
+ for (const initialStatus of [200,401]) {
+  const calls=[];let updated=false;
+  const context=vm.createContext({
+   line:()=>{},fail:message=>{throw Error(message);},wranglerConfigPath:"memory/wrangler.jsonc",
+   adminFetch:async()=>({ok:initialStatus===200,status:initialStatus,body:{nodes:[],...(updated?{capabilities:{config_fingerprint:1}}:{})}}),
+   ensureCloudflareLogin:async()=>calls.push("login"),applyDatabaseMigrations:async()=>calls.push("migrate"),readVersion:async()=>"1.0.0",
+   wrangler:async args=>{assert.equal(args[0],"deploy");assert.ok(args.includes("--keep-vars"));calls.push("update-worker");updated=true;},
+  });
+  new vm.Script(procedure("ensureConfigurationReporting")).runInContext(context);
+  if(initialStatus===401){await assert.rejects(context.ensureConfigurationReporting({}),/401/);assert.deepEqual(calls,[]);}
+  else {await context.ensureConfigurationReporting({});assert.deepEqual(calls,["login","migrate","update-worker"]);await context.ensureConfigurationReporting({});assert.equal(calls.length,3);}
+ }
+});

@@ -71,6 +71,14 @@ Telegram updates arrive through a Webhook protected by a secret header. Only the
 
 The dashboard renders its fleet cards, service summaries and probe rows from the catalogs. The fleet view contains current node status, CPU/RAM/disk gauges, network-rate/traffic counters and per-target ICMP 24-hour latency/loss cells. TCP probes still participate in health but appear only in node details, where their failures are labelled as connect failures rather than packet loss. Network rates are interval averages derived from the delta between two consecutive Agent byte-counter reports divided by their report-time delta; they are not streaming real-time measurements. Fleet history uses five-minute display buckets to bound a multi-node response. Clicking a card opens a separate node detail view with selectable probe series plus latency, failure-event and traffic history; CPU/RAM/disk utilization stays on fleet cards, while node facts show hardware capacity. Six- and 24-hour details render immediately from the already-loaded fleet history, then replace it with one-minute data in the background and retain that result in a session cache. The client does not prefetch every node. Longer ranges use hourly buckets for 7/30 days and daily buckets for 90 days. Display aggregation does not change the Agent cadence or raw-data retention. The detail charts use a pinned local copy of uPlot; the dashboard never loads chart code from a CDN. It has no fixed node names or node count.
 
+## Frontend
+
+The Vue 3 application is compiled by Vite and served as same-origin static assets by the Worker. Components render typed public snapshots; transport, polling and browser preferences live in composables and services. Pure domain functions derive status and chart data without mutating API responses.
+
+The overview and node detail share one request owner. Hidden pages stop polling; expired sessions abort outstanding requests, and late responses cannot replace the current node. uPlot loads with the detail view and releases its observers and canvas when unmounted. The production build precompiles templates and retains the existing Content Security Policy.
+
+Display settings stay in browser storage, with separate keys for production and the fictional demo. The build includes only public frontend inputs; management state and credentials remain outside the asset tree.
+
 ## Extension model
 
 The communication contract supports `icmp` and `tcp`. Optional collectors must remain configuration-driven, default off, preserve the required host report and use the same generic Agent binary.

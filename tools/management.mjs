@@ -1,3 +1,4 @@
+import { normalizeAccounting } from "./network-accounting.mjs";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const nodeIdPattern = /^[a-z0-9][a-z0-9_-]{0,31}$/;
@@ -58,6 +59,7 @@ export function validateImportedConfig(config, id, origin) {
   for (const field of ["services", "probes"]) {
     if (!Array.isArray(config[field])) throw new Error(`${id} 的 ${field} 必须为数组`);
   }
+  normalizeAccounting(config);
   return config;
 }
 
@@ -97,8 +99,17 @@ export async function applyPending(state, ids, { save, deploy }) {
   }
   await save(state);
   for (const id of ids) {
-    await deploy(id);
-    delete state.nodes[id].pendingApply;
-    await save(state);
+    try {
+      const confirmed = await deploy(id);
+      if (confirmed !== false) {
+        delete state.nodes[id].pendingApply;
+        delete state.nodes[id].applyError;
+      }
+      await save(state);
+    } catch (error) {
+      state.nodes[id].applyError = true;
+      await save(state);
+      throw error;
+    }
   }
 }

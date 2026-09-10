@@ -1,0 +1,283 @@
+.settings-dialog {
+  width: min(1040px, calc(100% - 32px));
+  max-height: calc(100vh - 40px);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  box-shadow: 0 32px 110px rgba(0, 0, 0, 0.55);
+  color: var(--text);
+  -webkit-backdrop-filter: blur(20px) saturate(108%);
+  backdrop-filter: blur(20px) saturate(108%);
+}
+html[data-theme="light"] .settings-dialog {
+  -webkit-backdrop-filter: blur(20px) saturate(110%);
+  backdrop-filter: blur(20px) saturate(110%);
+}
+.settings-dialog::backdrop {
+  background: rgba(4, 4, 5, 0.46);
+  backdrop-filter: blur(7px);
+}
+.settings-shell {
+  display: grid;
+  max-height: calc(100vh - 42px);
+  overflow: auto;
+  scroll-padding-block: 160px 150px;
+}
+.settings-head {
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px 26px 20px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elevated) 97%, transparent);
+  backdrop-filter: blur(22px);
+}
+.settings-head h2 {
+  margin: 0;
+  font-size: 25px;
+  letter-spacing: -0.035em;
+}
+.settings-head p:last-child {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.settings-section {
+  display: grid;
+  gap: 13px;
+  padding: 21px 26px 5px;
+}
+.settings-section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.settings-section-title strong {
+  font-size: 14px;
+}
+.settings-section-title span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.settings-global-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.settings-wide {
+  grid-column: 1 / -1;
+}
+.settings-global-grid label,
+.settings-node-grid label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+.settings-global-grid label > span,
+.settings-node-grid label > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+.settings-global-grid input,
+.settings-node-grid input {
+  width: 100%;
+  min-height: 41px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  outline: 0;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+.settings-global-grid input:hover,
+.settings-node-grid input:hover {
+  border-color: var(--line-strong);
+}
+.settings-global-grid input:focus,
+.settings-node-grid input:focus {
+  border-color: rgba(var(--primary-rgb), 0.66);
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
+}
+.settings-country {
+  font-family: var(--mono);
+  text-transform: uppercase;
+}
+.settings-background-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
+  align-items: center;
+  gap: 24px;
+}
+.settings-background-controls {
+  min-width: 0;
+}
+.settings-background-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.settings-background-controls p {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+#settings-background-help {
+  color: var(--text-soft);
+}
+#settings-background-status {
+  color: var(--muted);
+}
+.settings-error {
+  margin: 0;
+  color: color-mix(in srgb, var(--red) 85%, var(--text));
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.settings-actions > .settings-error {
+  grid-column: 1 / -1;
+}
+.settings-background-buttons .button,
+.settings-actions .button {
+  min-height: 44px;
+}
+.settings-head .icon-button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.settings-shell .button:disabled {
+  cursor: default;
+  opacity: 0.45;
+  transform: none;
+}
+.background-previews {
+  display: grid;
+  grid-template-columns: 256fr 81fr;
+  width: 100%;
+  max-width: 420px;
+  gap: 12px;
+}
+.background-previews figure {
+  min-width: 0;
+  margin: 0;
+}
+.background-previews figcaption {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+.background-preview {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.background-preview-wide {
+  aspect-ratio: 16 / 9;
+}
+.background-preview-tall {
+  aspect-ratio: 9 / 16;
+}
+.background-preview img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  filter: var(--scene-filter);
+}
+.background-preview::after {
+  position: absolute;
+  inset: 0;
+  background: var(--scene-scrim);
+  content: "";
+  pointer-events: none;
+}
+.settings-node-list {
+  display: grid;
+  gap: 9px;
+}
+.settings-node {
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.settings-node > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 11px;
+}
+.settings-node > header > div:first-child {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 32px auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 9px;
+}
+.settings-node > header span {
+  color: var(--primary);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.settings-node > header strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-node > header small {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-order-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+.settings-order-actions .icon-button {
+  width: 31px;
+  height: 31px;
+  font-size: 14px;
+}
+.settings-order-actions .icon-button:disabled {
+  cursor: default;
+  opacity: 0.28;
+  transform: none;
+}
+.settings-node-grid {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.05fr) minmax(180px, 1.2fr) 92px minmax(150px, 1fr);
+  gap: 9px;
+}
+.settings-actions {
+  position: sticky;
+  z-index: 4;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 9px;
+  margin-top: 18px;
+  padding: 17px 26px 21px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elevated) 97%, transparent);
+  backdrop-filter: blur(22px);
+}

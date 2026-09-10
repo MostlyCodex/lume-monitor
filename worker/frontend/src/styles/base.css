@@ -1,0 +1,296 @@
+* {
+  box-sizing: border-box;
+}
+html {
+  min-width: 320px;
+  scroll-behavior: smooth;
+  background: var(--bg);
+}
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  overflow-x: hidden;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  color: inherit;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+code {
+  font-family: var(--mono);
+}
+.is-hidden {
+  display: none !important;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.scene {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: var(--scene-lock-width, 100vw);
+  height: var(--scene-lock-height, 100lvh);
+  z-index: 0;
+  overflow: hidden;
+  background-color: #07101b;
+  contain: strict;
+  isolation: isolate;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  pointer-events: none;
+}
+.scene-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: center;
+  filter: var(--scene-filter);
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  user-select: none;
+}
+.scene::before {
+  content: "";
+  position: absolute;
+  inset: -12%;
+  display: none;
+}
+.scene::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--scene-scrim);
+}
+.scene-glow {
+  display: none;
+}
+.scene-glow-one {
+  width: 52vw;
+  height: 48vw;
+  left: -18vw;
+  top: -20vw;
+  background: radial-gradient(circle, rgba(57, 110, 210, 0.26), transparent 68%);
+}
+.scene-glow-two {
+  width: 46vw;
+  height: 44vw;
+  right: -18vw;
+  top: 18vh;
+  background: radial-gradient(circle, rgba(81, 55, 160, 0.2), transparent 70%);
+}
+.scene-grid {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+html[data-theme="light"] .scene-glow-one {
+  background: radial-gradient(circle, rgba(67, 126, 225, 0.2), transparent 68%);
+}
+html[data-theme="light"] .scene-glow-two {
+  background: radial-gradient(circle, rgba(133, 95, 220, 0.14), transparent 70%);
+}
+html[data-theme="light"] .scene-grid {
+  opacity: 0.12;
+}
+html[data-theme="light"] .scene {
+  background-color: #dfe8f2;
+}
+
+.glass-panel {
+  position: relative;
+  border: 1px solid var(--glass-border);
+  outline: 0;
+  background: var(--glass-panel-bg);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+}
+.glass-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  display: none;
+}
+.glass-panel > * {
+  position: relative;
+  z-index: 1;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-panel {
+    background: var(--surface-strong);
+  }
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.brand-mark {
+  display: grid;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(var(--primary-rgb), 0.42);
+  border-radius: 9px;
+  background: linear-gradient(
+    145deg,
+    rgba(var(--primary-rgb), 0.24),
+    rgba(var(--primary-rgb), 0.07)
+  );
+  color: var(--primary);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.12),
+    0 8px 24px rgba(var(--primary-rgb), 0.12);
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 800;
+}
+.brand-lockup > div:last-child {
+  display: grid;
+  min-width: 0;
+}
+.brand-lockup strong {
+  overflow: hidden;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.brand-lockup span {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+}
+
+.button,
+.icon-button,
+.text-button,
+.range-switch button {
+  border: 0;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+.button:focus-visible,
+.icon-button:focus-visible,
+.text-button:focus-visible,
+.range-switch button:focus-visible,
+input:focus-visible,
+.probe-picker-actions button:focus-visible,
+.network-layer-switch button:focus-visible {
+  outline: 2px solid rgba(var(--primary-rgb), 0.9);
+  outline-offset: 3px;
+}
+.button {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 17px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.button-primary {
+  background: var(--primary);
+  color: #07101e;
+  box-shadow: 0 10px 30px rgba(var(--primary-rgb), 0.22);
+}
+html[data-theme="light"] .button-primary {
+  color: #fff;
+}
+.button-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 34px rgba(var(--primary-rgb), 0.3);
+}
+.button-ghost {
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--text-soft);
+}
+.button-ghost:hover {
+  border-color: var(--line-strong);
+  background: rgba(var(--primary-rgb), 0.08);
+  color: var(--text);
+}
+.icon-button {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  color: var(--text-soft);
+  font-size: 19px;
+}
+.icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.icon-button:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+.icon-button.is-spinning {
+  animation: spin 700ms linear infinite;
+}
+.text-button {
+  padding: 8px 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+}
+.text-button:hover {
+  color: var(--text);
+}
