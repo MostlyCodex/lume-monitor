@@ -61,6 +61,37 @@ async function expectNoHorizontalOverflow(page) {
   expect(geometry.bodyWidth).toBeLessThanOrEqual(geometry.viewport + 1);
 }
 
+async function expectCompactNodeCards(page) {
+  const maxHeight = page.viewportSize().width <= 760 ? 560 : 600;
+  const firstCard = page.locator(".node-card").first();
+  await expect(firstCard.locator(".node-network-row")).toHaveCount(2);
+  await expect(firstCard.locator(".probe-row")).toHaveCount(4);
+  await expect(firstCard.locator(".energy-cell")).toHaveCount(144);
+  const layout = await page.locator(".node-card").evaluateAll((cards) => cards.map((card) => {
+    const values = [...card.querySelectorAll(".node-network-row b, .probe-metric-head strong, .probe-target span")];
+    const surfaces = [...card.querySelectorAll(".node-network, .probe-block, .probe-metric")];
+    return {
+      height: card.getBoundingClientRect().height,
+      titleSize: parseFloat(getComputedStyle(card.querySelector(".node-title strong")).fontSize),
+      clippedValues: values.filter((value) => value.scrollWidth > value.clientWidth + 1).map((value) => value.textContent),
+      smallestValue: Math.min(...values.map((value) => parseFloat(getComputedStyle(value).fontSize))),
+      insetPanels: surfaces.filter((element) => {
+        const style = getComputedStyle(element);
+        return style.backgroundColor !== "rgba(0, 0, 0, 0)" || style.backgroundImage !== "none"
+          || style.boxShadow !== "none" || parseFloat(style.borderTopLeftRadius) > 0;
+      }).length,
+    };
+  }));
+  for (const card of layout) {
+    // Includes a four-probe card with a long link name; allow for platform font differences.
+    expect(card.height).toBeLessThan(maxHeight);
+    expect(card.titleSize).toBeGreaterThanOrEqual(16);
+    expect(card.smallestValue).toBeGreaterThanOrEqual(13);
+    expect(card.clippedValues).toEqual([]);
+    expect(card.insetPanels).toBe(0);
+  }
+}
+
 async function expectGlassMaterial(page, selector) {
   const material = await page.locator(selector).first().evaluate((element) => {
     const style = getComputedStyle(element);
@@ -137,6 +168,7 @@ async function expectSmallPhoneAndLandscapeLayout(page) {
     await page.evaluate(() => window.dispatchEvent(new Event("orientationchange")));
     await page.waitForTimeout(280);
     await expectNoHorizontalOverflow(page);
+    await expectCompactNodeCards(page);
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => window.dispatchEvent(new Event("orientationchange")));
@@ -153,6 +185,7 @@ async function attachScreenshot(page, testInfo, name) {
 test("fleet page keeps its visual and responsive contract", async ({ page }, testInfo) => {
   await openDashboard(page);
   await expectNoHorizontalOverflow(page);
+  await expectCompactNodeCards(page);
 
   const viewportWidth = page.viewportSize().width;
   for (const selector of [".command-bar", ".dashboard-footer"]) {
@@ -203,6 +236,7 @@ test("fleet page keeps its visual and responsive contract", async ({ page }, tes
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await expectGlassMaterial(page, ".node-card");
   await expectNoHorizontalOverflow(page);
+  await expectCompactNodeCards(page);
   await attachScreenshot(page, testInfo, `${testInfo.project.name}-fleet-light`);
 });
 

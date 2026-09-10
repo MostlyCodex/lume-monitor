@@ -794,11 +794,11 @@
           ${resourceGauge("RAM", "内存", metrics.memory_used_percent, 70, 85)}
           ${resourceGauge("Disk", "磁盘", metrics.disk_used_percent, 75, 85)}
         </div>
-        <div class="node-telemetry-panel">
+        <div class="node-network">
           <div class="node-network-row"><span>↯ 网络速率</span><strong><b class="is-up">↑ ${escapeHtml(formatRate(metrics.network_tx_rate_bps))}</b><b class="is-down">↓ ${escapeHtml(formatRate(metrics.network_rx_rate_bps))}</b></strong></div>
           <div class="node-network-row"><span>累计流量</span><strong><b>↑ ${escapeHtml(formatBytes(metrics.network_tx_bytes))}</b><b>↓ ${escapeHtml(formatBytes(metrics.network_rx_bytes))}</b></strong></div>
-          ${probes.length ? `<div class="probe-block"><div class="probe-block-head"><span>网络质量（24H）</span><small>${probes.length} 个目标</small></div>${probes.map((probe) => probeRow(node, probe)).join("")}</div>` : '<div class="probe-empty">此节点仅监测服务与基础资源</div>'}
         </div>
+        ${probes.length ? `<div class="probe-block"><div class="probe-block-head"><span>网络质量（24H）</span><small>${probes.length} 个目标</small></div>${probes.map((probe) => probeRow(node, probe)).join("")}</div>` : '<div class="probe-empty">此节点仅监测服务与基础资源</div>'}
         <div class="node-card-foot"><div class="node-tags"><span>${escapeHtml(node.role || "VPS")}</span><span>${escapeHtml(region)}</span></div><span>${escapeHtml(formatAge(node.age_seconds))}更新&nbsp; →</span></div>
       </div>
     </article>`;
@@ -985,17 +985,12 @@
     const metrics = node.metrics || {};
     const agentErrors = Number(node.agent?.collect_errors || 0) + Number(node.agent?.send_errors || 0);
     $("detail-facts").innerHTML = [
+      detailFact("系统", node.system?.os || "—"),
+      detailFact("内核", node.system?.kernel || "—"),
       detailFact("CPU", Number.isInteger(metrics.cpu_count) && metrics.cpu_count > 0 ? `${metrics.cpu_count} vCPU` : "—"),
       detailFact("内存", formatCapacity(metrics.memory_total_bytes)),
       detailFact("磁盘（/）", formatCapacity(metrics.disk_total_bytes)),
       detailFact("主机名", node.system?.hostname || "—"),
-      detailFact("系统", node.system?.os || "—"),
-      detailFact("内核", node.system?.kernel || "—"),
-      detailFact("架构", node.system?.arch || "—"),
-      detailFact("下载速率", formatRate(metrics.network_rx_rate_bps)),
-      detailFact("上传速率", formatRate(metrics.network_tx_rate_bps)),
-      detailFact("累计下载", formatBytes(metrics.network_rx_bytes)),
-      detailFact("累计上传", formatBytes(metrics.network_tx_bytes)),
       detailFact("Agent", `${node.agent?.version || "—"} · 队列 ${Number(node.agent?.queue_depth || 0)}`),
       detailFact("采集/发送错误", String(agentErrors)),
     ].join("");

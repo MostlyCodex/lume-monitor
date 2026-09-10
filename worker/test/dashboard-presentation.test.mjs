@@ -27,7 +27,7 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).toContain('resourceGauge("CPU"');
     expect(app).toContain('resourceGauge("RAM"');
     expect(app).toContain('resourceGauge("Disk"');
-    expect(app).toContain('class="node-telemetry-panel"');
+    expect(app).toContain('class="node-network"');
     expect(app).toContain('class="node-network-row"');
     expect(app).toContain('<span>↯ 网络速率</span>');
     expect(app).not.toContain("实时速率");
@@ -133,8 +133,8 @@ describe("dashboard presentation hierarchy", () => {
     expect(app).not.toContain("node.mark || flagEmoji");
     expect(app).not.toContain('detailFact("实时下载"');
     expect(app).not.toContain('detailFact("实时上传"');
-    expect(app).toContain('detailFact("下载速率"');
-    expect(app).toContain('detailFact("上传速率"');
+    expect(app).not.toContain('detailFact("下载速率"');
+    expect(app).not.toContain('detailFact("上传速率"');
     expect(html).toContain("<strong>速率历史</strong>");
     expect(app).toContain('$("fleet-view").classList.add("is-hidden")');
     expect(app).toContain('new window.uPlot');

@@ -52,8 +52,14 @@ project-specific interpretation of the generated glassmorphism direction.
 
 ## Detail performance and hierarchy
 
+- Fleet cards use one glass surface. Resource gauges, transfer totals and probe rows
+  share its gutters; separators provide grouping without inset panels or metric tiles.
+- Compact cards through spacing and aligned probe columns. Keep node titles at 16px
+  or larger on phones, probe values at 13px or larger, and long target names readable.
 - CPU, RAM and disk utilization stay on the fleet cards. Node facts show vCPU count,
   total memory and root filesystem capacity in a compact responsive definition list.
+- Node facts start with operating system and kernel, then hardware capacity, hostname
+  and Agent health. Transfer rates and totals belong to the fleet cards.
 - Facts reflow into multiple columns where space permits, wrap long values, and size
   independently of the neighboring events card.
 - A node detail opens immediately from already-loaded fleet history for 6-hour and 24-hour
