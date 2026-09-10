@@ -10,7 +10,6 @@ function report(generatedAt: number, bootId: string, rx: number, tx: number): Ag
     node: {
       id: "test-vps",
       display_name: "Test VPS",
-      short_mark: "TV",
       role: "VPS",
       group: "default",
       region: "test",

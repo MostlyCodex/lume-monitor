@@ -170,7 +170,7 @@ async function loadLegacyReportMetadata(
   nodeId: string,
 ): Promise<LegacyReportMetadata | null> {
   const node = await env.DB.prepare(
-    "SELECT node_id, display_name, short_mark, role_label, group_name, region_label, stale_seconds, " +
+    "SELECT node_id, display_name, role_label, group_name, region_label, stale_seconds, " +
       "display_order, color_key, offline_severity, ip_change_severity FROM node_catalog " +
       "WHERE node_id = ? AND enabled = 1",
   )
@@ -178,7 +178,6 @@ async function loadLegacyReportMetadata(
     .first<{
       node_id: string;
       display_name: string;
-      short_mark: string;
       role_label: string;
       group_name: string;
       region_label: string;
@@ -222,7 +221,6 @@ async function loadLegacyReportMetadata(
     node: {
       id: node.node_id,
       display_name: node.display_name,
-      short_mark: node.short_mark,
       role: node.role_label,
       group: node.group_name,
       region: node.region_label,
@@ -274,16 +272,15 @@ function catalogStatements(env: Env, report: AgentReport, now: number): D1Prepar
   const statements: D1PreparedStatement[] = [
     env.DB.prepare(
       "INSERT INTO node_catalog(" +
-        "node_id, public_id, display_name, short_mark, role_label, group_name, region_label, stale_seconds, " +
+        "node_id, public_id, display_name, role_label, group_name, region_label, stale_seconds, " +
         "display_order, color_key, offline_severity, ip_change_severity, enabled, updated_at" +
-        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?) " +
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?) " +
         "ON CONFLICT(node_id) DO UPDATE SET display_name=excluded.display_name, " +
-        "short_mark=excluded.short_mark, role_label=excluded.role_label, group_name=excluded.group_name, " +
+        "role_label=excluded.role_label, group_name=excluded.group_name, " +
         "region_label=excluded.region_label, stale_seconds=excluded.stale_seconds, display_order=excluded.display_order, " +
         "color_key=excluded.color_key, offline_severity=excluded.offline_severity, " +
         "ip_change_severity=excluded.ip_change_severity, enabled=1, updated_at=excluded.updated_at " +
         "WHERE node_catalog.display_name IS NOT excluded.display_name " +
-        "OR node_catalog.short_mark IS NOT excluded.short_mark " +
         "OR node_catalog.role_label IS NOT excluded.role_label " +
         "OR node_catalog.group_name IS NOT excluded.group_name " +
         "OR node_catalog.region_label IS NOT excluded.region_label " +
@@ -297,7 +294,6 @@ function catalogStatements(env: Env, report: AgentReport, now: number): D1Prepar
       node.id,
       node.id,
       node.display_name,
-      node.short_mark,
       node.role,
       node.group,
       node.region,
@@ -712,7 +708,7 @@ async function adminNodes(env: Env, now: number): Promise<Response> {
   ).all<NodeCatalogAdminRow>();
   return json({
     server_time: now,
-    capabilities: { config_fingerprint: 1 },
+    capabilities: { config_fingerprint: 1, node_metadata: 2 },
     nodes: rows.results.map((row) => ({
       ...configurationSummary(row.report_json),
       node_id: row.node_id,

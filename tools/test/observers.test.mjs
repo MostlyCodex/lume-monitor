@@ -204,7 +204,7 @@ test("new-node wizard collects probes, previews them and installs from the same 
   new vm.Script(["promptSshTarget","addNode"].map(procedure).join("\n")).runInContext(context);
   const prompt=scriptedPrompt([
     ["text","Bad ID",/节点 ID/],["text","alpha",/节点 ID/],["text","beta",/节点 ID/],
-    ["text","Beta"],["text","VPS"],["text","Test"],["text","five5",/短标记/],["text","B",/短标记/],
+    ["text","Beta"],["text","VPS"],["text","Test"],
     ["text","nginx service",/systemd/],["text","",/systemd/],
     ["text","2"],["text","1"],["text",""],
     ["text","user@host:22",/SSH/],["text","ssh-beta",/SSH/],["text","1",/统计方式/],["yes",false,/周期流量/],["yes",true,/以上配置/],

@@ -89,6 +89,11 @@ function testProductionUpgrade(root) {
     "--file", "test/fixtures/v3-before-0006.sql", "--yes",
   ], true);
   runWrangler([
+    "d1", "execute", "DB", "--local", "--config", config, "--persist-to", persistence,
+    "--command", "UPDATE node_latest SET report_json=json_object('node',json_object('id','legacy-fixture','display_name','Legacy Fixture','short_mark','OLD'),'keep',42); " +
+      "UPDATE snapshots SET report_json=(SELECT report_json FROM node_latest WHERE node_id='legacy-fixture');", "--yes",
+  ], true);
+  runWrangler([
     "d1", "migrations", "apply", "DB", "--local", "--config", config,
     "--persist-to", persistence,
   ], true);
@@ -129,6 +134,16 @@ function testProductionUpgrade(root) {
   const invalidKinds = query(config, persistence, "SELECT COUNT(*) AS count FROM probe_catalog WHERE kind NOT IN ('icmp','tcp')");
   if (Number(invalidKinds[0]?.count) !== 0) {
     throw new Error(`obsolete probe kinds survived the upgrade: ${JSON.stringify(invalidKinds)}`);
+  }
+  const columns=query(config,persistence,"PRAGMA table_info(node_catalog)").map(column=>column.name);
+  if (columns.includes("short_mark")) throw new Error("obsolete node column survived upgrade");
+  const indexes=query(config,persistence,"SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='node_catalog'").map(row=>row.name);
+  if (!indexes.includes("idx_node_catalog_order")) throw new Error("catalog index lost during upgrade");
+  for (const table of ["node_latest","snapshots"]) {
+    const rows=query(config,persistence,`SELECT report_json FROM ${table} WHERE node_id='legacy-fixture'`);
+    if (rows.length!==1) throw new Error("historical report lost");
+    const report=JSON.parse(rows[0].report_json);
+    if (report.node.id!=="legacy-fixture" || report.node.display_name!=="Legacy Fixture" || Object.hasOwn(report.node,"short_mark") || report.keep!==42) throw new Error("historical metadata migration failed");
   }
   console.log("production_upgrade_ok=true");
 }

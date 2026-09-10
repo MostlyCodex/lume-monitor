@@ -23,7 +23,7 @@ func representativeReport() Report {
 	return Report{
 		SchemaVersion: 2, AgentVersion: "benchmark", NodeID: "benchmark-node",
 		Node: NodeMetadata{
-			ID: "benchmark-node", DisplayName: "Benchmark Node", ShortMark: "BEN",
+			ID: "benchmark-node", DisplayName: "Benchmark Node",
 			Role: "VPS", Group: "benchmark", Region: "Test Region", StaleSeconds: 180,
 			DisplayOrder: 100, Color: "green", OfflineSeverity: "P1", IPChangeSeverity: "P2",
 		},

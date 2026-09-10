@@ -1,4 +1,4 @@
-import { normalizeAccounting } from "./network-accounting.mjs";
+import { serializeAgentConfig } from "./network-accounting.mjs";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const nodeIdPattern = /^[a-z0-9][a-z0-9_-]{0,31}$/;
@@ -59,8 +59,7 @@ export function validateImportedConfig(config, id, origin) {
   for (const field of ["services", "probes"]) {
     if (!Array.isArray(config[field])) throw new Error(`${id} 的 ${field} 必须为数组`);
   }
-  normalizeAccounting(config);
-  return config;
+  return JSON.parse(serializeAgentConfig(config));
 }
 
 export function verifyKeyInventory(nodeKeys, inventory) {

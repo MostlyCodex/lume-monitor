@@ -14,7 +14,6 @@ function validReport(): Record<string, unknown> {
     node: {
       id: "future-vps-01",
       display_name: "Future VPS 01",
-      short_mark: "F01",
       role: "VPS",
       group: "default",
       region: "Region 1",
@@ -77,7 +76,6 @@ function legacyMetadata(): LegacyReportMetadata {
     node: {
       id: "legacy-node",
       display_name: "Legacy Node",
-      short_mark: "LG",
       role: "Relay",
       group: "default",
       region: "Region 1",

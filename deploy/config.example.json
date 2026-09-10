@@ -2,7 +2,6 @@
   "node": {
     "id": "my-vps-01",
     "display_name": "My VPS 01",
-    "short_mark": "V01",
     "role": "VPS",
     "group": "default",
     "region": "Los Angeles",

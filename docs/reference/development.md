@@ -76,11 +76,11 @@ npm --prefix worker run preview:dashboard
 
 ## 更新 Worker
 
-在 `worker/` 执行 `npm run deploy -- --var APP_VERSION:1.0.0`，先构建前端再部署。后续版本将 `APP_VERSION` 替换为包版本；此参数覆盖私有配置中的旧值。管理菜单中的 Worker 部署也经过同一构建入口；构建失败会停止发布。不要跳过构建而直接发布旧静态资源。
+在 `worker/` 执行 `npm run deploy -- --var APP_VERSION:1.0.1`，先构建前端再部署。后续版本将 `APP_VERSION` 替换为包版本；此参数覆盖私有配置中的旧值。管理菜单中的 Worker 部署也经过同一构建入口；构建失败会停止发布。不要跳过构建而直接发布旧静态资源。
 
 ## 发布版本
 
-当前发布版本为 **v1.0.0**。源码标签、根目录与 `worker/` 的 `package.json` 和锁文件、`wrangler.example.jsonc` 中的 `APP_VERSION` 使用同一版本。
+当前发布版本为 **v1.0.1**。源码标签、根目录与 `worker/` 的 `package.json` 和锁文件、`wrangler.example.jsonc` 中的 `APP_VERSION` 使用同一版本。
 
 后续发布先更新版本和相关手册，提交后推送 `main`，再创建并推送对应的 `vX.Y.Z` 标签。版本标签发布后不复用。
 

@@ -1,6 +1,6 @@
 {
   "name": "lume",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "description": "Development and test toolchain for Lume. The Worker and Vue frontend build dependencies live in worker/.",

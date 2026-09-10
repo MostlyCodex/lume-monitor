@@ -20,14 +20,12 @@ var nodeIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 var servicePattern = regexp.MustCompile(`^[A-Za-z0-9_.@-]{1,80}$`)
 var probeNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,79}$`)
 var categoryPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
-var markPattern = regexp.MustCompile(`^[A-Za-z0-9]{1,4}$`)
 var interfaceNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,15}$`)
 var colorPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,23}$`)
 
 type Node struct {
 	ID               string `json:"id"`
 	DisplayName      string `json:"display_name"`
-	ShortMark        string `json:"short_mark"`
 	Role             string `json:"role"`
 	Group            string `json:"group"`
 	Region           string `json:"region"`
@@ -176,13 +174,6 @@ func (c *Config) Validate() error {
 	if c.Node.DisplayName == "" {
 		c.Node.DisplayName = c.Node.ID
 	}
-	if c.Node.ShortMark == "" {
-		value := strings.ReplaceAll(strings.ReplaceAll(c.Node.ID, "-", ""), "_", "")
-		if len(value) > 3 {
-			value = value[:3]
-		}
-		c.Node.ShortMark = strings.ToUpper(value)
-	}
 	if c.Node.Role == "" {
 		c.Node.Role = "VPS"
 	}
@@ -207,7 +198,7 @@ func (c *Config) Validate() error {
 	if c.Node.IPChangeSeverity == "" {
 		c.Node.IPChangeSeverity = "P2"
 	}
-	if !validText(c.Node.DisplayName, 80) || !markPattern.MatchString(c.Node.ShortMark) ||
+	if !validText(c.Node.DisplayName, 80) ||
 		!validText(c.Node.Role, 80) || !validText(c.Node.Group, 80) || !validText(c.Node.Region, 80) ||
 		!colorPattern.MatchString(c.Node.Color) || c.Node.StaleSeconds < 60 || c.Node.StaleSeconds > 3600 ||
 		c.Node.DisplayOrder < 1 || c.Node.DisplayOrder > 10000 || !validSeverity(c.Node.OfflineSeverity) ||

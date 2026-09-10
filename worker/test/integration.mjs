@@ -16,7 +16,6 @@ function nodeMetadata(id, name, order, color) {
   return {
     id,
     display_name: name,
-    short_mark: name.split(/\s+/).map((part) => part[0]).join("").slice(0, 4).toUpperCase(),
     role: "VPS",
     group: "integration",
     region: "Test Region",
@@ -581,6 +580,7 @@ assert(accountingAccepted.status === 202,`accounting report returned ${accountin
 const configNodes = await (await fetch(`${base}/api/v1/admin/nodes`,{headers:adminHeaders})).json();
 const configNode = configNodes.nodes.find(node=>node.node_id === "alpha-vps");
 assert(configNodes.capabilities.config_fingerprint === 1,"configuration capability missing");
+assert(configNodes.capabilities.node_metadata === 2,"node metadata capability missing");
 assert(configNode.config_fingerprint === accountingReport.agent.config_fingerprint,"actual configuration fingerprint was lost");
 assert(configNode.generated_at === accountingReport.generated_at,"configuration acknowledgement used receipt time instead of sample time");
 assert(configNode.network_interfaces.join(",") === "eth0" && configNode.network_valid === true,"actual network interfaces missing");

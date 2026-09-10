@@ -66,3 +66,16 @@ test("status distinguishes an old Worker, a missing Agent report, and an unsuppo
  assert.equal(configurationStatus({pendingApply:true},reported,fingerprint,{supportsFingerprint:false}),"配置待部署");
  assert.equal(configurationStatus({},null,fingerprint,{available:false,supportsFingerprint:false}),"配置无法核验（后端不可达）");
 });
+
+
+test("deployment normalizes saved node metadata without changing monitoring settings",()=>{
+ const config={node:{id:"alpha",display_name:"Alpha",role:"VPS",group:"default",region:"Test",stale_seconds:180,display_order:10,color:"blue",offline_severity:"P1",ip_change_severity:"P2",obsolete_badge:"OLD"},secret:"fixture-secret",services:[{name:"nginx.service"}],probes:[{name:"wan",kind:"icmp",target:"example.com"}],network_interfaces:["eth0"]};
+ const normalized=JSON.parse(serializeAgentConfig(config));
+ const {obsolete_badge,...node}=config.node;
+ assert.deepEqual(normalized.node,node);
+ assert.deepEqual(normalized.services,config.services);
+ assert.deepEqual(normalized.probes,config.probes);
+ assert.equal(normalized.secret,config.secret);
+ assert.equal(config.node.obsolete_badge,"OLD");
+ assert.equal(serializeAgentConfig(normalized),serializeAgentConfig(config));
+});

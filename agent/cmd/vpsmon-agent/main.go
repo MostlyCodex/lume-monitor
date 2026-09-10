@@ -82,7 +82,6 @@ func (a *application) runOnce(parent context.Context, dryRun bool) error {
 		Node: model.NodeMetadata{
 			ID:               a.config.Node.ID,
 			DisplayName:      a.config.Node.DisplayName,
-			ShortMark:        a.config.Node.ShortMark,
 			Role:             a.config.Node.Role,
 			Group:            a.config.Node.Group,
 			Region:           a.config.Node.Region,

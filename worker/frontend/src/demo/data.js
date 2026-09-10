@@ -1,12 +1,12 @@
 // Fictional, deterministic fixtures. No network, credentials or production data.
 export function createDemoData(previewNow = Math.floor(Date.now() / 1000)) {
 const nodeDefinitions = [
-  { id: "transit-la", label: "Transit-Los-Angeles", mark: "LA", role: "线路中转机", region: "Los Angeles", country: "US", service: ["nftables", "nftables"], bases: [151, 158, 181, 8], resources: [18.4, 34.2, 28.5] },
-  { id: "transit-eb", label: "Transit-Edge-Bridge", mark: "EB", role: "线路中转机", region: "Los Angeles", country: "US", service: ["nftables", "nftables"], bases: [155, 164, 188, 9], resources: [11.6, 27.8, 41.3] },
-  { id: "egress-lv", label: "Egress-Las-Vegas", mark: "LV", role: "住宅出口落地机", region: "Las Vegas", country: "US", service: ["xray", "Xray"], bases: [42], resources: [22.7, 43.6, 67.4] },
-  { id: "hybrid-la", label: "Hybrid-LAX-Tri", mark: "LX", role: "线路 + 落地机", region: "Los Angeles", country: "US", service: ["xray", "Xray"], bases: [149, 157, 179], resources: [9.8, 31.4, 23.6] },
-  { id: "transit-tokyo", label: "Transit-Tokyo", mark: "TY", role: "线路中转机", region: "Tokyo", country: "JP", service: ["nftables", "nftables"], bases: [63, 69, 78, 7], resources: [14.1, 76.8, 35.2] },
-  { id: "hybrid-sg", label: "Hybrid-Singapore", mark: "SG", role: "线路 + 落地机", region: "Singapore", country: "SG", service: ["xray", "Xray"], bases: [72, 78, 91], resources: [31.5, 52.7, 87.2] },
+  { id: "transit-la", label: "Transit-Los-Angeles", role: "线路中转机", region: "Los Angeles", country: "US", service: ["nftables", "nftables"], bases: [151, 158, 181, 8], resources: [18.4, 34.2, 28.5] },
+  { id: "transit-eb", label: "Transit-Edge-Bridge", role: "线路中转机", region: "Los Angeles", country: "US", service: ["nftables", "nftables"], bases: [155, 164, 188, 9], resources: [11.6, 27.8, 41.3] },
+  { id: "egress-lv", label: "Egress-Las-Vegas", role: "住宅出口落地机", region: "Las Vegas", country: "US", service: ["xray", "Xray"], bases: [42], resources: [22.7, 43.6, 67.4] },
+  { id: "hybrid-la", label: "Hybrid-LAX-Tri", role: "线路 + 落地机", region: "Los Angeles", country: "US", service: ["xray", "Xray"], bases: [149, 157, 179], resources: [9.8, 31.4, 23.6] },
+  { id: "transit-tokyo", label: "Transit-Tokyo", role: "线路中转机", region: "Tokyo", country: "JP", service: ["nftables", "nftables"], bases: [63, 69, 78, 7], resources: [14.1, 76.8, 35.2] },
+  { id: "hybrid-sg", label: "Hybrid-Singapore", role: "线路 + 落地机", region: "Singapore", country: "SG", service: ["xray", "Xray"], bases: [72, 78, 91], resources: [31.5, 52.7, 87.2] },
 ];
 
 function probeDefinitions(node) {
@@ -73,7 +73,7 @@ function latestData() {
     },
     services: [{ name: definition.service[0], label: definition.service[1], state: "active" }],
     probes: probeDefinitions(definition).map((probe, index) => currentProbe(definition, probe, index)),
-    agent: { version: "1.0.0", queue_depth: 0, collect_errors: 0, send_errors: 0 },
+    agent: { version: "1.0.1", queue_depth: 0, collect_errors: 0, send_errors: 0 },
   }));
   return {
     schema_version: 2,
@@ -82,7 +82,7 @@ function latestData() {
     mode: "live",
     summary: { online_nodes: nodes.length, total_nodes: nodes.length, active_alerts: 0, pending_alerts: 0, p1_alerts: 0 },
     catalog: {
-      nodes: nodeDefinitions.map((node, index) => ({ id: node.id, label: node.label, mark: node.mark, role: node.role, region: node.region, order: index + 1 })),
+      nodes: nodeDefinitions.map((node, index) => ({ id: node.id, label: node.label, role: node.role, region: node.region, order: index + 1 })),
       routes: [],
     },
     nodes,

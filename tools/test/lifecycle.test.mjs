@@ -225,12 +225,12 @@ test("adoption writes no management state if a key is wrong or the server change
   }
 });
 
-test("deployment upgrades a missing configuration-acknowledgement capability before touching the Agent",async()=>{
- for (const initialStatus of [200,401]) {
+test("deployment upgrades missing acknowledgement or node metadata capabilities before touching the Agent",async()=>{
+ for (const [initialStatus,capabilities] of [[200,{}],[200,{config_fingerprint:1}],[401,{}]]) {
   const calls=[];let updated=false;
   const context=vm.createContext({
    line:()=>{},fail:message=>{throw Error(message);},wranglerConfigPath:"memory/wrangler.jsonc",
-   adminFetch:async()=>({ok:initialStatus===200,status:initialStatus,body:{nodes:[],...(updated?{capabilities:{config_fingerprint:1}}:{})}}),
+   adminFetch:async()=>({ok:initialStatus===200,status:initialStatus,body:{nodes:[],capabilities:updated?{config_fingerprint:1,node_metadata:2}:capabilities}}),
    ensureCloudflareLogin:async()=>calls.push("login"),applyDatabaseMigrations:async()=>calls.push("migrate"),readVersion:async()=>"1.0.0",
    wrangler:async args=>{assert.equal(args[0],"deploy");assert.ok(args.includes("--keep-vars"));calls.push("update-worker");updated=true;},
   });

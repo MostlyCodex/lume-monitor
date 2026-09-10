@@ -19,7 +19,12 @@ export function normalizeAccounting(config = {}) {
 }
 
 export function serializeAgentConfig(config) {
- const staged = {...config,...normalizeAccounting(config)};
+ // Rebuild metadata at the deployment boundary so saved configurations use
+ // exactly the current Agent schema, including after an in-place upgrade.
+ const fields = ["id", "display_name", "role", "group", "region", "stale_seconds",
+  "display_order", "color", "offline_severity", "ip_change_severity"];
+ const node = Object.fromEntries(fields.filter(key => Object.hasOwn(config.node ?? {}, key)).map(key => [key, config.node[key]]));
+ const staged = {...config,node,...normalizeAccounting(config)};
  delete staged.nftables_counters;
  return `${JSON.stringify(staged, null, 2)}\n`;
 }

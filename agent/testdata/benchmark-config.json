@@ -2,7 +2,6 @@
   "node": {
     "id": "benchmark-node",
     "display_name": "Benchmark Node",
-    "short_mark": "BEN",
     "role": "VPS",
     "group": "benchmark",
     "region": "Test Region",

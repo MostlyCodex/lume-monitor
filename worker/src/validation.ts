@@ -84,12 +84,9 @@ function nodeMetadata(value: unknown, expectedId: string): NodeMetadata {
   const v = record(value, "node");
   const id = patternValue(v.id, "node.id", NODE_ID, 32);
   if (id !== expectedId) throw new Error("node.id must match node_id");
-  const mark = stringValue(v.short_mark, "node.short_mark", 4);
-  if (!/^[A-Za-z0-9]{1,4}$/.test(mark)) throw new Error("node.short_mark has an invalid format");
   return {
     id,
     display_name: stringValue(v.display_name, "node.display_name", 80),
-    short_mark: mark,
     role: stringValue(v.role, "node.role", 80),
     group: stringValue(v.group, "node.group", 80),
     region: stringValue(v.region, "node.region", 80),

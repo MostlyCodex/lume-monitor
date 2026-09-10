@@ -3,7 +3,6 @@ package model
 type NodeMetadata struct {
 	ID               string `json:"id"`
 	DisplayName      string `json:"display_name"`
-	ShortMark        string `json:"short_mark"`
 	Role             string `json:"role"`
 	Group            string `json:"group"`
 	Region           string `json:"region"`

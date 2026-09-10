@@ -178,7 +178,6 @@ export function createWranglerConfig({ workerName, databaseName, databaseId, das
 export function createAgentConfig({
   id,
   displayName,
-  shortMark,
   role,
   region,
   displayOrder,
@@ -191,8 +190,6 @@ export function createAgentConfig({
 }) {
   if (!validateNodeId(id)) fail("节点 ID 必须匹配 [a-z0-9][a-z0-9_-]{0,31}");
   if (typeof secret !== "string" || secret.length < 32) fail("节点密钥无效");
-  const mark = (shortMark || id.replace(/[-_]/g, "").slice(0, 3)).toUpperCase();
-  if (!/^[A-Z0-9]{1,4}$/.test(mark)) fail("节点短标记只能包含 1–4 个字母或数字");
   for (const [label, value] of [["显示名", displayName || id], ["用途", role || "VPS"], ["地区", region || "unspecified"]]) {
     if (typeof value !== "string" || value.length < 1 || value.length > 80 || /[\r\n\t]/.test(value)) fail(`${label} 必须是 1–80 个普通字符`);
   }
@@ -200,7 +197,6 @@ export function createAgentConfig({
     node: {
       id,
       display_name: displayName || id,
-      short_mark: mark,
       role: role || "VPS",
       group: "default",
       region: region || "unspecified",
@@ -541,15 +537,15 @@ async function waitForFirstReport(state, id, timeoutSeconds = 90, since = 0, fin
 }
 
 async function ensureConfigurationReporting(state) {
-  const supports = response => response.ok && response.body?.capabilities?.config_fingerprint === 1;
+  const supports = response => response.ok && response.body?.capabilities?.config_fingerprint === 1 && response.body?.capabilities?.node_metadata === 2;
   const initial = await adminFetch(state,"/api/v1/admin/nodes");
   if (supports(initial)) return;
   if (!initial.ok) fail(`后端检查失败（HTTP ${initial.status}），已停止部署。请先核对 Worker 地址与 ADMIN_TOKEN。`);
-  line("后端需要支持配置生效确认，先更新 Worker…");
+  line("后端需要更新以支持当前 Agent 配置，先更新 Worker…");
   await ensureCloudflareLogin();
   await applyDatabaseMigrations(state);
   await wrangler(["deploy","--config",wranglerConfigPath,"--keep-vars","--var",`APP_VERSION:${await readVersion()}`]);
-  if (!supports(await adminFetch(state,"/api/v1/admin/nodes"))) fail("Worker 尚未提供配置确认能力，Agent 部署已停止。请检查部署地址和版本。");
+  if (!supports(await adminFetch(state,"/api/v1/admin/nodes"))) fail("Worker 尚未支持当前 Agent 配置，部署已停止。请检查部署地址和版本。");
   line("✓ Worker 已支持配置核验，继续部署 Agent。");
 }
 
@@ -815,9 +811,6 @@ export function normalizeNodeSpec(spec) {
     displayName: String(spec.name ?? spec.display_name ?? id),
     role: String(spec.role ?? "VPS"),
     region: String(spec.region ?? "unspecified"),
-    shortMark: String(
-      spec.mark ?? spec.short_mark ?? id.replace(/[-_]/g, "").slice(0, 3).toUpperCase(),
-    ),
     services,
     ssh,
     probes: Array.isArray(spec.probes) ? spec.probes : [],
@@ -846,7 +839,6 @@ async function createNodeRecords(state, specs) {
     const config = createAgentConfig({
       id: entry.spec.id,
       displayName: entry.spec.displayName,
-      shortMark: entry.spec.shortMark,
       role: entry.spec.role,
       region: entry.spec.region,
       displayOrder: entry.displayOrder,
@@ -896,7 +888,6 @@ async function addNode(prompt, options) {
       name: options.get("name"),
       role: options.get("role"),
       region: options.get("region"),
-      mark: options.get("mark"),
       services: options.get("services"),
       ssh: options.get("ssh"),
     })];
@@ -913,10 +904,6 @@ async function addNode(prompt, options) {
     const displayName = await displayValue(prompt, "面板显示名", id, { line });
     const role = await displayValue(prompt, "用途（如网站、备份、中转）", "VPS", { line });
     const region = await displayValue(prompt, "国家 / 城市", "unspecified", { line });
-    const shortMark = await inputValue(prompt, "短标记", {
-      hint: "仅用于显示，可自定义；1–4 个英文字母或数字", fallback: id.replace(/[-_]/g, "").slice(0, 3).toUpperCase(), line,
-      parse: (value) => { if (!/^[A-Za-z0-9]{1,4}$/.test(value)) throw new InputError("短标记须为 1–4 个英文字母或数字"); return value.toUpperCase(); },
-    });
     const services = await promptServices(prompt, { line });
     const optionalObservers = await promptOptionalObservers(prompt, { state, excludeNodeId: id });
     const target = await promptSshTarget(prompt, "SSH 部署目标", "", true);
@@ -930,7 +917,6 @@ async function addNode(prompt, options) {
       name: displayName,
       role,
       region,
-      mark: shortMark,
       services: services.map((service) => service.name),
       ssh: target,
       probes: optionalObservers.probes,
@@ -1536,7 +1522,7 @@ function usage() {
   node tools/lumectl.mjs doctor
   node tools/lumectl.mjs setup [--yes]
   node tools/lumectl.mjs status
-  node tools/lumectl.mjs node add [--id ID --name 名称 --role 用途 --region 地区 --mark 标记 --services a,b --ssh 别名]
+  node tools/lumectl.mjs node add [--id ID --name 名称 --role 用途 --region 地区 --services a,b --ssh 别名]
   node tools/lumectl.mjs node add --from-file nodes.json
   node tools/lumectl.mjs node configure <NODE_ID>
   node tools/lumectl.mjs node apply [NODE_ID] [--pending]

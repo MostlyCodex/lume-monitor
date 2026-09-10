@@ -13,7 +13,6 @@ export interface NodeDisplay {
 }
 export interface CatalogNode extends NodeDisplay {
   id: string;
-  mark?: string;
   order?: number;
 }
 export interface TrafficCycle {
