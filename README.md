@@ -38,7 +38,7 @@ npm run manage
 ```text
 lume-monitor/
 ├── agent/                      # Go Agent，在 VPS 上采集并上报数据
-│   ├── cmd/vpsmon-agent/        # 程序入口
+│   ├── cmd/vpsmon-agent/       # 程序入口
 │   ├── internal/               # 采集、探测与上报实现
 │   │   ├── check/              # 只读 systemd 服务检查
 │   │   ├── collect/            # 主机资源与网络指标采集
