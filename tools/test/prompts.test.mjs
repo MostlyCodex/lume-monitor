@@ -81,3 +81,21 @@ test("end of input resolves a pending prompt and cannot start a retry loop", asy
   await assert.rejects(prompt.text("字段"), PromptClosed);
   prompt.close(); output.end();
 });
+
+
+test("feedback and validation errors are separated before the next question without duplicate dividers", async () => {
+  const input=new PassThrough(),output=new PassThrough();let transcript="";
+  output.on("data",chunk=>transcript+=chunk);
+  const {terminalFor,divider}=await import("../terminal-output.mjs");
+  const terminal=terminalFor(output),prompt=makePrompter({input,output});
+  try {
+    terminal.line("已保存配置");
+    const answer=prompt.yes("现在部署",false);
+    input.write("invalid\n");await new Promise(setImmediate);
+    input.write("n\n");assert.equal(await answer,false);
+    terminal.separate();
+    assert.ok(transcript.startsWith(`已保存配置\n${divider}\n`));
+    assert.match(transcript,/输入无效：[^\n]+\n─+\n/);
+    assert.ok(!transcript.includes(`${divider}\n${divider}\n`));
+  } finally {prompt.close();input.end();output.end();}
+});

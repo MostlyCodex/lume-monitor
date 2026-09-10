@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { Writable } from "node:stream";
+import { terminalFor } from "./terminal-output.mjs";
 
 export class InputError extends Error {}
 export class PromptCancelled extends Error {}
@@ -42,6 +43,7 @@ export async function inputValue(prompt, question, { hint, fallback = "", parse 
     catch (error) {
       if (!(error instanceof InputError)) throw error;
       line(`输入无效：${error.message}。请重新填写当前项。`);
+      prompt.separate?.();
     }
   }
 }
@@ -91,8 +93,9 @@ export function booleanValue(value) {
 }
 
 export function makePrompter({ input = process.stdin, output = process.stdout } = {}) {
+  const terminal = terminalFor(output);
   let muted = false;
-  const destination = new Writable({ write(chunk, encoding, done) { if (!muted) output.write(chunk, encoding); done(); } });
+  const destination = new Writable({ write(chunk, encoding, done) { if (!muted) terminal.write(chunk); done(); } });
   const interface_ = createInterface({ input, output: destination, terminal: Boolean(input.isTTY) });
   let closed = false;
   let pending;
@@ -100,12 +103,13 @@ export function makePrompter({ input = process.stdin, output = process.stdout } 
   interface_.on("SIGINT", () => pending?.abort(new PromptCancelled()));
   async function ask(question, fallback, { hint, secret = false } = {}) {
     if (closed) throw new PromptClosed();
-    if (hint) output.write(`  ${hint}\n`);
+    terminal.separate();
+    if (hint) terminal.write(`  ${hint}\n`);
     const suffix = secret ? "（输入不显示）" : fallback ? ` [${fallback}]` : "";
     const controller = new AbortController();
     pending = controller;
     try {
-      if (secret) { output.write(`${question}${suffix}: `); muted = true; }
+      if (secret) { terminal.write(`${question}${suffix}: `); muted = true; }
       const value = await interface_.question(secret ? "" : `${question}${suffix}: `, { signal: controller.signal });
       return navigation(value.trim() || fallback);
     } catch (error) {
@@ -114,10 +118,12 @@ export function makePrompter({ input = process.stdin, output = process.stdout } 
     } finally {
       pending = undefined;
       muted = false;
-      output.write(`${secret || !input.isTTY || controller.signal.aborted ? "\n" : ""}────────────────────────────────\n`);
+      if (secret || !input.isTTY || controller.signal.aborted) terminal.write("\n");
+      terminal.separate();
     }
   }
   const prompt = {
+    separate() { terminal.markOutput(); terminal.separate(); },
     async secret(question, _fallback = "", options = {}) {
       return ask(question, "", { ...options, secret: true });
     },
@@ -127,7 +133,7 @@ export function makePrompter({ input = process.stdin, output = process.stdout } 
     async yes(question, fallback = false) {
       return inputValue(prompt, question, {
         hint: "y / yes / 是，或 n / no / 否", fallback: fallback ? "y" : "n", parse: booleanValue,
-        line: (message) => output.write(`${message}\n`),
+        line: (message) => terminal.line(message),
       });
     },
     close() { interface_.close(); },

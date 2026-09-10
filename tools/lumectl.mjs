@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { buildFrontend } from "./build-frontend.mjs";
+import { terminalFor } from "./terminal-output.mjs";
+import { createRemoteChangeLog } from "./remote-changes.mjs";
 
 import { createHash, randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
@@ -31,8 +33,16 @@ const cacheDir = join(privateDir, "cache", "agents-v1");
 
 class DownloadUnavailableError extends Error {}
 
+const terminal = terminalFor();
+const remoteChanges = createRemoteChangeLog(line);
+
 function line(message = "") {
-  process.stdout.write(`${message}\n`);
+  terminal.line(message);
+}
+
+function finishOperation() {
+  remoteChanges.flush();
+  terminal.separate();
 }
 
 function fail(message) {
@@ -265,6 +275,8 @@ function commandProbe(command, args = ["--version"]) {
 }
 
 function run(command, args, options = {}) {
+  const visible = !options.capture || options.echo;
+  if (options.interactive) terminal.markOutput();
   return new Promise((resolvePromise, rejectPromise) => {
     const capture = Boolean(options.capture);
     const child = spawn(command, args, {
@@ -278,16 +290,17 @@ function run(command, args, options = {}) {
     if (!options.interactive) {
       child.stdout.on("data", (chunk) => {
         stdout += chunk;
-        if (!capture || options.echo) process.stdout.write(chunk);
+        if (!capture || options.echo) terminal.write(chunk);
       });
       child.stderr.on("data", (chunk) => {
         stderr += chunk;
-        if (!capture || options.echo) process.stderr.write(chunk);
+        if (!capture || options.echo) { terminal.markOutput(); process.stderr.write(chunk); }
       });
       if (options.input !== undefined) child.stdin.end(`${options.input}\n`);
     }
     child.once("error", rejectPromise);
-    child.once("exit", (code) => {
+    // Wait for stdout/stderr to drain before printing the block divider.
+    child.once("close", (code) => {
       const result = { code: code ?? 1, stdout, stderr };
       if (result.code !== 0 && !options.allowFailure) {
         rejectPromise(new Error(`${basename(command)} 执行失败（退出码 ${result.code}）`));
@@ -295,7 +308,7 @@ function run(command, args, options = {}) {
         resolvePromise(result);
       }
     });
-  });
+  }).finally(() => { if (visible) terminal.separate(); });
 }
 
 async function wrangler(args, options = {}) {
@@ -494,7 +507,7 @@ async function registerDashboardOrigin(state) {
   return null;
 }
 
-async function adminNodeList(state) {
+async function adminNodeSnapshot(state) {
   const result = await adminFetch(state, "/api/v1/admin/nodes");
   if (!result.ok) {
     const hint = result.status === 401
@@ -505,7 +518,11 @@ async function adminNodeList(state) {
     fail(`无法读取节点目录（HTTP ${result.status}）。${hint}`);
   }
   if (!Array.isArray(result.body?.nodes)) fail(`节点目录响应格式无效（HTTP ${result.status}）。请检查 Worker 地址与部署版本。`);
-  return result.body.nodes;
+  return result.body;
+}
+
+async function adminNodeList(state) {
+  return (await adminNodeSnapshot(state)).nodes;
 }
 
 async function waitForFirstReport(state, id, timeoutSeconds = 90, since = 0, fingerprint = null, version = null) {
@@ -1080,9 +1097,8 @@ export function normalizeArchitecture(value) {
 }
 
 /**
- * Four SSH round trips instead of seven. Reading the architecture and creating
- * the restricted stage share one connection, the permission fixes ride along
- * with the installer, and the final connection verifies and cleans up together.
+ * Read the architecture and create the restricted stage in one connection.
+ * The audit wrapper gathers file changes before this stage is cleaned up.
  * The stage is still created with mode 0700 before anything is copied into it,
  * so a staged configuration is never reachable by other local users.
  */
@@ -1103,6 +1119,7 @@ async function installNode(id, target, options = {}) {
     "vpsmon-agent",
     "config.json",
     "vpsmon-agent.service",
+    "audit-agent.sh",
     installer,
   ];
   let remoteStagePresent = false;
@@ -1129,7 +1146,9 @@ async function installNode(id, target, options = {}) {
     for (const unit of ["vpsmon-agent.service"]) {
       await writeFile(join(localStage, unit), await readFile(join(deployDir, unit)), { mode: 0o644 });
     }
-    await writeFile(join(localStage, installer), await readFile(join(deployDir, installer)), { mode: 0o700 });
+    for (const script of [installer, "audit-agent.sh"]) {
+      await writeFile(join(localStage, script), await readFile(join(deployDir, script)), { mode: 0o700 });
+    }
     const checksums = [];
     for (const payload of payloads) {
       const digest = createHash("sha256").update(await readFile(join(localStage, payload))).digest("hex");
@@ -1152,13 +1171,12 @@ async function installNode(id, target, options = {}) {
     const deployedAfter = Math.floor(Date.now() / 1000);
     state.nodes[id].deployedAfter = deployedAfter;
     await writePrivateJson(statePath,state);
-    await run("ssh", ["-t", target, [
-      `chmod 700 ${remoteStage}/vpsmon-agent ${remoteStage}/${installer}`,
+    await run("ssh", [target, [
+      `chmod 700 ${remoteStage}/vpsmon-agent ${remoteStage}/${installer} ${remoteStage}/audit-agent.sh`,
       `chmod 600 ${remoteStage}/config.json ${remoteStage}/checksums.sha256`,
       `chmod 644 ${remoteStage}/vpsmon-agent.service`,
-      `sudo sh ${remoteStage}/${installer} ${remoteStage}`,
-      ...(options.activate ? ["sudo systemctl enable --now vpsmon-agent.service"] : []),
-    ].join(" && ")], { interactive: true });
+    ].join(" && ")], { capture: true });
+    await runAgentOperation(target, remoteStage, installer === "upgrade-agent.sh" ? "upgrade" : "install", { activate: options.activate });
 
     const verify = await run("ssh", [
       target,
@@ -1217,15 +1235,33 @@ async function installNode(id, target, options = {}) {
   }
 }
 
-async function uninstallRemoteAgent(target) {
-  const localStage = await mkdtemp(join(tmpdir(), "lume-uninstall-"));
+// Fetch the report even when SSH returns a failure: the installer may have
+// rolled back, or left partial changes that must still be visible to the user.
+async function runAgentOperation(target, remoteStage, action, { activate = false } = {}) {
+  try {
+    await run("ssh", ["-t", target, `sudo sh ${remoteStage}/audit-agent.sh ${remoteStage} ${action} ${activate ? "activate" : "keep"}`], { interactive: true });
+  } finally {
+    try {
+      const report = await run("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", target, `cat ${remoteStage}/changes.tsv`], { capture: true, allowFailure: true });
+      if (report.code === 0) remoteChanges.record(target, report.stdout);
+      else remoteChanges.unavailable(target);
+    } catch { remoteChanges.unavailable(target); }
+  }
+}
+
+async function runRemoteMaintenance(target, action) {
+  const localStage = await mkdtemp(join(tmpdir(), "lume-maintenance-"));
   const remoteStage = `/tmp/vpsmon-stage.${randomBytes(8).toString("hex")}`;
   try {
     await run("ssh", [target, `umask 077 && mkdir -m 700 ${remoteStage}`]);
-    await writeFile(join(localStage, "uninstall-agent.sh"), await readFile(join(deployDir, "uninstall-agent.sh")), { mode: 0o700 });
-    await run("scp", [join(localStage, "uninstall-agent.sh"), `${target}:${remoteStage}/`]);
-    await run("ssh", ["-t", target, `sudo sh ${remoteStage}/uninstall-agent.sh --confirm && rm -rf -- ${remoteStage}`], { interactive: true });
+    const scripts = action === "uninstall" ? ["audit-agent.sh", "uninstall-agent.sh"] : ["audit-agent.sh"];
+    for (const script of scripts) {
+      await writeFile(join(localStage, script), await readFile(join(deployDir, script)), { mode: 0o700 });
+    }
+    await run("scp", [...scripts.map(script => join(localStage, script)), `${target}:${remoteStage}/`]);
+    await runAgentOperation(target, remoteStage, action);
   } finally {
+    await run("ssh", [target, `rm -rf -- ${remoteStage}`], { capture: true, allowFailure: true }).catch(() => {});
     await rm(localStage, { recursive: true, force: true });
   }
 }
@@ -1310,10 +1346,10 @@ async function removeNode(prompt, id, options) {
   if (target) {
     if (uninstall) {
       line(`卸载 ${target} 上的 Agent…`);
-      await uninstallRemoteAgent(target);
+      await runRemoteMaintenance(target, "uninstall");
     } else {
       line(`停止 ${target} 上的 Agent…`);
-      await run("ssh", ["-t", target, "sudo systemctl disable --now vpsmon-agent.service && (sudo systemctl disable --now vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true)"], { interactive: true });
+      await runRemoteMaintenance(target, "stop");
     }
   }
 
@@ -1446,14 +1482,16 @@ async function showStatus() {
   line(`URL     ${state.workerUrl || "尚未部署"}`);
   line(`阶段    ${state.stage}`);
   line(`节点    ${Object.keys(state.nodes).length}`);
-  let remote = null;
+  let snapshot = null;
   if (state.workerUrl) {
     try {
-      remote = await adminNodeList(state);
+      snapshot = await adminNodeSnapshot(state);
     } catch {
-      remote = null;
+      snapshot = null;
     }
   }
+  const remote = snapshot?.nodes ?? null;
+  const supportsFingerprint = snapshot?.capabilities?.config_fingerprint === 1;
   const remoteById = new Map((remote ?? []).map((node) => [node.node_id, node]));
   for (const [id, node] of Object.entries(state.nodes)) {
     const seen = remoteById.get(id);
@@ -1465,7 +1503,7 @@ async function showStatus() {
         : `${reported} 秒前上报`;
     let expected = null;
     try { expected = configFingerprint(serializeAgentConfig(JSON.parse(await readFile(join(privateDir,"nodes",id,"config.json"),"utf8")))); } catch {}
-    const configState = expected ? configurationStatus(node,seen,expected,remote !== null) : "本地配置缺失或无效";
+    const configState = expected ? configurationStatus(node,seen,expected,{ available: remote !== null, supportsFingerprint }) : "本地配置缺失或无效";
     line(`  ${node.installed ? "✓" : "·"} ${id}${node.sshTarget ? `  (${node.sshTarget})` : ""}  ${remote === null ? "后端暂时不可达" : detail} · ${configState}${node.pendingRestore ? " · 恢复待完成" : ""}`);
     if (seen?.network_interfaces?.length) line(`    统计网卡：${seen.network_interfaces.join("、")}${seen.network_valid === false ? "（采集异常）" : ""}`);
   }
@@ -1474,9 +1512,16 @@ async function showStatus() {
   const revoked = Array.isArray(state.revokedNodeIds) ? state.revokedNodeIds : [];
   if (revoked.length > 0) line(`已撤销  ${revoked.join("、")}`);
   if (remote) {
-    const orphaned = remote.filter((node) => !node.retired && !state.nodes[node.node_id]);
-    if (orphaned.length > 0) {
-      line(`! Worker 上还有本地状态中没有的活动节点：${orphaned.map((node) => node.node_id).join("、")}`);
+    // Retirement and catalog visibility are independent. Disabled legacy rows
+    // can retain history without representing enabled monitoring nodes.
+    const unmanaged = remote.filter((node) => !node.retired && !state.nodes[node.node_id]);
+    const enabled = unmanaged.filter((node) => node.enabled === true);
+    const disabled = unmanaged.filter((node) => node.enabled === false);
+    if (enabled.length > 0) {
+      line(`! Worker 上已启用但未纳入本地管理的节点：${enabled.map((node) => node.node_id).join("、")}`);
+    }
+    if (disabled.length > 0) {
+      line(`已禁用的远端目录记录：${disabled.map((node) => node.node_id).join("、")}`);
     }
   }
   if (state.workerUrl) await verifyHealth(state.workerUrl);
@@ -1544,6 +1589,8 @@ async function manage(prompt) {
       if (error instanceof PromptClosed) return;
       if (error instanceof PromptCancelled) line("已返回管理菜单；已保存的配置和待部署状态会保留。");
       else line(`操作未完成：${error.message}`);
+    } finally {
+      finishOperation();
     }
   }
 }
@@ -1609,7 +1656,8 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(toolFile)) {
       line("已退出当前操作；已保存的配置和待部署状态会保留。");
       return;
     }
+    terminal.markOutput();
     process.stderr.write(`\n错误：${error.message}\n`);
     process.exitCode = 1;
-  });
+  }).finally(finishOperation);
 }

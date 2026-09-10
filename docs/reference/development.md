@@ -11,7 +11,7 @@ npx playwright install chromium
 npm run test:ci
 ```
 
-Agent 改动另在 `agent/` 执行 `go test ./...` 和 `go vet ./...`。Linux 上执行 `sh deploy/test-upgrade-retention.sh` 验证升级备份保留。
+Agent 改动另在 `agent/` 执行 `go test ./...` 和 `go vet ./...`。Linux 上执行 `sh deploy/test-upgrade-retention.sh`、`sh deploy/test-agent-upgrade.sh`、`sh deploy/test-agent-audit.sh`，验证备份保留、升级回滚和远端变更清单。
 
 测试只使用虚构节点、保留域名和测试密钥。不得导入生产数据库或私有配置。
 
@@ -54,6 +54,8 @@ npm run format:frontend    # 统一 Vue / TypeScript / CSS 格式
 ## 管理状态
 
 `tools/lumectl.mjs` 提供交互菜单和命令入口；`tools/management.mjs` 定义导入校验和可重试的配置下发逻辑。所有管理数据统一存放在 `.lume/`。
+
+`terminal-output.mjs` 统一输入与输出块的分隔，`remote-changes.mjs` 解析、校验并汇总变更元数据。VPS 操作由 `deploy/audit-agent.sh` 包装：操作前快照受管文件，退出时比对内容、权限和服务状态。文本行号来自 `diff`，快照与差异内容仅在远端临时目录内供 root 读取，完成后清理；本机只接收路径与行号。Agent 自行写入的采样、暂存和周期流量数据不纳入配置变更清单。
 
 `GET /api/v1/admin/key-inventory` 仅允许管理员访问，返回完整节点 ID、密钥 HMAC 校验值和撤销列表，不返回密钥明文。接管时逐一比对；发布密钥前核对上次快照，防止旧管理副本覆盖线上变更。检查与 Cloudflare Secret 写入之间并非原子事务，管理操作应串行执行。
 

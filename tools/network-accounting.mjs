@@ -101,12 +101,14 @@ export function matchesAppliedReport(node,{fingerprint,since=0,version}={}) {
  return Boolean(node && Number.isInteger(node.last_report_at) && node.last_report_at>0 && node.last_report_at>=since && Number.isInteger(node.generated_at) && node.generated_at>0 && node.generated_at>=since &&
   /^[a-f0-9]{64}$/.test(fingerprint ?? "") && node.config_fingerprint===fingerprint && (!version || node.agent_version===version));
 }
-export function configurationStatus(local,node,expected,available=true) {
+export function configurationStatus(local,node,expected,{available=true,supportsFingerprint=true}={}) {
  if (!available) return "配置无法核验（后端不可达）";
  if (/^[a-f0-9]{64}$/.test(expected ?? "") && node?.config_fingerprint === expected && (!local.deployedAfter || Number(node.generated_at)>=local.deployedAfter)) return "配置已生效";
  if (local.applyError) return "上次应用失败，待重试";
  if (local.pendingConfirmation) return "配置已写入，待启动确认";
  if (local.pendingApply) return "配置待部署";
- if (!node?.config_fingerprint) return "配置待核验（需更新 Worker / Agent）";
+ if (!supportsFingerprint) return "配置待核验（Worker 尚不支持配置核验）";
+ if (!node?.last_report_at) return "配置待核验（尚未收到 Agent 上报）";
+ if (!node?.config_fingerprint) return "配置待核验（Agent 未上报配置摘要）";
  return "本地与 Agent 配置不一致";
 }

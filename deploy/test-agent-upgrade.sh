@@ -121,11 +121,20 @@ EOF
       "$script_dir/upgrade-agent.sh" > "$FIXTURE/upgrade.sh"
   status=0
   [ "$scenario" != rollback ] || touch "$FIXTURE/fail-start"
-  sh "$FIXTURE/upgrade.sh" "$stage" > "$FIXTURE/output.log" 2>&1 || status=$?
+  cp "$FIXTURE/upgrade.sh" "$stage/upgrade-agent.sh"
+  sed -e "s#/opt/vpsmon#$FIXTURE/opt/vpsmon#g" \
+      -e "s#/etc/vpsmon#$FIXTURE/etc/vpsmon#g" \
+      -e "s#/etc/systemd/system#$FIXTURE/etc/systemd/system#g" \
+      -e "s#/var/lib/vpsmon#$FIXTURE/var/lib/vpsmon#g" \
+      "$script_dir/audit-agent.sh" > "$stage/audit-agent.sh"
+  sh "$stage/audit-agent.sh" "$stage" upgrade > "$FIXTURE/output.log" 2>&1 || status=$?
+  [ "$(tail -n 1 "$stage/changes.tsv")" = END ]
+  [ ! -e "$stage/.changes-before" ]
   if [ "$scenario" = success ]; then
     if [ "$status" != 0 ]; then cat "$FIXTURE/output.log"; exit 1; fi
     cmp "$FIXTURE/new-agent" "$FIXTURE/opt/vpsmon/vpsmon-agent"
     [ "$(cat "$FIXTURE/etc/vpsmon/config.json")" = new-config ]
+    grep -Fxq "$(printf 'changed\t%s/etc/vpsmon/config.json\ttext\t1\t1' "$FIXTURE")" "$stage/changes.tsv"
     [ ! -f "$FIXTURE/etc/systemd/system/vpsmon-nftables-snapshot.service" ]
     [ ! -f "$FIXTURE/etc/systemd/system/vpsmon-nftables-snapshot.timer" ]
     [ ! -f "$FIXTURE/var/lib/vpsmon/nftables-counters.json" ]
@@ -135,6 +144,7 @@ EOF
     if [ "$status" != 5 ]; then cat "$FIXTURE/output.log"; exit 1; fi
     cmp "$FIXTURE/old-agent" "$FIXTURE/opt/vpsmon/vpsmon-agent"
     [ "$(cat "$FIXTURE/etc/vpsmon/config.json")" = old-config ]
+    if grep -Fq "$FIXTURE/etc/vpsmon/config.json" "$stage/changes.tsv"; then echo "rollback reported a config change"; exit 1; fi
     [ "$(cat "$FIXTURE/var/lib/vpsmon/nftables-counters.json")" = old-snapshot ]
     [ "$(cat "$FIXTURE/etc/systemd/system/vpsmon-nftables-snapshot.service")" = 'vpsmon-nftables-snapshot.service old' ]
     [ "$(cat "$FIXTURE/etc/systemd/system/vpsmon-nftables-snapshot.timer")" = 'vpsmon-nftables-snapshot.timer old' ]

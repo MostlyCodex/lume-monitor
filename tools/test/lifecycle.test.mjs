@@ -6,6 +6,7 @@ import test from "node:test";
 import { applyPending, keyProof, parseJsonc, restorePeerProbes, validateImportedConfig, verifyKeyInventory, workerOrigin } from "../management.mjs";
 import { validateNodeId, validateSshTarget, validateWorkerName } from "../lumectl.mjs";
 import { InputError, inputValue } from "../prompts.mjs";
+import { configFingerprint, configurationStatus, serializeAgentConfig } from "../network-accounting.mjs";
 
 const source = await readFile(new URL("../lumectl.mjs", import.meta.url), "utf8");
 function procedure(name) {
@@ -51,7 +52,7 @@ function harness() {
     publishNodeKeys:async(state)=>{calls.push("publish-keys");await save(state);},
     publishRevokedNodeIds:async(state)=>{calls.push("publish-revocations");await save(state);},
     adminFetch:async(_state,path)=>{calls.push(path.endsWith("/retire")?"retire":"restore");return {ok:true};},
-    run:async()=>calls.push("stop-agent"),uninstallRemoteAgent:async()=>calls.push("uninstall-agent"),
+    run:async()=>{},runRemoteMaintenance:async(_target,action)=>calls.push(action === "stop" ? "stop-agent" : "uninstall-agent"),
     applyNodes:async(_prompt,ids,state)=>applyPending(state,ids,{save,deploy:async(id)=>deploy(id,null,{state})}),
     randomSecret:()=>"new-independent-secret-".repeat(3),installNode:deploy,
     nodeTarget:async(_prompt,state,id)=>state.nodes[id].sshTarget,
@@ -164,7 +165,7 @@ async function adoptHarness({wrongKey=false, changedDuringInput=false, missingIn
     writePrivateJson:async(path,value)=>writes.push({path,value:structuredClone(value)}),
   });
   const signature=source.slice(source.indexOf("function inventorySignature("),source.indexOf("async function getServerInventory("));
-  new vm.Script(signature+["applyDatabaseMigrations","adminNodeList","adoptDeployment"].map(procedure).join("\n")).runInContext(context);
+  new vm.Script(signature+["applyDatabaseMigrations","adminNodeSnapshot","adminNodeList","adoptDeployment"].map(procedure).join("\n")).runInContext(context);
   const run=()=>context.adoptDeployment({text:async()=>"https://monitor.example",secret:async()=>"admin-".repeat(12),yes:async()=>true});
   return {run,writes,secret,calls};
 }
@@ -207,7 +208,7 @@ test("node directory errors retain their HTTP status without exposing response c
       adminFetch:async()=>({...response,body:{error:"private-response-marker"}}),
       fail:(message)=>{throw Error(message);},
     });
-    new vm.Script(procedure("adminNodeList")).runInContext(context);
+    new vm.Script(["adminNodeSnapshot","adminNodeList"].map(procedure).join("\n")).runInContext(context);
     await assert.rejects(context.adminNodeList({}),(error)=>{
       assert.match(error.message,new RegExp(`HTTP ${response.status}`));
       assert.ok(!error.message.includes("private-response-marker"));
@@ -236,5 +237,36 @@ test("deployment upgrades a missing configuration-acknowledgement capability bef
   new vm.Script(procedure("ensureConfigurationReporting")).runInContext(context);
   if(initialStatus===401){await assert.rejects(context.ensureConfigurationReporting({}),/401/);assert.deepEqual(calls,[]);}
   else {await context.ensureConfigurationReporting({});assert.deepEqual(calls,["login","migrate","update-worker"]);await context.ensureConfigurationReporting({});assert.equal(calls.length,3);}
+ }
+});
+
+
+test("status does not warn about disabled legacy nodes and preserves Worker capability diagnostics",async()=>{
+ for(const supportsFingerprint of [false,true]) {
+  const messages=[],calls=[];
+  const local={stage:"ready",workerName:"monitor",databaseName:"lume",workerUrl:"https://monitor.example",nodes:{alpha:{installed:true}},retiredNodes:{}};
+  const snapshot={nodes:[
+   {node_id:"alpha",enabled:true,retired:false,last_report_at:100,last_report_age_seconds:1},
+   {node_id:"unmanaged-live",enabled:true,retired:false},
+   {node_id:"disabled-legacy",enabled:false,retired:false},
+   {node_id:"retired-node",enabled:true,retired:true},
+  ],...(supportsFingerprint?{capabilities:{config_fingerprint:1}}:{})};
+  const context=vm.createContext({
+   Object,Map,JSON,join,privateDir:"memory/.lume",configFingerprint,serializeAgentConfig,configurationStatus,
+   loadState:async()=>local,line:message=>messages.push(message),fail:message=>{throw Error(message);},
+   readFile:async()=>JSON.stringify({node:{id:"alpha"},secret:"private-config-marker"}),
+   adminFetch:async(_state,path)=>{calls.push(path);return {ok:true,status:200,body:snapshot};},
+   verifyHealth:async()=>calls.push("health"),
+   writePrivateJson:async()=>{throw Error("Status must not modify deployment state");},
+  });
+  new vm.Script(["adminNodeSnapshot","showStatus"].map(procedure).join("\n")).runInContext(context);
+  await context.showStatus();
+  assert.deepEqual(calls,["/api/v1/admin/nodes","health"]);
+  assert.deepEqual(messages.filter(message=>message.startsWith("!")),["! Worker 上已启用但未纳入本地管理的节点：unmanaged-live"]);
+  assert.ok(messages.includes("已禁用的远端目录记录：disabled-legacy"));
+  const output=messages.join("\n");
+  assert.match(output,supportsFingerprint?/Agent 未上报配置摘要/:/Worker 尚不支持配置核验/);
+  assert.ok(!output.includes("retired-node"));
+  assert.ok(!output.includes("private-config-marker"));
  }
 });
