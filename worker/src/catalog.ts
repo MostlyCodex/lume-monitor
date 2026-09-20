@@ -106,16 +106,16 @@ export async function loadDashboardCatalog(env: Env): Promise<DashboardCatalog> 
         "ORDER BY display_order, display_name",
     ).all<BusinessRouteRow>(),
   ]);
-  // A retired node keeps its own catalog rows disabled, but a peer that still
+  // A node pending deletion keeps its own catalog rows disabled, but a peer that still
   // reports a node-link probe toward it would re-enable that probe and its
-  // route on every report. Filtering on read makes retirement independent of
+  // route on every report. Filtering on read keeps deletion independent of
   // whether every peer configuration has been updated yet.
-  const retiredNodeIds = new Set(known.results.filter((row) => row.retired_at !== null).map((row) => row.node_id));
-  const visibleNode = (nodeId: NodeId): boolean => !retiredNodeIds.has(nodeId);
+  const deletingNodeIds = new Set(known.results.filter((row) => row.retired_at !== null).map((row) => row.node_id));
+  const visibleNode = (nodeId: NodeId): boolean => !deletingNodeIds.has(nodeId);
   const visibleTarget = (targetNodeId: NodeId | null): boolean =>
-    targetNodeId === null || !retiredNodeIds.has(targetNodeId);
+    targetNodeId === null || !deletingNodeIds.has(targetNodeId);
   return {
-    // Include recoverable nodes so browsers only prune permanently deleted IDs.
+    // Keep IDs until deletion finishes so failed cleanup does not prune preferences early.
     knownNodeIds: known.results.map((row) => row.public_id),
     nodes: nodes.results,
     services: services.results.filter((service) => visibleNode(service.node_id)),

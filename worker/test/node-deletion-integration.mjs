@@ -149,12 +149,41 @@ export async function testPermanentDeletion({ query, baseUrl }) {
   assert.equal(
     (await admin(endpoint, "DELETE")).status,
     409,
-    "an active catalog must be retired first",
+    "an active catalog must be prepared for deletion first",
   );
   const preview = await (await admin(endpoint + "/deletion")).json();
   assert.ok(preview.rows >= tables.length);
   assert.deepEqual(preview.peers, [{ node_id: peer, probe_name: probe }]);
-  assert.equal((await admin(endpoint + "/retire", "POST")).status, 200);
+  assert.equal((await fetch(baseUrl + endpoint + "/deletion", {method:"POST"})).status, 401);
+  for (const node of ["alpha-vps", "revoked-vps"]) {
+    assert.equal((await admin("/api/v1/admin/nodes/" + node + "/deletion", "POST")).status, 409);
+  }
+  const preparedResponse = await admin(endpoint + "/deletion", "POST");
+  assert.equal(preparedResponse.status, 200);
+  const prepared = await preparedResponse.json();
+  assert.equal(prepared.deletion_pending, true);
+  const repeated = await (await admin(endpoint + "/deletion", "POST")).json();
+  assert.equal(repeated.deletion_started_at, prepared.deletion_started_at);
+  assert.equal((await admin("/api/v1/admin/nodes/never-reported/deletion", "POST")).status, 200);
+  const inventory = await (await admin("/api/v1/admin/nodes")).json();
+  assert.equal(inventory.capabilities.permanent_delete, 2);
+  assert.equal(inventory.nodes.find(node => node.node_id === id).deletion_pending, true);
+  assert.equal(inventory.nodes.find(node => node.node_id === peer).deletion_pending, false);
+  // Simulate catalog refreshes from in-flight reports while SSH cleanup waits.
+  query("UPDATE node_catalog SET enabled=1 WHERE node_id=" + sql(id) +
+    "; UPDATE probe_catalog SET enabled=1 WHERE target_node_id=" + sql(id) +
+    "; UPDATE business_routes SET enabled=1 WHERE target_node_id=" + sql(id));
+  const dashboard = await (await admin("/api/v1/dashboard/latest")).json();
+  assert.ok(!dashboard.nodes.some(node => node.id === id));
+  assert.ok(dashboard.nodes.some(node => node.id === peer));
+  assert.ok(!dashboard.catalog.probes.some(entry => entry.target_node_id === id));
+  assert.ok(!dashboard.catalog.routes.some(entry => entry.target_node_id === id));
+  const history = await (await admin("/api/v1/dashboard/history?hours=24")).json();
+  assert.ok(!history.routes.some(entry => entry.key === peer + "--" + probe));
+  // Removed lifecycle endpoints must stay unavailable, including for admins.
+  for (const action of ["retire", "restore"]) {
+    assert.equal((await admin(endpoint + "/" + action, "POST")).status, 404);
+  }
   const deleted = await admin(endpoint, "DELETE");
   assert.equal(deleted.status, 200, JSON.stringify(await deleted.json()));
   const counts = query(
@@ -234,11 +263,6 @@ export async function testPermanentDeletion({ query, baseUrl }) {
     (await admin(endpoint, "DELETE")).status,
     200,
     "repeating a successful deletion is safe",
-  );
-  assert.equal(
-    (await admin(endpoint + "/restore", "POST")).status,
-    404,
-    "permanent deletion cannot restore",
   );
 
   const stale = JSON.parse(beforePeer);

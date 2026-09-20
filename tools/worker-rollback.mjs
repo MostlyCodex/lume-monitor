@@ -59,7 +59,7 @@ export async function waitForLiveReports({
             );
             return (
               !report?.enabled ||
-              report.retired ||
+              report.deletion_pending ||
               !(report.last_report_at > since) ||
               !(
                 report.generated_at > Math.max(since, target.generated_at ?? 0)

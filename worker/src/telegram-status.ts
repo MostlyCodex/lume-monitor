@@ -80,7 +80,7 @@ export function formatTelegramStatusMessage(
 ): string {
   const rows = new Map(nodeRows.map((node) => [node.node_id, node]));
   // Only probes the catalog still exposes are shown, so a link toward a
-  // retired node disappears from /status even while the peer keeps
+  // node pending deletion disappears from /status even while the peer keeps
   // reporting it.
   const visibleProbeKeys = new Set(
     catalogProbes.map((probe) => `${probe.node_id}:${probe.probe_name}`),

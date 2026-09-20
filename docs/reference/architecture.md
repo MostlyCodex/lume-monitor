@@ -51,14 +51,14 @@ After authentication, the Worker:
 
 Two pieces of state are deliberately **not** owned by the report path:
 
-- `node_catalog.retired_at` records an operator decision to decommission a node. Reports update `enabled`; retirement is set by `POST /api/v1/admin/nodes/{id}/retire` and cleared by `/restore`. Catalog reads exclude retired nodes and probes or routes whose target is retired, so retirement takes effect before peer configurations are redeployed.
+- Node offboarding permanently removes the Agent and its managed data. After credentials are removed, `POST /api/v1/admin/nodes/{id}/deletion` sets the persistent deletion lock (`node_catalog.retired_at`) and hides the node and incoming probes/routes while remote cleanup runs. `DELETE /api/v1/admin/nodes/{id}` erases node data atomically after peer configurations are deployed; interrupted work resumes from `pendingDeletes`.
 - `settings.dashboard_origin` records the origin the deployment actually answers on, written by an authenticated admin call. The panel login link uses the request origin, the scheduled webhook check uses the recorded value, and `DASHBOARD_BASE_URL` is only the fallback. A fresh deployment therefore never needs a second `wrangler deploy` to learn its own workers.dev hostname, and moving to a custom domain does not require a redeploy either.
 
 ### D1
 
 D1 contains no seeded node topology. Catalog tables are data-driven:
 
-- `node_catalog`: identity, display order, role, group, region, alert policy and operator retirement (`retired_at`);
+- `node_catalog`: identity, display order, role, group, region, alert policy and the persistent deletion lock (`retired_at`);
 - `service_catalog`: zero or more services per node;
 - `probe_catalog`: zero or more ICMP/TCP probes per node;
 - `business_routes`: derived node-to-node relationships.

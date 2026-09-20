@@ -103,8 +103,8 @@ test("flag parser accepts both spaced and inline values without swallowing flags
 });
 
 test("valueless flags before another flag stay boolean", () => {
-  const { flags } = parseFlags(["node", "remove", "edge-01", "--uninstall", "--yes"]);
-  assert.equal(flags.get("uninstall"), true);
+  const { flags } = parseFlags(["node", "delete", "edge-01", "--agent-absent", "--yes"]);
+  assert.equal(flags.get("agent-absent"), true);
   assert.equal(flags.get("yes"), true);
 });
 

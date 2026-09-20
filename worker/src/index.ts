@@ -1,5 +1,5 @@
 import { nodeCatalogStatement } from "./node-catalog";
-import { NodeDeletionConflict, nodeDeletionSummary, permanentlyDeleteNode } from "./node-deletion";
+import { NodeDeletionConflict, nodeDeletionSummary, prepareNodeDeletion, permanentlyDeleteNode } from "./node-deletion";
 import { canonicalMessage, constantTimeEqual, hmacHex, parseNodeKeys, parseRevokedNodeIds } from "./auth";
 import { loadDashboardCatalog } from "./catalog";
 import { keyInventory } from "./key-inventory";
@@ -45,9 +45,6 @@ import {
 
 const MAX_BODY_BYTES = 64 * 1024;
 const DAY_SECONDS = 24 * 60 * 60;
-const NODE_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/;
-const ADMIN_NODE_ACTION_PATTERN =
-  /^\/api\/v1\/admin\/nodes\/([a-z0-9][a-z0-9_-]{0,31})\/(retire|restore)$/;
 
 function securityHeaders(contentType: string): HeadersInit {
   return {
@@ -561,72 +558,19 @@ async function adminNodes(env: Env, now: number): Promise<Response> {
   ).all<NodeCatalogAdminRow>();
   return json({
     server_time: now,
-    capabilities: { config_fingerprint: 1, node_metadata: 2, permanent_delete: 1 },
+    capabilities: { config_fingerprint: 1, node_metadata: 2, permanent_delete: 2 },
     nodes: rows.results.map((row) => ({
       ...configurationSummary(row.report_json),
       node_id: row.node_id,
       display_name: row.display_name,
       enabled: row.enabled === 1,
-      retired: row.retired_at !== null,
-      retired_at: row.retired_at,
+      deletion_pending: row.retired_at !== null,
+      deletion_started_at: row.retired_at,
       last_report_at: row.received_at,
       generated_at: row.reported_at,
       last_report_age_seconds: row.received_at === null ? null : Math.max(0, now - row.received_at),
     })),
   });
-}
-
-/**
- * Retiring a node disables its own catalog rows and every probe or route that
- * points at it, including ones owned by peers that still report the link.
- * `retired_at` is what makes this stick: the report path only manages
- * `enabled`, so it can no longer resurrect a decommissioned node. Raw history
- * is deliberately preserved and expires under the normal retention policy.
- */
-async function retireNode(env: Env, nodeId: NodeId, now: number): Promise<Response> {
-  const existing = await env.DB.prepare(
-    "SELECT node_id, retired_at FROM node_catalog WHERE node_id = ?",
-  )
-    .bind(nodeId)
-    .first<{ node_id: NodeId; retired_at: number | null }>();
-  if (!existing) return json({ error: "unknown node" }, 404);
-  await env.DB.batch([
-    env.DB.prepare(
-      "UPDATE node_catalog SET enabled = 0, retired_at = COALESCE(retired_at, ?), updated_at = ? WHERE node_id = ?",
-    ).bind(now, now, nodeId),
-    env.DB.prepare(
-      "UPDATE service_catalog SET enabled = 0, updated_at = ? WHERE node_id = ? AND enabled = 1",
-    ).bind(now, nodeId),
-    env.DB.prepare(
-      "UPDATE probe_catalog SET enabled = 0, updated_at = ? WHERE (node_id = ? OR target_node_id = ?) AND enabled = 1",
-    ).bind(now, nodeId, nodeId),
-    env.DB.prepare(
-      "UPDATE business_routes SET enabled = 0, updated_at = ? " +
-        "WHERE (source_node_id = ? OR target_node_id = ?) AND enabled = 1",
-    ).bind(now, nodeId, nodeId),
-  ]);
-  return json({
-    ok: true,
-    node_id: nodeId,
-    retired: true,
-    retired_at: existing.retired_at ?? now,
-    already_retired: existing.retired_at !== null,
-  });
-}
-
-/**
- * Restoring only clears the operator decision. Services, probes, counters and
- * routes come back on their own with the first accepted report, which is also
- * the only thing that can prove the node is really running again.
- */
-async function restoreNode(env: Env, nodeId: NodeId, now: number): Promise<Response> {
-  const result = await env.DB.prepare(
-    "UPDATE node_catalog SET enabled = 1, retired_at = NULL, updated_at = ? WHERE node_id = ?",
-  )
-    .bind(now, nodeId)
-    .run();
-  if ((result.meta.changes ?? 0) === 0) return json({ error: "unknown node" }, 404);
-  return json({ ok: true, node_id: nodeId, retired: false });
 }
 
 function isAdmin(request: Request, env: Env): boolean {
@@ -842,27 +786,14 @@ export default {
       }
     }
     const deletion = /^\/api\/v1\/admin\/nodes\/([a-z0-9][a-z0-9_-]{0,31})(\/deletion)?$/.exec(url.pathname);
-    if (deletion && ((request.method === "GET" && deletion[2]) || (request.method === "DELETE" && !deletion[2]))) {
-      if (!isAdmin(request,env)) return json({error:"unauthorized"},401);
+    if (deletion && ((["GET", "POST"].includes(request.method) && deletion[2]) || (request.method === "DELETE" && !deletion[2]))) {
+      if (!isAdmin(request, env)) return json({ error: "unauthorized" }, 401);
       try {
-        return json(request.method === "GET" ? await nodeDeletionSummary(env,deletion[1]) : await permanentlyDeleteNode(env,deletion[1]));
+        if (request.method === "GET") return json(await nodeDeletionSummary(env, deletion[1]));
+        if (request.method === "POST") return json(await prepareNodeDeletion(env, deletion[1], nowSeconds()));
+        return json(await permanentlyDeleteNode(env, deletion[1]));
       } catch (error) {
-        return error instanceof NodeDeletionConflict ? json({error:error.message},409) : json({error:"node deletion failed; safe to retry"},500);
-      }
-    }
-    if (request.method === "POST") {
-      const nodeAction = ADMIN_NODE_ACTION_PATTERN.exec(url.pathname);
-      if (nodeAction) {
-        if (!isAdmin(request, env)) return json({ error: "unauthorized" }, 401);
-        const [, nodeId, action] = nodeAction;
-        if (!NODE_ID_PATTERN.test(nodeId)) return json({ error: "invalid node id" }, 400);
-        try {
-          return action === "retire"
-            ? await retireNode(env, nodeId, nowSeconds())
-            : await restoreNode(env, nodeId, nowSeconds());
-        } catch {
-          return json({ error: "node catalog update failed" }, 500);
-        }
+        return error instanceof NodeDeletionConflict ? json({ error: error.message }, 409) : json({ error: "node deletion failed; safe to retry" }, 500);
       }
     }
     if (request.method === "POST" && url.pathname === "/api/v1/admin/rebuild-observability") {

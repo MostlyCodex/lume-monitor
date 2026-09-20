@@ -13,9 +13,7 @@ export function withoutNode(value, id) {
       [
         "nodes",
         "nodeKeys",
-        "retiredNodes",
         "pendingDeletes",
-        "peerProbes",
       ].includes(key) &&
       child &&
       typeof child === "object" &&
@@ -90,18 +88,16 @@ export async function nodeFilePlan(root, id) {
     }
   }
   await inspect(canonical, "temporary");
-  for (const category of ["nodes", "retired", "backups"])
+  for (const category of ["nodes", "backups"])
     await inspect(join(canonical, category), category);
-  for (const category of ["nodes", "retired"]) {
-    const path = resolve(canonical, category, id);
-    try {
-      const info = await lstat(path);
-      if (info.isSymbolicLink() || (await realpath(path)) !== path)
-        throw Error("无法安全清理路径：" + path);
-      removals.push(path);
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-    }
+  const path = resolve(canonical, "nodes", id);
+  try {
+    const info = await lstat(path);
+    if (info.isSymbolicLink() || (await realpath(path)) !== path)
+      throw Error("无法安全清理路径：" + path);
+    removals.push(path);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
   }
   return {
     root: canonical,

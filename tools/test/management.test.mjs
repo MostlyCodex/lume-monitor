@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPending, keyProof, parseJsonc, restorePeerProbes, validateImportedConfig, verifyKeyInventory, workerOrigin } from "../management.mjs";
+import { applyPending, keyProof, parseJsonc, validateImportedConfig, verifyKeyInventory, workerOrigin } from "../management.mjs";
 
 test("JSONC preserves URLs, escaped quotes and comma-like text", () => {
   assert.deepEqual(parseJsonc('{/* c */"url":"https://example.com/a,//x", //line\n "list":["\\\" ,}",],}'), {url:"https://example.com/a,//x", list:['" ,}']});
@@ -39,13 +39,4 @@ test("partial deployment retains unfinished peers and can resume", async () => {
   await applyPending(state, ["beta","gamma"], {save:async()=>{},deploy:async(id)=>resumed.push(id)});
   assert.deepEqual(resumed,["beta","gamma"]);
   assert.ok(Object.values(state.nodes).every((node)=>!node.pendingApply));
-});
-
-test("restoring routes is idempotent and refuses to overwrite changed probes", () => {
-  const archived = [{name:"peer", kind:"icmp", target_node_id:"alpha", target:"alpha.example"}];
-  const current = [{name:"external", kind:"icmp", target:"reference.example"}];
-  const restored = restorePeerProbes(current, archived);
-  assert.deepEqual(restorePeerProbes(restored, archived), restored);
-  assert.equal(current.length,1);
-  assert.throws(() => restorePeerProbes([{...archived[0],target:"changed.example"}], archived), /冲突/);
 });

@@ -5,14 +5,12 @@ set -eu
 umask 077
 
 [ "$(id -u)" -eq 0 ] || { echo "run audit-agent.sh as root" >&2; exit 1; }
-[ "$#" -ge 2 ] && [ "$#" -le 3 ] || exit 2
+[ "$#" -eq 2 ] || exit 2
 stage=$(readlink -f -- "$1")
 case "$stage" in /tmp/vpsmon-stage.*) ;; *) exit 2 ;; esac
 [ -d "$stage" ] || exit 2
 action=$2
-case "$action" in install|upgrade|uninstall|stop) ;; *) exit 2 ;; esac
-activate=${3:-keep}
-case "$activate" in keep|activate) ;; *) exit 2 ;; esac
+case "$action" in install|upgrade|uninstall) ;; *) exit 2 ;; esac
 for command in diff cmp stat awk; do
   command -v "$command" >/dev/null 2>&1 || { echo "missing required command: $command" >&2; exit 2; }
 done
@@ -166,11 +164,4 @@ trap 'exit 143' TERM
 case "$action" in
   install|upgrade) sh "$stage/$action-agent.sh" "$stage" ;;
   uninstall) if [ -f "$stage/expected-node-id" ]; then sh "$stage/uninstall-agent.sh" --confirm "$stage/expected-node-id"; else sh "$stage/uninstall-agent.sh" --confirm; fi ;;
-  stop)
-    systemctl disable --now vpsmon-agent.service
-    systemctl disable --now vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
-    ;;
 esac
-if [ "$activate" = activate ]; then
-  systemctl enable --now vpsmon-agent.service
-fi

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { join, sep } from "node:path";
+import { join } from "node:path";
 import vm from "node:vm";
 import test from "node:test";
-import { applyPending, keyProof, parseJsonc, restorePeerProbes, validateImportedConfig, verifyKeyInventory, workerOrigin } from "../management.mjs";
+import { keyProof, parseJsonc, validateImportedConfig, verifyKeyInventory, workerOrigin } from "../management.mjs";
 import { validateNodeId, validateSshTarget, validateWorkerName } from "../lumectl.mjs";
 import { InputError, inputValue } from "../prompts.mjs";
 import { configFingerprint, configurationStatus, serializeAgentConfig } from "../network-accounting.mjs";
@@ -17,107 +17,6 @@ function procedure(name) {
   return next < 0 ? remaining : remaining.slice(0, next + 1);
 }
 
-// Execute the actual CLI procedures with in-memory files and fake transports.
-// These tests never read private state, connect to SSH or contact Cloudflare.
-function harness() {
-  const privateDir = join("memory", ".lume"), statePath = join(privateDir, "state.json");
-  const config = (id) => ({node:{id},endpoint:"https://monitor.example/api/v1/report",secret:`${id}-`.repeat(16),services:[],probes:[]});
-  const alpha = config("alpha"), beta = config("beta");
-  alpha.node.unexpected_display_field="ignored";
-  beta.probes = [{name:"to-alpha",kind:"icmp",target_node_id:"alpha",target:"alpha.example"},{name:"reference",kind:"icmp",target:"reference.example"}];
-  const files = new Map([[join(privateDir,"nodes","alpha","config.json"),JSON.stringify(alpha)],[join(privateDir,"nodes","beta","config.json"),JSON.stringify(beta)]]);
-  let saved = {workerUrl:"https://monitor.example",nodeKeys:{alpha:alpha.secret,beta:beta.secret},nodes:{alpha:{sshTarget:"ssh-alpha",installed:true},beta:{sshTarget:"ssh-beta",installed:true}},revokedNodeIds:[]};
-  const calls = [];
-  const failures = {deploy:null,write:null};
-  const save = async (state) => {saved = structuredClone(state);};
-  const write = async(path,value) => {
-    if(failures.write === path) {failures.write=null;throw Error("write interrupted");}
-    if(path === statePath) await save(value);
-    else files.set(path,JSON.stringify(value));
-  };
-  const deploy = async(id,target,options) => {
-    calls.push(`deploy:${id}`);
-    if(failures.deploy === id) {failures.deploy=null;throw Error("SSH unavailable");}
-    options.state.nodes[id].installed=true;
-    await save(options.state);
-    if(options.activate) calls.push(`fresh-report:${id}`);
-  };
-  const context=vm.createContext({
-    Object,Map,Set,Date,JSON,join,privateDir,privateDirName:".lume",statePath,
-    validateNodeId,validateSshTarget,validateImportedConfig,restorePeerProbes,
-    line:()=>{},fail:(message)=>{throw Error(message);},loadState:async()=>structuredClone(saved),
-    readFile:async(path)=>{if(!files.has(path))throw Error(`missing ${path}`);return files.get(path);},
-    exists:async(path)=>files.has(path),writePrivateJson:write,
-    rm:async(path)=>{for(const key of files.keys())if(key===path||key.startsWith(path+sep))files.delete(key);},
-    assertServerInventory:async()=>calls.push("verify-inventory"),
-    publishNodeKeys:async(state)=>{calls.push("publish-keys");await save(state);},
-    publishRevokedNodeIds:async(state)=>{calls.push("publish-revocations");await save(state);},
-    adminFetch:async(_state,path)=>{calls.push(path.endsWith("/retire")?"retire":"restore");return {ok:true};},
-    run:async()=>{},runRemoteMaintenance:async(_target,action)=>calls.push(action === "stop" ? "stop-agent" : "uninstall-agent"),
-    applyNodes:async(_prompt,ids,state)=>applyPending(state,ids,{save,deploy:async(id)=>deploy(id,null,{state})}),
-    randomSecret:()=>"new-independent-secret-".repeat(3),installNode:deploy,
-    nodeTarget:async(_prompt,state,id)=>state.nodes[id].sshTarget,
-  });
-  new vm.Script(["peersTargeting","removeNode","restoreNode"].map(procedure).join("\n")).runInContext(context);
-  const prompt={yes:async()=>true,text:async(_label,fallback)=>fallback};
-  return {files,failures,calls,privateDir,get state(){return saved;},remove:(options=new Map())=>context.removeNode(prompt,"alpha",options),restore:()=>context.restoreNode(prompt,"alpha",new Map())};
-}
-
-test("retirement archives configuration, revokes access and deploys peer cleanup", async()=>{
-  const h=harness();
-  await h.remove();
-  assert.equal(h.state.nodeKeys.alpha,undefined);
-  assert.equal(h.state.nodes.alpha,undefined);
-  assert.ok(h.state.retiredNodes.alpha.peerProbes.beta.length);
-  assert.ok(h.files.has(join(h.privateDir,"retired","alpha","config.json")));
-  const peer=JSON.parse(h.files.get(join(h.privateDir,"nodes","beta","config.json")));
-  assert.deepEqual(peer.probes.map((entry)=>entry.name),["reference"]);
-  assert.ok(h.calls.indexOf("publish-keys")<h.calls.indexOf("retire"));
-  assert.ok(h.calls.indexOf("retire")<h.calls.indexOf("deploy:beta"));
-});
-
-test("retirement resumes even when writing the peer configuration was interrupted", async()=>{
-  const h=harness();
-  h.failures.write=join(h.privateDir,"nodes","beta","config.json");
-  await assert.rejects(h.remove(),/write interrupted/);
-  assert.equal(h.state.nodes.alpha,undefined);
-  await h.remove();
-  const peer=JSON.parse(h.files.get(join(h.privateDir,"nodes","beta","config.json")));
-  assert.ok(peer.probes.every((entry)=>entry.target_node_id!=="alpha"));
-  assert.equal(h.state.nodes.beta.pendingApply,undefined);
-  assert.ok(h.calls.includes("deploy:beta"));
-});
-
-test("restoration rotates credentials, waits for a fresh report, then restores peers", async()=>{
-  const h=harness();
-  const oldKey=h.state.nodeKeys.alpha;
-  await h.remove();
-  h.calls.length=0;
-  await h.restore();
-  assert.notEqual(h.state.nodeKeys.alpha,oldKey);
-  assert.equal(h.state.retiredNodes.alpha,undefined);
-  assert.equal(h.state.nodes.alpha.pendingRestore,undefined);
-  assert.ok(h.calls.indexOf("publish-keys")<h.calls.indexOf("deploy:alpha"));
-  assert.ok(h.calls.indexOf("fresh-report:alpha")<h.calls.indexOf("restore"));
-  assert.ok(h.calls.indexOf("restore")<h.calls.indexOf("deploy:beta"));
-  const peer=JSON.parse(h.files.get(join(h.privateDir,"nodes","beta","config.json")));
-  assert.equal(peer.probes.filter((entry)=>entry.target_node_id==="alpha").length,1);
-});
-
-test("a failed restore retains its new key and can retry without double rotation", async()=>{
-  const h=harness();
-  await h.remove();
-  h.failures.deploy="alpha";
-  await assert.rejects(h.restore(),/SSH unavailable/);
-  const stored=JSON.parse(h.files.get(join(h.privateDir,"nodes","alpha","config.json")));
-  assert.equal(Object.hasOwn(stored.node,"unexpected_display_field"),false);
-  const pendingKey=h.state.nodeKeys.alpha;
-  assert.equal(h.state.nodes.alpha.pendingRestore,true);
-  await h.restore();
-  assert.equal(h.state.nodeKeys.alpha,pendingKey);
-  assert.equal(h.state.retiredNodes.alpha,undefined);
-});
-
 test("deployment confirmation ignores a report from before the deployment", async()=>{
   let polls=0;
   const context=vm.createContext({Date,adminNodeList:async()=>[{node_id:"alpha",last_report_at:++polls===1?100:201}],sleep:async()=>{}});
@@ -127,7 +26,7 @@ test("deployment confirmation ignores a report from before the deployment", asyn
   assert.equal(polls,2);
 });
 
-async function adoptHarness({wrongKey=false, changedDuringInput=false, missingInterface=false, databaseFailure=false, unauthorized=false}={}) {
+async function adoptHarness({wrongKey=false, changedDuringInput=false, missingInterface=false, databaseFailure=false, unauthorized=false, deleting=false}={}) {
   const secret="existing-key-".repeat(5);
   const inventory={keys:[{node_id:"alpha",proof:keyProof("alpha",secret)}],revoked_node_ids:[]};
   const writes=[];
@@ -143,7 +42,7 @@ async function adoptHarness({wrongKey=false, changedDuringInput=false, missingIn
       if(path.endsWith("/key-inventory"))return missingInterface&&!workerUpdated?{ok:false,status:404}:{ok:true,status:200,body:inventory};
       assert.ok(path.endsWith("/nodes"));
       calls.push("read-nodes");
-      return databaseReady?{ok:true,status:200,body:{nodes:[{node_id:"alpha",retired:false}]}}:{ok:false,status:500,body:{error:"node listing failed"}};
+      return databaseReady?{ok:true,status:200,body:{nodes:[{node_id:"alpha",deletion_pending:deleting}]}}:{ok:false,status:500,body:{error:"node listing failed"}};
     },
     prepareDatabase:async()=>{calls.push("prepare-database");if(databaseFailure)throw Error("database verification interrupted");databaseReady=true;},
     databaseQuery:async()=>[],
@@ -251,12 +150,12 @@ test("deployment upgrades missing acknowledgement or node metadata capabilities 
 test("status does not warn about disabled legacy nodes and preserves Worker capability diagnostics",async()=>{
  for(const supportsFingerprint of [false,true]) {
   const messages=[],calls=[];
-  const local={stage:"ready",workerName:"monitor",databaseName:"lume",workerUrl:"https://monitor.example",nodes:{alpha:{installed:true}},retiredNodes:{}};
+  const local={stage:"ready",workerName:"monitor",databaseName:"lume",workerUrl:"https://monitor.example",nodes:{alpha:{installed:true}}};
   const snapshot={nodes:[
-   {node_id:"alpha",enabled:true,retired:false,last_report_at:100,last_report_age_seconds:1},
-   {node_id:"unmanaged-live",enabled:true,retired:false},
-   {node_id:"disabled-legacy",enabled:false,retired:false},
-   {node_id:"retired-node",enabled:true,retired:true},
+   {node_id:"alpha",enabled:true,deletion_pending:false,last_report_at:100,last_report_age_seconds:1},
+   {node_id:"unmanaged-live",enabled:true,deletion_pending:false},
+   {node_id:"disabled-legacy",enabled:false,deletion_pending:false},
+   {node_id:"deleting-node",enabled:true,deletion_pending:true},
   ],...(supportsFingerprint?{capabilities:{config_fingerprint:1}}:{})};
   const context=vm.createContext({
    Object,Map,JSON,join,privateDir:"memory/.lume",configFingerprint,serializeAgentConfig,configurationStatus,
@@ -273,7 +172,57 @@ test("status does not warn about disabled legacy nodes and preserves Worker capa
   assert.ok(messages.includes("已禁用的远端目录记录：disabled-legacy"));
   const output=messages.join("\n");
   assert.match(output,supportsFingerprint?/Agent 未上报配置摘要/:/Worker 尚不支持配置核验/);
-  assert.ok(!output.includes("retired-node"));
+  assert.ok(output.includes("下线待完成（菜单 7 继续）：deleting-node"));
   assert.ok(!output.includes("private-config-marker"));
  }
+});
+
+
+test("offboarding verifies deletion capabilities before preparing permanent cleanup", async () => {
+  for (const mode of ["current", "upgrade", "unauthorized", "unavailable"]) {
+    const calls = [];
+    let updated = mode === "current";
+    const context = vm.createContext({
+      loadState: async () => ({}), line: () => {}, fail: message => {throw Error(message);},
+      statePath: "memory/state.json", writePrivateJson: async () => {},
+      assertServerInventory: async () => {}, publishNodeKeys: async () => {}, publishRevokedNodeIds: async () => {},
+      ensureCloudflareLogin: async () => calls.push("login"),
+      deployWorker: async () => {calls.push("deploy"); updated = mode !== "unavailable";},
+      adminFetch: async (_state, path, options) => {
+        if (path.endsWith("/deletion")) {
+          assert.equal(updated, true);
+          assert.equal(options.method, "POST");
+          calls.push("prepare");
+          return {ok:true,body:{ok:true}};
+        }
+        assert.equal(path, "/api/v1/admin/nodes");
+        return {ok:mode !== "unauthorized", status:mode === "unauthorized" ? 401 : 200,
+          body:{capabilities:{permanent_delete:updated ? 2 : 1}}};
+      },
+      deleteManagedNode: async (id, {state, io}) => {
+        await io.ensureBackend(state);
+        await io.prepareDeletion(state, id);
+      },
+    });
+    new vm.Script(procedure("deleteNode")).runInContext(context);
+    const operation = context.deleteNode({}, "alpha", new Map());
+    if (mode === "unauthorized") {
+      await assert.rejects(operation, /无法读取后端/);
+      assert.deepEqual(calls, []);
+    } else if (mode === "unavailable") {
+      await assert.rejects(operation, /尚未支持/);
+      assert.deepEqual(calls, ["login", "deploy"]);
+    } else {
+      await operation;
+      assert.deepEqual(calls, mode === "current" ? ["prepare"] : ["login", "deploy", "prepare"]);
+    }
+  }
+});
+
+
+test("adoption retains remote deletion progress so the node ID stays reserved", async () => {
+  const h = await adoptHarness({deleting:true});
+  await h.run();
+  const state = h.writes.find(entry => entry.path === "state.json").value;
+  assert.deepEqual(state.pendingDeletes, {alpha:{}});
 });

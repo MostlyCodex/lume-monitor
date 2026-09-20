@@ -79,16 +79,6 @@ export function verifyKeyInventory(nodeKeys, inventory) {
   if (!inventory.revoked_node_ids.every((id) => nodeIdPattern.test(id))) throw new Error("撤销清单格式无效");
 }
 
-// A peer may have been edited since retirement. Never overwrite a reused name.
-export function restorePeerProbes(current, archived) {
-  const probes = [...current];
-  for (const probe of archived) {
-    const existing = probes.find((entry) => entry.name === probe.name);
-    if (existing && JSON.stringify(existing) !== JSON.stringify(probe)) throw new Error(`探针 ${probe.name} 已被修改，请先解决名称冲突`);
-    if (!existing) probes.push(probe);
-  }
-  return probes;
-}
 
 // Save progress before each external operation so failed steps remain retryable.
 export async function applyPending(state, ids, { save, deploy }) {

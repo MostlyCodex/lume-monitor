@@ -1,7 +1,7 @@
 import { InputError, inputValue } from "./prompts.mjs";
 import { withoutNode } from "./private-node-data.mjs";
 
-/** Permanent deletion is a resumable operation, not a variant of retirement.
+/** Taking a node offline permanently deletes it in resumable steps.
  * Keep only its progress until every external layer acknowledges completion.
  */
 export async function deleteManagedNode(id, { state, options, prompt, io }) {
@@ -9,12 +9,11 @@ export async function deleteManagedNode(id, { state, options, prompt, io }) {
   await io.ensureBackend(state);
   await io.assertInventory(state);
   const summary = await io.summary(state, id);
-  const original = state.nodes[id] ?? state.retiredNodes?.[id] ?? {};
+  const original = state.nodes[id] ?? {};
   const previous = state.pendingDeletes?.[id];
   const plan = await io.plan(id);
   const known = Boolean(
     state.nodes[id] ||
-      state.retiredNodes?.[id] ||
       state.nodeKeys[id] ||
       previous ||
       summary.rows,
@@ -49,7 +48,7 @@ export async function deleteManagedNode(id, { state, options, prompt, io }) {
         [...new Set(unmanaged.map((peer) => peer.node_id))].join("、"),
     );
   for (const peer of peers) if (state.nodes[peer]) await io.checkPeer(peer);
-  io.line("永久删除节点：" + id);
+  io.line("下线节点：" + id);
   io.line(
     remote.agentAbsent
       ? "  VPS：按已销毁或从未安装 Agent 处理。"
@@ -62,11 +61,11 @@ export async function deleteManagedNode(id, { state, options, prompt, io }) {
       summary.rows +
       " 行）。",
   );
-  io.line("  本地：删除节点配置、恢复记录和备份，清除其他配置中的关联探针。");
+  io.line("  本地：删除节点配置和备份，清除其他配置中的关联探针。");
   if (peers.length) io.line("  同步关联节点：" + peers.join("、"));
-  io.line("无法通过菜单 8 恢复；共享 Worker、D1 和其他节点继续保留。");
+  io.line("此操作不可撤销；共享 Worker、D1 和其他节点继续保留。");
   if (options.get("yes") !== true)
-    await inputValue(prompt, "输入节点 ID 确认永久删除", {
+    await inputValue(prompt, "输入节点 ID 确认下线并永久删除", {
       fallback: "",
       hint: "仅接受 " + id + "；/cancel 取消",
       line: io.line,
@@ -96,7 +95,7 @@ export async function deleteManagedNode(id, { state, options, prompt, io }) {
     // Repeat publication on retries: a previous secret update may have failed
     // after the local list was saved.
     await io.publishRevocations(state);
-    await io.retire(state, id);
+    await io.prepareDeletion(state, id);
     if (!job.remoteDone) {
       if (!job.agentAbsent) await io.uninstall(job.sshTarget);
       job.remoteDone = true;
@@ -121,11 +120,11 @@ export async function deleteManagedNode(id, { state, options, prompt, io }) {
     if (!Object.keys(state.pendingDeletes).length) delete state.pendingDeletes;
     await io.save(state);
     io.line(
-      "✓ " + id + " 已永久删除：VPS、Worker / D1 和本地管理数据清理完成。",
+      "✓ " + id + " 已下线：VPS、Worker / D1 和本地管理数据清理完成。",
     );
   } catch (error) {
     await io.save(state);
-    io.line("删除尚未完成；菜单 9 可继续处理 " + id + "，已完成的步骤会保留。");
+    io.line("下线尚未完成；菜单 7 可继续处理 " + id + "，已完成的步骤会保留。");
     throw error;
   }
 }

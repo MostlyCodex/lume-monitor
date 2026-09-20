@@ -71,7 +71,7 @@ test("node picker rejects unknown IDs and indices inside the same prompt", async
 
 test("only other active nodes are offered as probe targets", () => {
   const { context } = contextFor(["probeTargetNodes"]);
-  const ids = context.probeTargetNodes({nodes:{self:{},active:{},retiring:{pendingRetire:true},restoring:{pendingRestore:true}}},"self");
+  const ids = context.probeTargetNodes({nodes:{self:{},active:{},deleting:{}},pendingDeletes:{deleting:{}}},"self");
   assert.deepEqual(Array.from(ids),["active"]);
 });
 
@@ -99,4 +99,54 @@ test("configuration source and invalid local files retry without printing file c
   assert.ok(!messages.join("\n").includes("fixture-private-token"));
   assert.equal(messages.filter(message=>message.startsWith("输入无效")).length,5);
   prompt.done();
+});
+
+
+test("management offers only seven operations and routes offboarding to permanent deletion", async () => {
+  const calls = [];
+  const { context, messages } = contextFor(["manage"], {
+    setup: async () => calls.push("setup"),
+    adoptDeployment: async () => calls.push("adopt"),
+    showStatus: async () => calls.push("status"),
+    addNode: async () => calls.push("add"),
+    configureNodeObservers: async (_prompt, id) => calls.push("configure:" + id),
+    applyNodes: async (_prompt, ids) => calls.push("apply:" + ids.join(",")),
+    pickNode: async (_prompt, options) => options?.deleting ? "pending-node" : "active-node",
+    deleteNode: async (_prompt, id) => calls.push("delete:" + id),
+    finishOperation: () => {},
+  });
+  const prompt = dialog(["1", "2", "3", "4", "5", "6", "8", "9", "7", "0"].map(value => ["text", value, /选择操作/]));
+  await context.manage(prompt);
+  prompt.done();
+  assert.deepEqual(calls, ["setup", "adopt", "status", "add", "configure:active-node", "apply:active-node", "delete:pending-node"]);
+  assert.equal(messages.filter(message => message.startsWith("输入无效")).length, 2);
+  assert.equal(messages[0], "\nLume 管理\n  1. 从零部署\n  2. 接管部署\n  3. 查看状态\n  4. 新增节点\n  5. 配置节点\n  6. 部署/更新\n  7. 下线节点\n  0. 退出");
+});
+
+test("node selection exposes pending and remote-only nodes only for offboarding", async () => {
+  const { context } = contextFor(["pickNode"], {
+    loadState: async () => ({ nodes: { active: {}, pending: {} }, pendingDeletes: { pending: {}, cleaned: {} } }),
+    adminNodeList: async () => [{node_id:"active"}, {node_id:"remote-only"}],
+  });
+  const active = dialog([["text","pending",/选择节点/],["text","active",/选择节点/]]);
+  assert.equal(await context.pickNode(active), "active");
+  active.done();
+  for (const id of ["pending", "cleaned", "remote-only"]) {
+    const prompt = dialog([["text",id,/选择节点/]]);
+    assert.equal(await context.pickNode(prompt, {deleting:true}), id);
+    prompt.done();
+  }
+});
+
+test("pending deletion prevents deployment and reusing its node ID", async () => {
+  const state = {nodes:{alpha:{}},nodeKeys:{},pendingDeletes:{alpha:{}}};
+  const { context } = contextFor(["applyNodes", "createNodeRecords", "configureNodeObservers", "installNode"], {
+    loadState: async () => state,
+    ensureKeyInventory: async () => {}, assertServerInventory: async () => {},
+  });
+  await assert.rejects(context.applyNodes({}, ["alpha"], state), /菜单 7/);
+  await assert.rejects(context.configureNodeObservers({}, "alpha"), /菜单 7/);
+  await assert.rejects(context.installNode("alpha", "ssh-alpha", {state}), /菜单 7/);
+  delete state.nodes.alpha;
+  await assert.rejects(context.createNodeRecords(state, [{id:"alpha"}]), /菜单 7/);
 });

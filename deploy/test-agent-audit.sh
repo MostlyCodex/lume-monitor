@@ -21,16 +21,12 @@ cat > "$test_root/bin/systemctl" <<'EOF'
 case "$1" in
   is-active) [ ! -f "$FIXTURE/active" ] || { echo active; exit 0; }; echo inactive; exit 3 ;;
   is-enabled) [ ! -f "$FIXTURE/enabled" ] || { echo enabled; exit 0; }; echo disabled; exit 1 ;;
-  enable) touch "$FIXTURE/enabled" "$FIXTURE/active" ;;
-  disable)
-    [ "${3:-}" != vpsmon-agent.service ] || rm -f "$FIXTURE/enabled" "$FIXTURE/active" "$FIXTURE/etc/systemd/system/multi-user.target.wants/vpsmon-agent.service"
-    ;;
 esac
 EOF
 chmod +x "$test_root/bin/"*
 export PATH="$test_root/bin:$PATH"
 
-for scenario in install modify attributes unchanged rollback partial uninstall stop; do
+for scenario in install modify attributes unchanged rollback partial uninstall; do
   if [ "$scenario" = attributes ]; then
     case "$(uname -s)" in MINGW*|MSYS*) echo "Agent audit attributes: POSIX modes require Linux"; continue ;; esac
   fi
@@ -87,10 +83,8 @@ EOF
       -e "s#/etc/subuid#$FIXTURE/etc/subuid#g" \
       -e "s#/etc/subgid#$FIXTURE/etc/subgid#g" \
       "$script_dir/audit-agent.sh" > "$stage/audit-agent.sh"
-  native_link=0
-  [ ! -L "$FIXTURE/etc/systemd/system/multi-user.target.wants/vpsmon-agent.service" ] || native_link=1
   action=upgrade
-  case "$scenario" in install|uninstall|stop) action=$scenario ;; esac
+  case "$scenario" in install|uninstall) action=$scenario ;; esac
   SCENARIO=$scenario; export SCENARIO
   result=0
   sh "$stage/audit-agent.sh" "$stage" "$action" > "$FIXTURE/output" 2>&1 || result=$?
@@ -113,12 +107,6 @@ EOF
       for file in passwd group shadow gshadow subuid subgid; do
         grep -Fx "$(printf 'entries\t%s/etc/%s\ttext\t2\t-' "$FIXTURE" "$file")" "$report"
       done
-      ;;
-    stop)
-      if [ "$native_link" = 1 ]; then
-        grep -Fx "$(printf 'removed\t%s/etc/systemd/system/multi-user.target.wants/vpsmon-agent.service\tlink\t-\t-' "$FIXTURE")" "$report"
-      else echo "Agent audit symlink: native links require Linux"; fi
-      grep -Fx "$(printf 'service\tvpsmon-agent.service\tactive/enabled\tinactive/disabled')" "$report"
       ;;
   esac
   echo "Agent audit $scenario passed"

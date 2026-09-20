@@ -43,13 +43,6 @@ async function harness(t) {
       beta: { sshTarget: "ssh-beta" },
     },
     nodeKeys: { alpha: "fixture-key", beta: "other-key" },
-    retiredNodes: {
-      gamma: {
-        peerProbes: {
-          beta: [{ target_node_id: "alpha" }, { target_node_id: "gamma" }],
-        },
-      },
-    },
     revokedNodeIds: ["alpha", "elsewhere"],
     keyInventory: {
       keys: [
@@ -108,7 +101,7 @@ async function harness(t) {
       action("revocations", () => {
         assert.ok(!state.revokedNodeIds.includes("alpha"));
       }),
-    retire: () => action("retire"),
+    prepareDeletion: () => action("prepare"),
     uninstall: (target) =>
       action("uninstall", () => assert.equal(target, "ssh-alpha")),
     applyPeers: (ids, state) =>
@@ -147,7 +140,7 @@ async function harness(t) {
   };
 }
 
-test("permanent deletion cleans private backups and peers, leaving no restoration record", async (t) => {
+test("permanent deletion cleans private backups and peers, preserving other nodes", async (t) => {
   const h = await harness(t);
   await h.run();
   for (const path of [h.files.alpha, h.files.ownBackup])
@@ -159,25 +152,24 @@ test("permanent deletion cleans private backups and peers, leaving no restoratio
   ]) {
     assert.equal(value.nodes.alpha, undefined);
     assert.equal(value.nodeKeys.alpha, undefined);
-    assert.equal(value.retiredNodes.alpha, undefined);
     assert.equal(value.nodes.beta.sshTarget, "ssh-beta");
     assert.equal(value.nodeKeys.beta, "other-key");
-    assert.deepEqual(value.retiredNodes.gamma.peerProbes.beta, [
-      { target_node_id: "gamma" },
-    ]);
     assert.deepEqual(value.keyInventory.keys, [
       { node_id: "beta", proof: "other-proof" },
     ]);
   }
   assert.equal(h.state.pendingDeletes, undefined);
-  assert.ok(h.calls.indexOf("keys") < h.calls.indexOf("uninstall"));
+  assert.ok(h.calls.indexOf("keys") < h.calls.indexOf("prepare"));
+  assert.ok(h.calls.indexOf("prepare") < h.calls.indexOf("uninstall"));
+  assert.ok(h.lines.some(line => line.includes("此操作不可撤销")));
+  assert.ok(h.lines.some(line => line.includes("已下线")));
   assert.ok(h.calls.indexOf("peers") < h.calls.indexOf("purge"));
 });
 
 for (const stage of [
   "keys",
   "revocations",
-  "retire",
+  "prepare",
   "uninstall",
   "clean",
   "peers",
@@ -188,7 +180,8 @@ for (const stage of [
     h.failure = stage;
     await assert.rejects(h.run(), new RegExp("interrupted: " + stage));
     assert.ok(h.state.pendingDeletes.alpha);
-    if (["keys", "revocations", "retire", "uninstall"].includes(stage))
+    assert.ok(h.lines.some(line => line.includes("菜单 7")));
+    if (["keys", "revocations", "prepare", "uninstall"].includes(stage))
       assert.ok(await readFile(h.files.alpha));
     const remoteDone = h.state.pendingDeletes.alpha.remoteDone;
     h.calls.length = 0;
@@ -217,11 +210,10 @@ test("confirmation requires the exact node ID; cancellation performs no destruct
   assert.ok(await readFile(h.files.alpha));
 });
 
-test("permanent deletion also accepts a retired node and an explicitly destroyed VPS", async (t) => {
+test("permanent deletion also accepts a remote-only node and an explicitly destroyed VPS", async (t) => {
   const h = await harness(t);
   h.io.remoteChoice = async () => ({ sshTarget: "", agentAbsent: true });
   const state = structuredClone(h.state);
-  state.retiredNodes.alpha = state.nodes.alpha;
   delete state.nodes.alpha;
   delete state.nodeKeys.alpha;
   await h.io.save(state);
@@ -232,7 +224,7 @@ test("permanent deletion also accepts a retired node and an explicitly destroyed
     ]),
   );
   assert.ok(!h.calls.includes("uninstall"));
-  assert.equal(h.state.retiredNodes.alpha, undefined);
+  assert.equal(h.state.nodes.alpha, undefined);
 });
 
 test("unreadable related configuration stops deletion before credentials or remote files change", async (t) => {

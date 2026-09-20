@@ -10,7 +10,7 @@ test.afterAll(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
 
-test("permanent deletion prunes browser preferences while retirement preserves them", async ({
+test("permanent deletion prunes browser preferences only after all deletion stages finish", async ({
   page,
 }) => {
   const key = "vpsmon-dashboard-layout-v1";
@@ -20,7 +20,7 @@ test("permanent deletion prunes browser preferences while retirement preserves t
       data = await response.json();
     data.catalog.known_node_ids = data.catalog.nodes
       .map((node) => node.id)
-      .concat("retired-node");
+      .concat("pending-node");
     if (deleted) {
       data.catalog.known_node_ids = data.catalog.known_node_ids.filter(
         (id) => id !== "transit-la",
@@ -40,10 +40,10 @@ test("permanent deletion prunes browser preferences while retirement preserves t
           brand: "My monitor",
           nodes: {
             "transit-la": { label: "Delete this" },
-            "retired-node": { label: "Restore later" },
+            "pending-node": { label: "Cleanup pending" },
             "transit-eb": { label: "Keep this" },
           },
-          order: ["transit-la", "retired-node", "transit-eb"],
+          order: ["transit-la", "pending-node", "transit-eb"],
         }),
       ),
     key,
@@ -64,15 +64,15 @@ test("permanent deletion prunes browser preferences while retirement preserves t
     .toEqual({
       brand: "My monitor",
       nodes: {
-        "retired-node": {
-          label: "Restore later",
+        "pending-node": {
+          label: "Cleanup pending",
           role: "",
           region: "",
           country: "",
         },
         "transit-eb": { label: "Keep this", role: "", region: "", country: "" },
       },
-      order: ["retired-node", "transit-eb"],
+      order: ["pending-node", "transit-eb"],
       background: "",
     });
   await expect(page.locator("#node-detail")).toHaveCount(0);

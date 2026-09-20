@@ -59,7 +59,7 @@ export async function nodeDeletionSummary(env: Env, nodeId: string) {
   };
 }
 
-export async function permanentlyDeleteNode(env: Env, nodeId: string) {
+function assertCredentialsRemoved(env: Env, nodeId: string) {
   // Deleting data while the server still holds the credential would allow the
   // next report to recreate the node. Both credential inventories must be clean.
   if (
@@ -70,13 +70,47 @@ export async function permanentlyDeleteNode(env: Env, nodeId: string) {
       "remove the node from NODE_KEYS and REVOKED_NODE_IDS first",
     );
   }
+}
+
+// retired_at is the persistent deletion lock: reports may update enabled,
+// but cannot expose the node again while Agent/peer cleanup is still pending.
+// This is an irreversible step of deletion, after credentials are removed.
+export async function prepareNodeDeletion(env: Env, nodeId: string, now: number) {
+  assertCredentialsRemoved(env, nodeId);
+  const existing = await env.DB.prepare(
+    "SELECT retired_at FROM node_catalog WHERE node_id = ?",
+  ).bind(nodeId).first<{ retired_at: number | null }>();
+  await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE node_catalog SET enabled = 0, retired_at = COALESCE(retired_at, ?), updated_at = ? WHERE node_id = ?",
+    ).bind(now, now, nodeId),
+    env.DB.prepare(
+      "UPDATE service_catalog SET enabled = 0, updated_at = ? WHERE node_id = ? AND enabled = 1",
+    ).bind(now, nodeId),
+    env.DB.prepare(
+      "UPDATE probe_catalog SET enabled = 0, updated_at = ? WHERE (node_id = ? OR target_node_id = ?) AND enabled = 1",
+    ).bind(now, nodeId, nodeId),
+    env.DB.prepare(
+      "UPDATE business_routes SET enabled = 0, updated_at = ? WHERE (source_node_id = ? OR target_node_id = ?) AND enabled = 1",
+    ).bind(now, nodeId, nodeId),
+  ]);
+  return {
+    ok: true,
+    node_id: nodeId,
+    deletion_pending: existing !== null,
+    deletion_started_at: existing ? existing.retired_at ?? now : null,
+  };
+}
+
+export async function permanentlyDeleteNode(env: Env, nodeId: string) {
+  assertCredentialsRemoved(env, nodeId);
   const node = await env.DB.prepare(
     "SELECT retired_at,enabled FROM node_catalog WHERE node_id=?",
   )
     .bind(nodeId)
     .first<{ retired_at: number | null; enabled: number }>();
   if (node && node.retired_at === null && node.enabled === 1)
-    throw new NodeDeletionConflict("retire the node first");
+    throw new NodeDeletionConflict("prepare node deletion first");
   const before = await nodeDeletionSummary(env, nodeId);
   const statements: D1PreparedStatement[] = [];
   for (const table of ["node_latest", "snapshots"]) {
