@@ -30,9 +30,9 @@ test("public demo works without authentication or telemetry requests", async ({ 
   await page.locator('.node-card[data-node="transit-la"]').click();
   await expect(page.locator("#node-detail")).toBeVisible();
   await expect(page.locator(".detail-service")).toContainText(["nftables运行正常"]);
-  await expect(page.locator("#network-plot .uplot")).toBeVisible();
+  await expect(page.locator("#network-plot .history-chart")).toBeVisible();
   await page.locator('#detail-range-switch button[data-hours="168"]').click();
-  await expect(page.locator("#network-plot .uplot")).toBeVisible();
+  await expect(page.locator("#network-plot .history-chart")).toBeVisible();
   await page.locator("#detail-back").click();
   expect(new URL(page.url()).pathname).toBe("/demo/");
   await page.locator("#theme-button").click();
@@ -263,8 +263,8 @@ test("node detail renders charts, color keys and mobile controls", async ({ page
   await openDashboard(page);
   await page.locator(".node-card").first().click();
   await expect(page.locator("#node-detail")).toBeVisible();
-  await expect(page.locator("#network-plot .uplot")).toBeVisible();
-  await expect(page.locator("#traffic-plot .uplot")).toBeVisible();
+  await expect(page.locator("#network-plot .history-chart")).toBeVisible();
+  await expect(page.locator("#traffic-plot .history-chart")).toBeVisible();
   await expect(page.locator(".detail-probe-card")).toHaveCount(5);
   await expect(page.locator(".detail-probe-card").filter({ hasText: "TCP 443" })).toHaveAttribute("aria-label", /建连失败/);
   await expect(page.locator("#counter-section")).toHaveCount(0);

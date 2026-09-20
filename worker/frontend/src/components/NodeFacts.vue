@@ -17,7 +17,7 @@ const facts = computed(() => {
           : "—",
     },
     { label: "内存", value: formatCapacity(metrics.memory_total_bytes) },
-    { label: "磁盘（/）", value: formatCapacity(metrics.disk_total_bytes) },
+    { label: "磁盘", value: formatCapacity(metrics.disk_total_bytes) },
     { label: "主机名", value: system?.hostname || "—" },
     { label: "Agent", value: `${agent?.version || "—"} · 队列 ${agent?.queue_depth ?? 0}` },
     {

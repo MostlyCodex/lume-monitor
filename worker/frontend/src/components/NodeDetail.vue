@@ -33,11 +33,13 @@ const rateSeries = computed<ChartSeries[]>(() => {
   const metrics = props.history?.metrics.filter((row) => row.node_id === props.node.id) ?? [];
   return [
     {
+      id: "download",
       label: "下载",
       color: cssColor("--cyan"),
       points: metrics.map((row) => ({ x: row.timestamp, y: row.network_rx_rate_bps })),
     },
     {
+      id: "upload",
       label: "上传",
       color: cssColor("--amber"),
       points: metrics.map((row) => ({ x: row.timestamp, y: row.network_tx_rate_bps })),

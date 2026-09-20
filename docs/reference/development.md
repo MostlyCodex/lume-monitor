@@ -41,13 +41,13 @@ npm run format:frontend    # 统一 Vue / TypeScript / CSS 格式
 | `composables/` | 请求生命周期、缓存、轮询、偏好与设置草稿 |
 | `domain/` | 不依赖页面状态的指标计算、格式化和展示模型 |
 | `services/` | API 与演示数据适配、图片校验和压缩 |
-| `charts/` | 时间序列对齐、uPlot 配置和丢包标记 |
+| `charts/` | 时间序列对齐、ECharts 配置和失败标记 |
 | `styles/` | 主题、通用基础、页面分区和响应式样式；入口固定加载顺序 |
 | `types.ts` | 前端使用的公开 API 契约 |
 
 组件不直接请求 API。异步响应须检查所属会话和节点；监听器、计时器及图表实例在所属作用域销毁时清理。设置先编辑草稿，成功写入浏览器存储后才提交。注释说明约束和取舍，不重复代码含义。
 
-`worker/public/dashboard/`、`worker/public/demo/` 是构建产物，不提交 Git；修改组件或 `frontend/static/` 中的背景后重新构建。uPlot 随详情按需加载，生产包不依赖外部 CDN。原浏览器设置键和 `/dashboard/?node=...` 链接继续有效。
+`worker/public/dashboard/`、`worker/public/demo/` 是构建产物，不提交 Git；修改组件或 `frontend/static/` 中的背景后重新构建。Vue-ECharts 随详情按需加载，仅注册折线图、坐标轴、提示框和失败标记模块，生产包不依赖外部 CDN。组件负责图表更新、缩放监听及销毁；提示内容使用 Vue 模板转义，缺测保留断线。原浏览器设置键和 `/dashboard/?node=...` 链接继续有效。
 
 `npm run check` 包括生产构建、前端严格类型检查、格式检查和领域测试；Playwright 验证实际交互、样式、异步竞争与图表清理。新增行为优先通过公开输入输出验证，不读取源码字符串断言实现方式。
 

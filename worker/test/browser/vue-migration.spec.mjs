@@ -97,13 +97,13 @@ test("charts load on demand and release their observers when details close", asy
     window.chartObservers = () =>
       [...observers]
         .flatMap((observer) => [...observer.targets])
-        .filter((target) => target.classList.contains("plot-host")).length;
+        .filter((target) => target.classList.contains("echarts-host")).length;
   });
   await open(page);
   expect(chunks).toHaveLength(0);
   for (let attempt = 0; attempt < 3; attempt++) {
     await page.locator(".node-card").first().click();
-    await expect(page.locator("#node-detail .uplot")).toHaveCount(2);
+    await expect(page.locator("#node-detail .history-chart")).toHaveCount(2);
     await expect.poll(() => page.evaluate(() => window.chartObservers())).toBe(2);
     await page.locator("#detail-back").click();
     await expect.poll(() => page.evaluate(() => window.chartObservers())).toBe(0);
@@ -138,7 +138,7 @@ test("history errors can retry without losing the node or interpreting labels as
   fail = false;
   await page.locator("#refresh-button").click();
   await expect(page.locator("#detail-loading")).toBeHidden();
-  await expect(page.locator("#network-plot .uplot")).toBeVisible();
+  await expect(page.locator("#network-plot .history-chart")).toBeVisible();
   expect(await page.evaluate(() => window.injected)).toBeUndefined();
 });
 
@@ -176,10 +176,10 @@ test("long-range chart labels fit without overlapping in either theme", async ({
         const metrics = this.measureText(text);
         (this.canvas.dateLabels ??= []).push({
           text,
-          x,
-          y,
-          left: x - metrics.actualBoundingBoxLeft,
-          right: x + metrics.actualBoundingBoxRight,
+          x: this.getTransform().transformPoint({ x, y }).x,
+          y: this.getTransform().transformPoint({ x, y }).y,
+          left: this.getTransform().transformPoint({ x: x - metrics.actualBoundingBoxLeft, y }).x,
+          right: this.getTransform().transformPoint({ x: x + metrics.actualBoundingBoxRight, y }).x,
         });
       }
       return fillText.call(this, text, x, y, ...args);
@@ -193,15 +193,15 @@ test("long-range chart labels fit without overlapping in either theme", async ({
     );
     await page.locator(`[data-hours="${hours}"]`).click();
     await response;
-    await expect(page.locator("#node-detail .uplot")).toHaveCount(2);
+    await expect(page.locator("#node-detail .history-chart")).toHaveCount(2);
     await expect
       .poll(async () =>
         page
-          .locator("#node-detail .uplot canvas")
+          .locator("#node-detail .history-chart canvas")
           .evaluateAll((canvases) => canvases.every((canvas) => canvas.dateLabels?.length > 0)),
       )
       .toBe(true);
-    const plots = await page.locator("#node-detail .uplot canvas").evaluateAll((canvases) =>
+    const plots = await page.locator("#node-detail .history-chart canvas").evaluateAll((canvases) =>
       canvases.map((canvas) => ({
         width: canvas.width,
         labels: [

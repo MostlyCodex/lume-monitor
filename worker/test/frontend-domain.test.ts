@@ -3,7 +3,7 @@ import { normalizeLayout } from "../frontend/src/domain/layout";
 import { displayNodes } from "../frontend/src/domain/nodes";
 import { aggregateMetricEnergy } from "../frontend/src/domain/probes";
 import { trafficSummary } from "../frontend/src/domain/traffic";
-import { alignSeries } from "../frontend/src/charts/series";
+import { alignSeries, chartData } from "../frontend/src/charts/series";
 import type { HistorySnapshot, LatestSnapshot, Probe } from "../frontend/src/types";
 
 describe("frontend data boundaries", () => {
@@ -47,6 +47,7 @@ describe("frontend data boundaries", () => {
     expect(
       alignSeries([
         {
+          id: "a",
           label: "A",
           color: "red",
           points: [
@@ -55,6 +56,7 @@ describe("frontend data boundaries", () => {
           ],
         },
         {
+          id: "b",
           label: "B",
           color: "blue",
           points: [
@@ -67,6 +69,16 @@ describe("frontend data boundaries", () => {
       [1, 2, 3],
       [null, 10, null],
       [null, null, 0],
+    ]);
+  });
+  it("retains failure-only timestamps and null gaps in chart data", () => {
+    expect(chartData([
+      { id: "icmp", label: "Same label", color: "blue", points: [{ x: 1, y: 10 }, { x: 3, y: 0 }],
+        lossPoints: [{ x: 1, y: 0 }, { x: 2, y: 100 }] },
+      { id: "tcp", label: "Same label", color: "pink", points: [{ x: 3, y: NaN }], lossPoints: [{ x: 2, y: null }] },
+    ])).toEqual([
+      [[1000, 10, 0], [2000, "-", 100], [3000, 0, "-"]],
+      [[1000, "-", "-"], [2000, "-", "-"], [3000, "-", "-"]],
     ]);
   });
   it("never falls back to system totals when cycle accounting is unavailable", () => {

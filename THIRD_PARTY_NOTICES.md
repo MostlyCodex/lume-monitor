@@ -45,31 +45,22 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-## uPlot v1.6.32
+## Vue-ECharts and Apache ECharts
 
-Copyright (c) 2023 Leon Sorokin
+The node-detail charts bundle pinned npm packages and load them on demand from the
+Worker, without a third-party CDN. Original copyright and license texts, including
+ECharts' NOTICE and d3 utility license, ship in
+[`worker/frontend/static/THIRD_PARTY_NOTICES.txt`](worker/frontend/static/THIRD_PARTY_NOTICES.txt).
 
-MIT License. The pinned npm package is bundled with the node-detail charts and
-loaded on demand from the Worker. The dashboard does not load it from a
-third-party CDN.
+| Component | License |
+| --- | --- |
+| Vue-ECharts | MIT |
+| Apache ECharts | Apache-2.0 |
+| zrender / d3 utilities | BSD-3-Clause |
+| tslib | 0BSD |
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+The translucent material treatment also references [Microsoft Fluent Acrylic](https://learn.microsoft.com/en-us/windows/apps/design/style/acrylic);
+no Microsoft application code is bundled.
 
 ## prometheus-community/pro-bing v0.9.1
 

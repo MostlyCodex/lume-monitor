@@ -58,7 +58,7 @@ lume-monitor/
 │   │   │   ├── composables/    # 请求、缓存、轮询及设置草稿
 │   │   │   ├── domain/         # 指标计算、格式化与展示模型
 │   │   │   ├── services/       # API、演示数据适配及图片处理
-│   │   │   ├── charts/         # uPlot 数据转换与图表选项
+│   │   │   ├── charts/         # ECharts 数据转换与图表选项
 │   │   │   ├── styles/         # 主题与响应式样式
 │   │   │   └── demo/           # 虚构数据源
 │   │   └── static/             # 默认背景与第三方许可

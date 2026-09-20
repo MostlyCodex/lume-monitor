@@ -466,15 +466,6 @@ html[data-theme="light"] .probe-picker-actions button {
 .plot-host-network {
   height: 390px;
 }
-.network-chart-card .chart-title > span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 25px;
-  padding: 0 9px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--glass-control-bg);
-}
 .chart-empty {
   position: absolute;
   inset: 64px 18px 18px;
@@ -599,72 +590,11 @@ html[data-theme="light"] .probe-picker-actions button {
   font-size: 10px;
 }
 
-.uplot {
-  font-family: var(--font);
-}
-.plot-host .uplot {
-  position: absolute;
-  inset: 0;
-}
-.uplot .u-title {
-  color: var(--text);
-}
-.uplot .u-legend {
-  position: absolute;
-  top: -47px;
-  right: 0;
-  width: auto;
-  margin: 0;
-  font-size: 11px;
-}
-.uplot .u-legend tbody {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 5px 7px;
-}
-.uplot .u-legend tr:first-child {
-  display: none;
-}
-.uplot .u-legend tr {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 7px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--glass-control-bg);
-}
-.uplot .u-legend th,
-.uplot .u-legend td {
-  padding: 0;
-  color: var(--muted);
-  font-weight: 550;
-}
-.uplot .u-legend .u-marker {
-  width: 9px !important;
-  height: 4px !important;
-  border: 0 !important;
-  border-radius: 3px;
-}
-.uplot .u-over {
-  border-radius: 8px;
-}
-.uplot .u-cursor-x,
-.uplot .u-cursor-y {
-  border-color: var(--line-strong) !important;
-}
-.uplot .u-select {
-  background: rgba(var(--primary-rgb), 0.1);
-}
 .plot-tooltip {
-  position: absolute;
-  z-index: 8;
-  top: 0;
-  left: 0;
+  line-height: 1.5;
   width: max-content;
   min-width: 238px;
-  max-width: min(344px, calc(100% - 14px));
+  max-width: min(344px, 78vw);
   overflow: hidden;
   border: 1px solid var(--glass-border);
   border-radius: 9px;
@@ -672,7 +602,6 @@ html[data-theme="light"] .probe-picker-actions button {
   background: var(--glass-tooltip-bg);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.24);
   color: var(--text);
-  pointer-events: none;
   -webkit-backdrop-filter: var(--glass-filter-tooltip);
   backdrop-filter: var(--glass-filter-tooltip);
   will-change: transform;
@@ -686,11 +615,13 @@ html[data-theme="light"] .probe-picker-actions button {
   border-bottom: 1px solid var(--line);
   color: var(--text-soft);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 .plot-tooltip-list {
   display: grid;
+  max-height: 240px;
+  overflow-y: auto;
   padding: 4px;
 }
 .plot-tooltip-row {
@@ -724,7 +655,7 @@ html[data-theme="light"] .probe-picker-actions button {
 }
 .plot-tooltip-target b {
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -734,21 +665,22 @@ html[data-theme="light"] .probe-picker-actions button {
 }
 .plot-tooltip-row em {
   color: var(--muted);
-  font-size: 8px;
+  font-size: 12px;
   font-style: normal;
 }
 .plot-tooltip-row > span > b {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 .plot-tooltip-metric {
   min-width: 178px;
-  max-width: min(232px, calc(100% - 14px));
+  max-width: min(232px, 78vw);
 }
 html[data-theme="light"] .detail-probe-card {
   box-shadow: 0 7px 18px rgba(34, 52, 78, 0.035);
 }
 html[data-theme="light"] .plot-tooltip {
+  line-height: 1.5;
   box-shadow: 0 16px 38px rgba(40, 61, 91, 0.07);
 }

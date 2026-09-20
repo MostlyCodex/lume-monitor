@@ -72,6 +72,7 @@ const series = computed<ChartSeries[]>(() => {
           (row) => row.node_id === props.node.id && row.probe_name === probe.name,
         ) ?? [];
       return {
+        id: probe.name,
         label: displayProbeLabel(probe),
         color: cssColor(PROBE_COLOR_VARIABLES[probeColorTone(probe)]),
         failureLabel: probe.kind === "tcp" ? "建连失败" : "丢包",
@@ -187,9 +188,6 @@ function toggleLayer(layer: NetworkLayer) {
               : "Latency line · Packet-loss event"
           }}</span>
         </div>
-        <span id="network-chart-state"
-          >{{ series.length }} 条线路 · {{ history?.probes.length ?? 0 }} 个区间采样</span
-        >
       </div>
       <HistoryChart
         id="network-plot"

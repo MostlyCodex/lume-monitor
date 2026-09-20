@@ -59,9 +59,9 @@ test("node facts show hardware capacity in a compact grid in both themes", async
   await openFirstNode(page);
   await expect(factValue(page, "CPU")).toHaveText("1 vCPU");
   await expect(factValue(page, "内存")).toHaveText("1.00 GiB");
-  await expect(factValue(page, "磁盘（/）")).toHaveText("20.00 GiB");
+  await expect(factValue(page, "磁盘")).toHaveText("20.00 GiB");
   await expect(page.locator("#detail-facts dt")).toHaveText([
-    "系统", "内核", "CPU", "内存", "磁盘（/）", "主机名", "Agent", "采集/发送错误", "统计网卡",
+    "系统", "内核", "CPU", "内存", "磁盘", "主机名", "Agent", "采集/发送错误", "统计网卡",
   ]);
   for (const theme of ["dark", "light"]) {
     if (theme === "light") await page.locator("#theme-button").click();
@@ -91,8 +91,28 @@ test("missing capacity stays unknown and long node facts remain readable", async
     await route.fulfill({ response, json: data });
   });
   await openFirstNode(page);
-  for (const label of ["CPU", "内存", "磁盘（/）"]) await expect(factValue(page, label)).toHaveText("—");
+  for (const label of ["CPU", "内存", "磁盘"]) await expect(factValue(page, label)).toHaveText("—");
   await expect(factValue(page, "主机名")).toHaveText(hostname);
   const overflow = await factValue(page, "主机名").evaluate((element) => element.scrollWidth > element.clientWidth + 1);
   expect(overflow).toBe(false);
+});
+
+
+test("events show the latest five and replace the oldest entry after refresh", async ({ page }) => {
+  let latest = 8;
+  await page.route("**/api/v1/dashboard/history?*", async (route) => {
+    const response = await route.fetch(), data = await response.json();
+    const node = new URL(route.request().url()).searchParams.get("node") || "transit-la";
+    data.annotations = Array.from({ length: latest }, (_, index) => ({
+      node_id: node, timestamp: data.server_time - (latest - index) * 60,
+      severity: "INFO", title: `Event ${index + 1}`, detail: "Synthetic event",
+    }));
+    await route.fulfill({ response, json: data });
+  });
+  await openFirstNode(page);
+  const titles = page.locator("#detail-events .timeline-item strong");
+  await expect(titles).toHaveText(["Event 8", "Event 7", "Event 6", "Event 5", "Event 4"]);
+  latest = 9;
+  await page.locator("#refresh-button").click();
+  await expect(titles).toHaveText(["Event 9", "Event 8", "Event 7", "Event 6", "Event 5"]);
 });

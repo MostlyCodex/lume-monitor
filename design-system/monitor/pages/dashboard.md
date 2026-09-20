@@ -11,22 +11,18 @@ project-specific interpretation of the generated glassmorphism direction.
 - Never use elevation transforms on node-card hover.
 - Keep all operational state colors semantic and unchanged in meaning.
 
-## Dark material model
+## Glass material model
 
-1. The alpine environment is dimmed before any glass is composited:
-   `brightness(68%) contrast(106%) saturate(78%)` plus an 18% neutral-black scrim.
-2. Primary glass uses a transparent-black absorption layer (`rgba(7, 8, 10, .22)`).
-3. Node glass is slightly clearer (`rgba(5, 6, 8, .18)`) so the background remains perceptible.
-4. Backdrop blur is 16px with reduced saturation and 84% brightness. The material must
-   look like smoked glass, not a gray rectangle or a white haze.
-5. Large glass surfaces use one low-opacity edge cue only: 3.5% white in dark mode and
-   5.5% white in light mode. Do not combine that edge with an inset highlight; depth comes
-   from blur, absorption and a soft external shadow.
-
-## Light material model
-
-- Keep the existing low-white clear-glass direction; never replace it with opaque white cards.
-- Pair the same radii, spacing, shadows, focus states and hierarchy with the dark theme.
+- Apply scene tint once, then use neutral translucent fills and 12px backdrop blur
+  (10px for compact controls). Avoid stacked brightness filters that make glass opaque.
+- Dark mode uses a 56% scene brightness, a 14% black scrim and 10–14% black surface
+  tint. Light mode retains more background color with a 16% white scrim and 2–2.5%
+  white surface tint. Keep these values centralized in `styles/theme.css`.
+- Use one subtle edge and a soft external shadow; do not add inset panels inside fleet cards.
+- Pair transparent surfaces with brighter secondary text in dark mode and darker text
+  in light mode. Check the composed result with the bundled background on desktop and phones.
+- The layering approach references [Fluent Acrylic](https://learn.microsoft.com/en-us/windows/apps/design/style/acrylic);
+  it is implemented with local CSS, without a design-system runtime.
 
 ## Accessibility and responsive rules
 
@@ -71,14 +67,13 @@ project-specific interpretation of the generated glassmorphism direction.
   detail series replaces that preview in the background and remains cached for the session.
 - Do not prefetch every node: perceived speed must not increase D1 reads or transfer volume.
 
-## Optional observer disclosure
+## Charts and events
 
-- Fleet cards remain the ICMP-first daily overview. TCP series and nftables counters must not
-  add permanent card density.
-- An enabled TCP probe joins the existing detail selector and chart. Use “建连失败” rather
-  than “丢包”, and retain both a text label and the series color cue.
-- The “转发活动” section is absent from the DOM flow when no counter is configured. When
-  present, use compact glass cards for current rate/state and one responsive line chart for
-  history; do not add decorative animation or another dashboard dependency.
-- Observer errors, baseline and reset states require visible text in addition to color. Charts
-  retain exact-value tooltips, empty states, keyboard-reachable controls and mobile reflow.
+- Vue-ECharts owns chart updates, resizing, pointers and disposal. Load only the required
+  ECharts modules when details open; do not introduce CDN dependencies or custom canvas plugins.
+- Preserve missing values as gaps. Failure marks remain visible when latency is unavailable.
+- ICMP loss and TCP connection failures use distinct text in tooltips, rendered by Vue.
+- Hide the line/sample-count summary beside the history heading. Probe selection already
+  indicates which lines are displayed.
+- Show the newest five events in the selected range, sorted by timestamp. Refreshing replaces
+  older entries in the visible list; it does not delete server history.

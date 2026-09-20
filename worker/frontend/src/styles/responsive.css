@@ -110,8 +110,7 @@
   .detail-probe-card > span:not(.detail-probe-label) {
     font-size: 13px;
   }
-  .chart-title span,
-  .uplot .u-legend {
+  .chart-title span {
     font-size: 13px;
   }
   .chart-empty {
@@ -419,9 +418,6 @@
   .network-chart-card .chart-title {
     align-items: flex-start;
   }
-  .network-chart-card .chart-title > span {
-    font-size: 9px;
-  }
   .plot-host {
     height: 290px;
   }
@@ -437,14 +433,6 @@
   .plot-tooltip-row {
     grid-template-columns: minmax(82px, 1fr) auto auto;
     gap: 8px;
-  }
-  .uplot .u-legend {
-    position: static;
-    min-height: 24px;
-    margin-bottom: 4px;
-  }
-  .uplot .u-legend tbody {
-    justify-content: flex-start;
   }
   .dashboard-footer {
     width: calc(100% + 16px);

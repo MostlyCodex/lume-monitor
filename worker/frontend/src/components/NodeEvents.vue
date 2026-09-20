@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import type { HistoryEvent } from "../types";
 import { formatTime } from "../domain/format";
-defineProps<{ events: HistoryEvent[]; hours: number }>();
+const props = defineProps<{ events: HistoryEvent[]; hours: number }>();
+const recentEvents = computed(() =>
+  [...props.events].sort((a, b) => b.timestamp - a.timestamp).slice(0, 5),
+);
 function severity(value: string) {
   return value === "P1" || value === "critical"
     ? "critical"
@@ -21,7 +25,7 @@ function severity(value: string) {
     <article class="info-card glass-panel">
       <div id="detail-events" class="timeline-list">
         <div
-          v-for="(event, index) in events.slice(0, 12)"
+          v-for="(event, index) in recentEvents"
           :key="`${event.timestamp}:${index}`"
           class="timeline-item"
         >

@@ -149,6 +149,7 @@ export interface ChartPoint {
   y: number | null;
 }
 export interface ChartSeries {
+  id: string;
   label: string;
   color: string;
   points: ChartPoint[];
