@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import BrandLockup from "./BrandLockup.vue";
 defineProps<{ brand: string }>();
 const emit = defineEmits<{ notify: [message: string, error?: boolean] }>();
 const message = computed(() => {
@@ -22,12 +23,7 @@ async function copyCommand() {
 <template>
   <main id="auth-view" class="auth-shell">
     <section class="auth-card glass-panel" aria-labelledby="auth-title">
-      <div class="brand-lockup">
-        <div>
-          <strong data-dashboard-brand>{{ brand }}</strong
-          ><span>MINIMAL OBSERVABILITY</span>
-        </div>
-      </div>
+      <BrandLockup :brand="brand" tagline="MINIMAL OBSERVABILITY" />
       <div class="auth-copy">
         <span class="status-pill is-healthy"><i></i> Telegram 安全登录</span>
         <h1 id="auth-title">线路状态，<br />一眼看清。</h1>

@@ -14,6 +14,7 @@ const mimeTypes = new Map([
   [".js", "text/javascript; charset=utf-8"],
   [".webp", "image/webp"],
   [".jpg", "image/jpeg"],
+  [".svg", "image/svg+xml"],
   [".txt", "text/plain; charset=utf-8"],
 ]);
 

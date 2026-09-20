@@ -11,6 +11,15 @@ project-specific interpretation of the generated glassmorphism direction.
 - Never use elevation transforms on node-card hover.
 - Keep all operational state colors semantic and unchanged in meaning.
 
+## Brand identity
+
+- Use the teal L-and-light-dot mark with the rounded, outlined Lume wordmark.
+- Share `BrandLockup.vue` between the dashboard and login page; reuse `assets/lume-mark.svg`
+  for the browser icon. Keep the mark flat, without a tile, glow or animation.
+- The wordmark inherits the theme text color. Preserve custom panel names as text and
+  keep one accessible brand name; decorative SVGs are hidden from assistive technology.
+- At phone widths, hide the tagline and reduce the lockup while preserving the action buttons.
+
 ## Glass material model
 
 - Apply scene tint once, then use neutral translucent fills and 12px backdrop blur

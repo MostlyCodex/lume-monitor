@@ -1,6 +1,6 @@
 /* Desktop readability: keep display headings unchanged while lifting supporting text. */
 @media (min-width: 761px) {
-  .brand-lockup span {
+  .brand-tagline {
     font-size: 12px;
   }
   .fleet-health strong {
@@ -211,12 +211,23 @@
     padding: 8px max(9px, env(safe-area-inset-right)) 8px max(9px, env(safe-area-inset-left));
     border-radius: 0;
   }
-  .app-brand > div:last-child span {
+  .app-brand {
+    gap: 8px;
+  }
+  .app-brand .brand-tagline {
     display: none;
+  }
+  .app-brand .lume-mark {
+    width: 30px;
+    height: 30px;
+  }
+  .app-brand .lume-wordmark {
+    width: 88px;
+    height: 24px;
   }
   .app-brand strong {
     max-width: 128px;
-    font-size: 12px;
+    font-size: 18px;
   }
   .last-refresh,
   .text-button {

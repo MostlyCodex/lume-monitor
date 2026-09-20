@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppIcon from "./AppIcon.vue";
+import BrandLockup from "./BrandLockup.vue";
 import { formatTime } from "../domain/format";
 import type { Overview } from "../domain/overview";
 defineProps<{
@@ -13,12 +14,11 @@ const emit = defineEmits<{ refresh: []; theme: []; settings: []; logout: [] }>()
 </script>
 <template>
   <header class="command-bar glass-panel">
-    <div class="brand-lockup app-brand">
-      <div>
-        <strong data-dashboard-brand>{{ brand }}</strong
-        ><span>{{ demo ? "公开演示 · 虚构数据" : "SECURE OBSERVABILITY" }}</span>
-      </div>
-    </div>
+    <BrandLockup
+      class="app-brand"
+      :brand="brand"
+      :tagline="demo ? '公开演示 · 虚构数据' : 'SECURE OBSERVABILITY'"
+    />
     <div id="top-health" class="fleet-health" :class="`is-${health.tone}`">
       <i></i>
       <div>
