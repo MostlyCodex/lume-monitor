@@ -76,6 +76,31 @@ npm --prefix worker run preview:dashboard
 
 仓库维护者在 GitHub Settings → Pages 选择 GitHub Actions 作为发布源。`.github/workflows/demo.yml` 会在相关改动推送到 main 后构建并发布，也可手动触发。Fork 使用各自的 Pages 地址。
 
+## 从零部署流程
+
+`npm run manage` → **1. 从零部署** 对应 [`tools/lumectl.mjs`](../../tools/lumectl.mjs) 的 `setup()`。用户操作见[部署与管理](../guide.md#1-从零部署)。
+
+入口先执行环境检查，再按本地文件分流：
+
+| 本地状态 | 行为 |
+| --- | --- |
+| 无 `.lume/state.json`，也无 `worker/wrangler.jsonc` | 询问部署信息、在内存中生成凭据，确认后写入状态文件 |
+| 无状态文件，但有 `worker/wrangler.jsonc` | 进入接管已有部署向导 |
+| 已有状态文件 | 确认继续同步，复用保存的部署信息与凭据 |
+
+确认后依次执行：
+
+1. 校验 Cloudflare 登录，查找或创建 D1；首次使用同名数据库需确认。记录数据库 ID，生成本地 `worker/wrangler.jsonc`。
+2. 按[数据库结构](#数据库结构)规则初始化或检查 D1，构建前端并部署 Worker。随后核验 `/healthz` 的健康状态、应用版本和数据库结构标识；失败则中止。
+3. 从部署输出识别面板地址，写回本地状态和 Worker 配置；此时仅更新本地文件。
+4. 批量写入 `NODE_KEYS`、`ADMIN_TOKEN`。Telegram 尚未配置时，一并写入 Webhook 密钥和绑定码摘要，再由 Wrangler 交互读取 `TELEGRAM_BOT_TOKEN`；Bot Token 不写入本地状态。
+5. 通过管理接口登记面板地址、按需注册 Telegram Webhook，检查可达性并读取线上密钥清单，最后将本地阶段保存为 `ready`。
+6. 显示面板入口和 Telegram 绑定指令，询问是否添加并安装首台 VPS。
+
+产出包括本地私密状态 `.lume/state.json`、账号配置 `worker/wrangler.jsonc`、前端构建目录，以及线上 Worker、D1 和 Secrets。前两项需要加密备份，并保持 Git 忽略。
+
+中断后保留状态文件，重选 **1** 会重新执行部署同步，复用已有凭据和数据库；已完成的 Telegram 配置会跳过。收尾的可达性检查失败仅提示，管理接口调用失败仍会中止。线上资源被手动调整后，使用 **2. 接管已有部署** 重新核对。
+
 ## 数据库结构
 
 唯一结构文件为 `worker/database/schema.sql`，包含当前版本全部表、索引和基础设置。节点目录由认证后的 Agent 上报自动建立。
