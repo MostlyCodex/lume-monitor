@@ -28,6 +28,14 @@ directory ACL. Keep this directory out of shared folders and back up
 `state.json` only to encrypted trusted storage. Git ignore is an upload guard,
 not encryption.
 
+Keep copied Agent configurations, raw exports and ad-hoc diagnostics under
+`.lume/` or `outputs/`. Filename rules cannot detect credentials pasted into
+source or documentation. `.gitignore` does not protect tracked files or past
+commits, and `git add -f` bypasses it. Before pushing, review `git diff --cached`
+and `git ls-files --cached --ignored --exclude-standard`; the latter should
+print nothing. If a real credential was published, revoke or rotate it even
+if the file has since been deleted.
+
 ## Runtime model
 
 - Agents make outbound connections only and open no listening port.

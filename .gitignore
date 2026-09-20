@@ -1,48 +1,108 @@
-# Dependencies and build output
+# Dependencies, build output and test reports
 node_modules/
-worker/node_modules/
-worker/.wrangler/
-worker/.private-backups/
-worker/dist/
-worker/dist-webhook/
+.wrangler/
+.private-backups/
+dist/
+dist-webhook/
 worker/public/dashboard/
 worker/public/demo/
+demo-dist/
+coverage/
 playwright-report/
-worker/playwright-report/
 test-results/
-worker/test-results/
-worker/blob-report/
+blob-report/
+.vite/
+*.tsbuildinfo
 agent/bin/
+agent/vpsmon-agent
+agent/vpsmon-agent-linux-*
 agent/.gocache/
 agent/.gomodcache/
 agent/.toolchains/
 benchmark-results/
 .npm-cache/
+__pycache__/
+*.py[cod]
 *.exe
-*.zip
 
-# Account-specific Cloudflare configuration
-worker/wrangler.jsonc
-worker/.dev.vars
-worker/.dev.vars.*
+# Account-specific Cloudflare configuration; keep reviewed templates
+wrangler.json
+wrangler.jsonc
+wrangler.toml
+wrangler.*.json
+wrangler.*.jsonc
+wrangler.*.toml
+!/worker/wrangler.example.jsonc
+!/worker/wrangler.test.jsonc
+.dev.vars
+.dev.vars.*
 
-# Secrets and machine-specific agent configuration
+# Secrets and machine-specific Agent configuration
 .lume/
-demo-dist/
 .env
 .env.*
 !.env.example
+.npmrc
 **/.secrets*
 lume-secrets.json
-**/*.dpapi
-**/*.pem
-**/*.key
-deploy/config.json
-deploy/config-*.local.json
+*.local
+*.local.*
+*.dpapi
+*.pem
+*.key
+*.ppk
+*.p12
+*.pfx
+.ssh/
+id_rsa
+id_rsa.*
+id_dsa
+id_dsa.*
+id_ecdsa
+id_ecdsa.*
+id_ed25519
+id_ed25519.*
+/config.json
+/agent/config.json
+/deploy/config.json
 
-# Local artifacts and editor files
+# Database exports and backups; only the schema source belongs in Git
+backups/
+dumps/
+exports/
+*.sql
+!/worker/database/schema.sql
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.dump
+*.bak
+*.backup
+*.old
+*.zip
+*.tar
+*.tar.*
+*.tgz
+*.gz
+*.bz2
+*.xz
+*.zst
+*.7z
+*.rar
+
+# Local artifacts, temporary copies and editor files
 outputs/
 *.log
+*.tmp
+*.temp
+*.orig
+*.rej
+*~
+*.swp
+*.swo
 .DS_Store
 Thumbs.db
 .idea/
