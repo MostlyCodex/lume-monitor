@@ -363,8 +363,10 @@ const frontendAssets = [...dashboardHtml.matchAll(/(?:src|href)="(\.\/assets\/[^
 assert(frontendAssets.some(path => path.endsWith(".js")) && frontendAssets.some(path => path.endsWith(".css")), "compiled frontend entries are missing");
 for (const asset of frontendAssets) {
   const response = await fetch(new URL(asset, dashboardPage.url));
-  const expectedType = asset.endsWith(".css") ? "text/css" : "javascript";
-  assert(response.ok && (response.headers.get("content-type") ?? "").includes(expectedType), "compiled frontend asset is not served correctly");
+  const assetTypes = { ".css": "text/css", ".js": "javascript", ".svg": "image/svg+xml" };
+  const expectedType = assetTypes[asset.slice(asset.lastIndexOf("."))];
+  assert(expectedType, `unrecognized frontend asset type: ${asset}`);
+  assert(response.ok && (response.headers.get("content-type") ?? "").includes(expectedType), `frontend asset is not served correctly: ${asset}`);
   assert((await response.text()).length > 0, "compiled frontend asset is empty");
 }
 
