@@ -3,24 +3,19 @@ import { normalizeLayout } from "../frontend/src/domain/layout";
 import { displayNodes } from "../frontend/src/domain/nodes";
 import { aggregateMetricEnergy } from "../frontend/src/domain/probes";
 import { trafficSummary } from "../frontend/src/domain/traffic";
-import { alignSeries, chartData } from "../frontend/src/charts/series";
 import type { HistorySnapshot, LatestSnapshot, Probe } from "../frontend/src/types";
 
 describe("frontend data boundaries", () => {
-  it("keeps valid preferences while rejecting remote backgrounds, duplicate IDs and invalid countries", () => {
+  it("keeps only a valid node order and drops legacy display overrides", () => {
     const layout = normalizeLayout({
       brand: "  My Lume  ",
-      background: "https://external.example/image.png",
+      background: "data:image/png;base64,AAAA",
       order: ["alpha", "alpha", "../bad"],
-      nodes: { alpha: { label: "Alpha", country: "!x" }, "../bad": { label: "bad" } },
+      nodes: { alpha: { label: "Alpha" } },
     });
-    expect(layout.brand).toBe("My Lume");
-    expect(layout.background).toBe("");
-    expect(layout.order).toEqual(["alpha"]);
-    expect(layout.nodes.alpha.country).toBe("");
-    expect(Object.keys(layout.nodes)).toEqual(["alpha"]);
+    expect(layout).toEqual({ order: ["alpha"] });
   });
-  it("applies local ordering and labels without mutating monitoring data", () => {
+  it("applies local ordering without mutating monitoring data", () => {
     const latest: LatestSnapshot = {
       schema_version: 2,
       server_time: 1,
@@ -39,47 +34,9 @@ describe("frontend data boundaries", () => {
     );
     expect(nodes.map((node) => node.id)).toEqual(["b", "a"]);
     expect(nodes[0].data_error).toBe(true);
-    expect(nodes[1].label).toBe("Custom");
+    expect(nodes[1].label).toBe("A");
     expect(nodes[1].metrics.cpu_percent).toBe(12);
     expect(JSON.stringify(latest)).toBe(before);
-  });
-  it("preserves unknown measurements when aligning chart series", () => {
-    expect(
-      alignSeries([
-        {
-          id: "a",
-          label: "A",
-          color: "red",
-          points: [
-            { x: 2, y: 10 },
-            { x: 1, y: null },
-          ],
-        },
-        {
-          id: "b",
-          label: "B",
-          color: "blue",
-          points: [
-            { x: 3, y: 0 },
-            { x: 2, y: NaN },
-          ],
-        },
-      ]),
-    ).toEqual([
-      [1, 2, 3],
-      [null, 10, null],
-      [null, null, 0],
-    ]);
-  });
-  it("retains failure-only timestamps and null gaps in chart data", () => {
-    expect(chartData([
-      { id: "icmp", label: "Same label", color: "blue", points: [{ x: 1, y: 10 }, { x: 3, y: 0 }],
-        lossPoints: [{ x: 1, y: 0 }, { x: 2, y: 100 }] },
-      { id: "tcp", label: "Same label", color: "pink", points: [{ x: 3, y: NaN }], lossPoints: [{ x: 2, y: null }] },
-    ])).toEqual([
-      [[1000, 10, 0], [2000, "-", 100], [3000, 0, "-"]],
-      [[1000, "-", "-"], [2000, "-", "-"], [3000, "-", "-"]],
-    ]);
   });
   it("never falls back to system totals when cycle accounting is unavailable", () => {
     expect(

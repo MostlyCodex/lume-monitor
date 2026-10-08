@@ -1,5 +1,6 @@
 import { ref, watch } from "vue";
 import type { Theme } from "../types";
+
 export function useTheme() {
   const theme = ref<Theme>("dark");
   try {
@@ -11,9 +12,10 @@ export function useTheme() {
     theme,
     (value) => {
       document.documentElement.dataset.theme = value;
+      document.documentElement.classList.toggle("dark", value === "dark");
       document
         .querySelector('meta[name="theme-color"]')
-        ?.setAttribute("content", value === "light" ? "#edf2f8" : "#050607");
+        ?.setAttribute("content", value === "light" ? "#ffffff" : "#09090b");
       try {
         localStorage.setItem("vpsmon-theme", value);
       } catch {

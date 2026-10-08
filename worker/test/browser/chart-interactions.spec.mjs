@@ -44,7 +44,7 @@ test("failure-only histories retain tooltips and selection works with duplicate 
   });
   await page.goto(`${origin}/dashboard/`, { waitUntil: "networkidle" });
   await page.locator(".node-card").first().click();
-  await expect(page.locator("#network-plot canvas")).toBeVisible();
+  await expect(page.locator("#network-plot svg")).toBeVisible();
   await expect(page.locator("#network-chart-state")).toHaveCount(0);
   const tooltip = await pointAtChart(page, testInfo);
   await expect(tooltip.locator(".plot-tooltip-row")).toHaveCount(5);
@@ -55,9 +55,9 @@ test("failure-only histories retain tooltips and selection works with duplicate 
   expect(await page.evaluate(() => window.injected)).toBeUndefined();
   await page.locator('[data-probe-action="none"]').click();
   await expect(page.locator("#network-empty")).toBeVisible();
-  await expect(page.locator("#network-plot canvas")).toHaveCount(0);
+  await expect(page.locator("#network-plot svg")).toHaveCount(0);
   await page.locator(".detail-probe-card").last().click();
-  await expect(page.locator("#network-plot canvas")).toBeVisible();
+  await expect(page.locator("#network-plot svg")).toBeVisible();
   await pointAtChart(page, testInfo);
   await expect(tooltip.locator(".plot-tooltip-row")).toHaveCount(1);
   await expect(tooltip).toContainText("建连失败");

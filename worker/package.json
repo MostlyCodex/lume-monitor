@@ -33,16 +33,21 @@
     "worker:rollback": "node ../tools/lumectl.mjs worker rollback"
   },
   "devDependencies": {
+    "@types/sortablejs": "1.15.9",
     "@vitejs/plugin-vue": "6.0.8",
+    "autoprefixer": "10.6.1",
+    "postcss": "8.5.28",
+    "tailwindcss": "3.4.19",
     "typescript": "5.9.3",
     "vite": "8.2.2",
     "vue-tsc": "3.3.11",
     "wrangler": "4.124.0"
   },
   "dependencies": {
-    "echarts": "6.1.0",
-    "vue": "3.5.42",
-    "vue-echarts": "8.3.0"
+    "clsx": "2.1.1",
+    "sortablejs": "1.15.7",
+    "tailwind-merge": "2.6.1",
+    "vue": "3.5.42"
   },
   "engines": {
     "node": ">=22.12.0"

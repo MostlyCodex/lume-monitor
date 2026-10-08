@@ -2,22 +2,6 @@
 
 The dashboard and Agent include the following third-party components. Keep this file with releases.
 
-## Dashboard design references
-
-The dashboard's visual hierarchy was independently implemented after studying
-the following projects. Their application code and framework runtimes are not
-bundled with this project.
-
-- Komari Next — Copyright (c) 2025 Tony Liu (tonyliuzj, tony-liu.com), MIT License: https://github.com/tonyliuzj/komari-next
-- Emerald Theme for CF Server Monitor — Copyright (c) 2026 Tokinx, MIT License: https://github.com/Tokinx/cf-server-monitor-theme-emerald
-- CF Server Monitor — interaction and chart-structure reference only; no source code is copied or bundled: https://github.com/huilang-me/CF-Server-Monitor
-
-## Dashboard background artwork
-
-`worker/frontend/static/background-lume.jpg` is user-supplied artwork and is
-copied into the compiled dashboard. It is not covered by the project's code
-license; downstream redistributors must confirm their rights to the artwork.
-
 ## Vue 3.5.42
 
 Vue is bundled from its pinned npm package. Its license is also included in
@@ -45,22 +29,20 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-## Vue-ECharts and Apache ECharts
+## Dashboard npm packages
 
-The node-detail charts bundle pinned npm packages and load them on demand from the
-Worker, without a third-party CDN. Original copyright and license texts, including
-ECharts' NOTICE and d3 utility license, ship in
-[`worker/frontend/static/THIRD_PARTY_NOTICES.txt`](worker/frontend/static/THIRD_PARTY_NOTICES.txt).
+The dashboard bundles these pinned npm packages besides Vue. Their license texts
+ship in [`worker/frontend/static/THIRD_PARTY_NOTICES.txt`](worker/frontend/static/THIRD_PARTY_NOTICES.txt).
 
-| Component | License |
-| --- | --- |
-| Vue-ECharts | MIT |
-| Apache ECharts | Apache-2.0 |
-| zrender / d3 utilities | BSD-3-Clause |
-| tslib | 0BSD |
+| Component | Version | License |
+| --- | --- | --- |
+| [SortableJS](https://github.com/SortableJS/Sortable) — node-card drag-and-drop ordering | 1.15.7 | MIT |
+| [clsx](https://github.com/lukeed/clsx) | 2.1.1 | MIT |
+| [tailwind-merge](https://github.com/dcastil/tailwind-merge) | 2.6.1 | MIT |
 
-The translucent material treatment also references [Microsoft Fluent Acrylic](https://learn.microsoft.com/en-us/windows/apps/design/style/acrylic);
-no Microsoft application code is bundled.
+The components in `worker/frontend/src/components/ui/` follow the structure and
+Tailwind class conventions of [shadcn/ui](https://github.com/shadcn-ui/ui) and
+[shadcn-vue](https://github.com/unovue/shadcn-vue) (MIT License).
 
 ## prometheus-community/pro-bing v0.9.1
 

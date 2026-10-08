@@ -25,23 +25,8 @@ function factValue(page, label) {
 }
 
 async function expectCompactFacts(page) {
-  await expect(page.locator(".info-card h2")).toHaveCount(0);
-  const headings = await page.locator(".detail-bottom-grid > section").evaluateAll((sections) => sections.map((section) => {
-    const heading = section.querySelector(".section-heading");
-    const card = section.querySelector(".info-card");
-    const reference = document.querySelector("#network-section-title");
-    return {
-      gap: card.getBoundingClientRect().top - heading.getBoundingClientRect().bottom,
-      sameHeadingSize: getComputedStyle(heading.querySelector("h2")).fontSize === getComputedStyle(reference).fontSize,
-    };
-  }));
-  expect(headings).toHaveLength(2);
-  for (const heading of headings) {
-    expect(heading.gap).toBeGreaterThanOrEqual(12);
-    expect(heading.sameHeadingSize).toBe(true);
-  }
   const geometry = await page.locator("#detail-facts").evaluate((element) => {
-    const cells = [...element.children].map((cell) => cell.getBoundingClientRect());
+    const cells = [...element.querySelectorAll(".detail-fact")].map((cell) => cell.getBoundingClientRect());
     return {
       firstRowCells: cells.filter((cell) => Math.abs(cell.top - cells[0].top) < 1).length,
       height: element.getBoundingClientRect().height,
@@ -49,25 +34,26 @@ async function expectCompactFacts(page) {
       pageOverflow: document.documentElement.scrollWidth > innerWidth + 1,
     };
   });
-  expect(geometry.firstRowCells).toBeGreaterThanOrEqual(2);
-  expect(geometry.height).toBeLessThan(440);
+  // 手机竖屏是单列；更宽的视口至少两列
+  expect(geometry.firstRowCells).toBeGreaterThanOrEqual(page.viewportSize().width < 640 ? 1 : 2);
+  expect(geometry.height).toBeLessThan(page.viewportSize().width < 640 ? 760 : 440);
   expect(geometry.overflowingValues).toBe(0);
   expect(geometry.pageOverflow).toBe(false);
 }
 
 test("node facts show hardware capacity in a compact grid in both themes", async ({ page }, testInfo) => {
   await openFirstNode(page);
-  await expect(factValue(page, "CPU")).toHaveText("1 vCPU");
-  await expect(factValue(page, "内存")).toHaveText("1.00 GiB");
-  await expect(factValue(page, "磁盘")).toHaveText("20.00 GiB");
+  await expect(factValue(page, "CPU 规格")).toHaveText("1 vCPU");
+  await expect(factValue(page, "总内存")).toHaveText("1.00 GiB");
+  await expect(factValue(page, "总磁盘")).toHaveText("20.00 GiB");
   await expect(page.locator("#detail-facts dt")).toHaveText([
-    "系统", "内核", "CPU", "内存", "磁盘", "主机名", "Agent", "采集/发送错误", "统计网卡",
+    "操作系统", "系统内核", "CPU 规格", "总内存", "总磁盘", "主机名称", "Agent 版本", "采集/发送错误", "统计网卡",
   ]);
   for (const theme of ["dark", "light"]) {
     if (theme === "light") await page.locator("#theme-button").click();
     await expectCompactFacts(page);
     await testInfo.attach(`node-facts-${theme}`, {
-      body: await page.locator(".detail-bottom-grid").screenshot({ animations: "disabled" }),
+      body: await page.locator("#detail-facts").screenshot({ animations: "disabled" }),
       contentType: "image/png",
     });
   }
@@ -91,15 +77,15 @@ test("missing capacity stays unknown and long node facts remain readable", async
     await route.fulfill({ response, json: data });
   });
   await openFirstNode(page);
-  for (const label of ["CPU", "内存", "磁盘"]) await expect(factValue(page, label)).toHaveText("—");
-  await expect(factValue(page, "主机名")).toHaveText(hostname);
-  const overflow = await factValue(page, "主机名").evaluate((element) => element.scrollWidth > element.clientWidth + 1);
+  for (const label of ["CPU 规格", "总内存", "总磁盘"]) await expect(factValue(page, label)).toHaveText("—");
+  await expect(factValue(page, "主机名称")).toHaveText(hostname);
+  const overflow = await factValue(page, "主机名称").evaluate((element) => element.scrollWidth > element.clientWidth + 1);
   expect(overflow).toBe(false);
 });
 
 
 test("events show the latest five and replace the oldest entry after refresh", async ({ page }) => {
-  let latest = 8;
+  let latest = 10;
   await page.route("**/api/v1/dashboard/history?*", async (route) => {
     const response = await route.fetch(), data = await response.json();
     const node = new URL(route.request().url()).searchParams.get("node") || "transit-la";
@@ -111,8 +97,9 @@ test("events show the latest five and replace the oldest entry after refresh", a
   });
   await openFirstNode(page);
   const titles = page.locator("#detail-events .timeline-item strong");
-  await expect(titles).toHaveText(["Event 8", "Event 7", "Event 6", "Event 5", "Event 4"]);
-  latest = 9;
+  const expected = (newest) => Array.from({ length: 5 }, (_, index) => `Event ${newest - index}`);
+  await expect(titles).toHaveText(expected(10));
+  latest = 11;
   await page.locator("#refresh-button").click();
-  await expect(titles).toHaveText(["Event 9", "Event 8", "Event 7", "Event 6", "Event 5"]);
+  await expect(titles).toHaveText(expected(11));
 });

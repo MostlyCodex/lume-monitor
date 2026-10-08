@@ -61,3 +61,23 @@ const code = computed(() => props.country?.trim().toUpperCase() ?? "");
     /^[A-Z]{2}$/.test(code) ? code : "◇"
   }}</span>
 </template>
+
+<style scoped>
+svg {
+  display: block;
+  width: 62.5%;
+  height: auto;
+  border-radius: 2px;
+}
+.flag-fallback {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: hsl(var(--muted-foreground));
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+</style>

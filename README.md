@@ -4,7 +4,7 @@
 
 [在线体验](https://mostlycodex.github.io/lume-monitor/) · [部署与管理](docs/guide.md) · [参与开发](CONTRIBUTING.md)
 
-演示网页使用虚构数据，无需登录，可体验节点详情、图表、深浅主题和自定义背景。
+演示网页使用虚构数据，无需登录，可体验节点详情、图表、深浅主题和拖拽排序。
 
 ## 能监测什么
 
@@ -54,14 +54,16 @@ lume-monitor/
 │   ├── src/                    # API、认证、历史查询、Telegram 与定时任务
 │   ├── frontend/               # Vue 3 前端源码与构建配置
 │   │   ├── src/
-│   │   │   ├── components/     # 概览、节点详情、设置与图表组件
-│   │   │   ├── composables/    # 请求、缓存、轮询及设置草稿
+│   │   │   ├── components/     # 概览、节点详情与图表组件
+│   │   │   │   └── ui/         # shadcn-vue 基础组件
+│   │   │   ├── composables/    # 请求、缓存、轮询与本地排序偏好
 │   │   │   ├── domain/         # 指标计算、格式化与展示模型
-│   │   │   ├── services/       # API、演示数据适配及图片处理
-│   │   │   ├── charts/         # ECharts 数据转换与图表选项
-│   │   │   ├── styles/         # 主题与响应式样式
+│   │   │   ├── services/       # API 与演示数据适配
+│   │   │   ├── charts/         # 图表数值与配色辅助函数
+│   │   │   ├── lib/            # 样式类名合并工具
+│   │   │   ├── styles/         # Tailwind 入口与 shadcn 主题变量
 │   │   │   └── demo/           # 虚构数据源
-│   │   └── static/             # 默认背景与第三方许可
+│   │   └── static/             # 随面板发布的第三方许可
 │   ├── public/                 # 安全响应头及自动生成的面板、演示资源
 │   ├── database/               # 当前数据库结构
 │   │   └── schema.sql          # 一次创建全部表、索引和基础设置
@@ -74,8 +76,6 @@ lume-monitor/
 ├── docs/                       # 部署管理指南与技术文档
 │   ├── assets/                 # 文档图片
 │   └── reference/              # 架构、开发发布与测量口径
-├── design-system/monitor/      # 面板视觉规范
-│   └── pages/                  # 页面级设计规范
 └── .github/workflows/          # 自动测试、演示页发布与 Agent 发版
 ```
 

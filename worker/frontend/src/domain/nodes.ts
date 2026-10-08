@@ -1,6 +1,6 @@
 import type { DashboardLayout, LatestSnapshot, NodeSnapshot } from "../types";
 
-/** Overlay browser-only labels without mutating the API snapshot. */
+/** Apply the browser-only node order without mutating the API snapshot. */
 export function displayNodes(
   latest: LatestSnapshot | null,
   layout: DashboardLayout,
@@ -18,22 +18,15 @@ export function displayNodes(
         a.label.localeCompare(b.label, "zh-CN")
       );
     })
-    .map((meta) => {
-      const node: NodeSnapshot = snapshots.get(meta.id) ?? {
-        ...meta,
-        online: false,
-        data_error: true,
-        metrics: {},
-        probes: [],
-        services: [],
-      };
-      const override = layout.nodes[node.id];
-      return {
-        ...node,
-        label: override?.label || node.label,
-        role: override?.role || node.role,
-        region: override?.region || node.region,
-        country: override?.country || node.country,
-      };
-    });
+    .map(
+      (meta): NodeSnapshot =>
+        snapshots.get(meta.id) ?? {
+          ...meta,
+          online: false,
+          data_error: true,
+          metrics: {},
+          probes: [],
+          services: [],
+        },
+    );
 }

@@ -1,17 +1,22 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import Sortable from "sortablejs";
 import type { HistorySnapshot, NodeSnapshot } from "../types";
-import type { Overview } from "../domain/overview";
 import AppIcon from "./AppIcon.vue";
 import NodeCard from "./NodeCard.vue";
+
 const props = defineProps<{
   nodes: NodeSnapshot[];
   history: HistorySnapshot | null;
-  health: Overview;
   now: number;
 }>();
-const emit = defineEmits<{ open: [id: string] }>();
+
+const emit = defineEmits<{ open: [id: string]; reorder: [order: string[]] }>();
 const search = ref("");
+const grid = ref<HTMLElement | null>(null);
+let sortable: Sortable | undefined;
+let restoreBefore: Node | null = null;
+
 const filtered = computed(() => {
   const query = search.value.trim().toLocaleLowerCase("zh-CN");
   return props.nodes.filter(
@@ -22,34 +27,74 @@ const filtered = computed(() => {
       ),
   );
 });
+
+// SortableJS moves DOM nodes itself; put the card back and let Vue re-render from the new order.
+onMounted(() => {
+  if (!grid.value) return;
+  sortable = Sortable.create(grid.value, {
+    draggable: "[data-node]",
+    animation: 180,
+    // 触屏需按住片刻再拖动，避免和页面滚动冲突
+    delay: 220,
+    delayOnTouchOnly: true,
+    touchStartThreshold: 4,
+    // 统一用指针事件实现拖拽：原生 HTML5 拖拽在手机浏览器上不可靠
+    forceFallback: true,
+    fallbackTolerance: 4,
+    // 拖动中的副本挂到 body 上，才能浮在所有卡片之上并应用下面的样式
+    fallbackOnBody: true,
+    ghostClass: "node-card-ghost",
+    chosenClass: "node-card-chosen",
+    dragClass: "node-card-drag",
+    onStart: (event) => {
+      restoreBefore = event.item.nextSibling;
+    },
+    onEnd: (event) => {
+      const { item, from, oldDraggableIndex, newDraggableIndex } = event;
+      from.insertBefore(item, restoreBefore);
+      restoreBefore = null;
+      if (oldDraggableIndex === undefined || newDraggableIndex === undefined) return;
+      if (oldDraggableIndex === newDraggableIndex) return;
+      const order = props.nodes.map((node) => node.id);
+      const [moved] = order.splice(oldDraggableIndex, 1);
+      order.splice(newDraggableIndex, 0, moved);
+      emit("reorder", order);
+    },
+  });
+});
+// 搜索时只显示部分节点，此时禁用拖拽以免顺序含义不清
+watch(search, (value) => sortable?.option("disabled", Boolean(value.trim())));
+onBeforeUnmount(() => sortable?.destroy());
 </script>
+
 <template>
-  <section id="fleet-view" class="fleet-view">
-    <header class="fleet-heading is-summary-only">
-      <div id="summary-strip" class="summary-strip" aria-label="总体状态">
-        <div
-          v-for="item in health.summary"
-          :key="item.label"
-          class="summary-item"
-          :class="item.tone ? `is-${item.tone}` : ''"
-        >
-          <span>{{ item.label }}</span
-          ><strong>{{ item.value }}</strong>
-        </div>
-      </div>
-    </header>
-    <div class="fleet-toolbar">
-      <label class="search-control"
-        ><AppIcon name="search" /><span class="sr-only">筛选节点</span
-        ><input
+  <section id="fleet-view" class="space-y-6">
+    <!-- 搜索 -->
+    <div class="flex justify-end">
+      <div class="relative w-full sm:w-64">
+        <AppIcon
+          name="search"
+          class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
+        />
+        <input
           id="node-search"
           v-model="search"
           type="search"
-          placeholder="搜索节点"
+          placeholder="搜索节点..."
+          aria-label="搜索节点名称、角色、地区"
           autocomplete="off"
-      /></label>
+          class="h-9 w-full rounded-md border border-input bg-background px-3 pl-9 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-colors coarse:h-11"
+        />
+      </div>
     </div>
-    <div id="node-grid" class="node-grid" aria-live="polite">
+
+    <!-- 节点网格卡片 -->
+    <div
+      id="node-grid"
+      ref="grid"
+      class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5"
+      aria-live="polite"
+    >
       <NodeCard
         v-for="node in filtered"
         :key="node.id"
@@ -58,9 +103,43 @@ const filtered = computed(() => {
         :now="now"
         @open="emit('open', $event)"
       />
-      <div v-if="!filtered.length" class="empty-state">
-        <i>◇</i><strong>没有符合条件的节点</strong><span>请调整搜索内容后重试</span>
-      </div>
+    </div>
+
+    <!-- 搜索为空状态 -->
+    <div
+      v-if="!filtered.length"
+      class="flex flex-col items-center justify-center p-12 text-center rounded-xl border border-dashed border-border bg-card/40"
+    >
+      <span class="text-3xl text-muted-foreground mb-2">◇</span>
+      <strong class="text-sm font-semibold text-foreground">没有符合条件的节点</strong>
+      <span class="text-xs text-muted-foreground mt-1">请尝试调整搜索关键词或清空筛选条件</span>
     </div>
   </section>
 </template>
+
+<style scoped>
+/* 原位置留下虚线占位，提示松手后卡片会落在这里 */
+#node-grid :deep(.node-card-ghost) {
+  border: 2px dashed hsl(var(--border));
+  background: hsl(var(--muted) / 0.4);
+  box-shadow: none;
+}
+#node-grid :deep(.node-card-ghost > *) {
+  visibility: hidden;
+}
+/* 跟随指针的副本：无过渡、略微抬起，看得出被拿起来了 */
+:global(.node-card-drag) {
+  cursor: grabbing !important;
+  opacity: 1 !important;
+  transition: none !important;
+  scale: 1.02;
+  rotate: 1deg;
+  box-shadow:
+    0 20px 40px -12px rgb(0 0 0 / 0.45),
+    0 0 0 1px hsl(var(--border));
+}
+:global(body:has(.node-card-drag)) {
+  cursor: grabbing;
+  user-select: none;
+}
+</style>

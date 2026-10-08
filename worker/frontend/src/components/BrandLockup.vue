@@ -35,3 +35,54 @@ defineProps<{ brand: string; tagline: string }>();
     </div>
   </div>
 </template>
+
+<style scoped>
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.lume-mark {
+  display: block;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+}
+.lume-wordmark {
+  display: block;
+  width: 100px;
+  height: 27px;
+  fill: currentColor;
+}
+.brand-lockup > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.brand-lockup strong {
+  overflow: hidden;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.brand-tagline {
+  color: hsl(var(--muted-foreground));
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+</style>

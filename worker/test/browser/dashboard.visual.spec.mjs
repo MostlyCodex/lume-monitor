@@ -26,13 +26,13 @@ test("public demo works without authentication or telemetry requests", async ({ 
   });
   await page.goto(`${previewOrigin}/demo/`, { waitUntil: "networkidle" });
   await expect(page.locator(".node-card")).toHaveCount(6);
-  await expect(page.locator(".demo-notice")).toContainText("虚构数据");
+  await expect(page.locator("#demo-notice")).toContainText("虚构数据");
   await page.locator('.node-card[data-node="transit-la"]').click();
   await expect(page.locator("#node-detail")).toBeVisible();
-  await expect(page.locator(".detail-service")).toContainText(["nftables运行正常"]);
-  await expect(page.locator("#network-plot .history-chart")).toBeVisible();
+  await expect(page.locator(".detail-service")).toContainText([/nftables\s*运行正常/]);
+  await expect(page.locator("#network-plot svg")).toBeVisible();
   await page.locator('#detail-range-switch button[data-hours="168"]').click();
-  await expect(page.locator("#network-plot .history-chart")).toBeVisible();
+  await expect(page.locator("#network-plot svg")).toBeVisible();
   await page.locator("#detail-back").click();
   expect(new URL(page.url()).pathname).toBe("/demo/");
   await page.locator("#theme-button").click();
@@ -63,9 +63,9 @@ for (const online of [true, false]) {
     await openDashboard(page);
     await page.locator(".node-card").first().click();
     await expect(page.locator("#detail-hero .node-status")).toHaveText(online ? "正常" : "上报中断");
-    await expect(page.locator(".detail-service")).toHaveClass("detail-service is-neutral");
-    await expect(page.locator(".detail-service b")).toHaveText("服务监测");
-    await expect(page.locator(".detail-service em")).toHaveText("暂无上报");
+    await expect(page.locator(".detail-service")).toHaveCount(1);
+    await expect(page.locator(".detail-service")).toHaveClass(/\bis-neutral\b/);
+    await expect(page.locator(".detail-service")).toHaveText("服务监测：暂无上报");
     await expect(page.locator("#detail-hero")).not.toContainText("基础监测正常");
   });
 }
@@ -80,118 +80,88 @@ async function expectNoHorizontalOverflow(page) {
   expect(geometry.bodyWidth).toBeLessThanOrEqual(geometry.viewport + 1);
 }
 
+// 卡片是一个整体：没有内嵌面板、国旗、页脚；四个区块以分割线隔开；
+// 网络质量每行一条 18 格的 24 小时格栅，格子尺寸固定、不随视口缩放。
 async function expectCompactNodeCards(page) {
-  const maxHeight = page.viewportSize().width <= 760 ? 560 : 600;
   const firstCard = page.locator(".node-card").first();
   await expect(firstCard.locator(".node-network-row")).toHaveCount(2);
   await expect(firstCard.locator(".probe-row")).toHaveCount(4);
-  await expect(firstCard.locator(".energy-cell")).toHaveCount(144);
-  const layout = await page.locator(".node-card").evaluateAll((cards) => cards.map((card) => {
-    const values = [...card.querySelectorAll(".node-network-row b, .probe-metric-head strong, .probe-target span")];
-    const surfaces = [...card.querySelectorAll(".node-network, .probe-block, .probe-metric")];
-    return {
-      height: card.getBoundingClientRect().height,
-      titleSize: parseFloat(getComputedStyle(card.querySelector(".node-title strong")).fontSize),
-      clippedValues: values.filter((value) => value.scrollWidth > value.clientWidth + 1).map((value) => value.textContent),
-      smallestValue: Math.min(...values.map((value) => parseFloat(getComputedStyle(value).fontSize))),
-      insetPanels: surfaces.filter((element) => {
-        const style = getComputedStyle(element);
-        return style.backgroundColor !== "rgba(0, 0, 0, 0)" || style.backgroundImage !== "none"
-          || style.boxShadow !== "none" || parseFloat(style.borderTopLeftRadius) > 0;
-      }).length,
-    };
-  }));
+  await expect(firstCard.locator(".energy-cell")).toHaveCount(4 * 18);
+  const layout = await page.locator(".node-card").evaluateAll((cards) =>
+    cards.map((card) => {
+      const cardRect = card.getBoundingClientRect();
+      const values = [...card.querySelectorAll(".node-network-row span")];
+      const cells = [...card.querySelectorAll(".energy-cell")].map((cell) => cell.getBoundingClientRect());
+      return {
+        height: cardRect.height,
+        titleSize: parseFloat(getComputedStyle(card.querySelector(".node-title")).fontSize),
+        clippedValues: values
+          .filter((value) => value.scrollWidth > value.clientWidth + 1)
+          .map((value) => value.textContent),
+        nestedPanels: [...card.querySelectorAll("*")].filter((element) => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return (
+            parseFloat(style.borderTopWidth) > 0 &&
+            parseFloat(style.borderBottomWidth) > 0 &&
+            rect.width > 80 &&
+            rect.height > 32
+          );
+        }).length,
+        graphics: card.querySelectorAll("svg, img").length,
+        footerText: /前更新|线路中转机/.test(card.textContent),
+        cellSizes: [...new Set(cells.map((cell) => `${cell.width}x${cell.height}`))],
+        dividers: [...card.querySelectorAll("section")].filter(
+          (section) => parseFloat(getComputedStyle(section).borderTopWidth) > 0,
+        ).length,
+        probeText: card.querySelector(".probe-row")?.parentElement?.parentElement?.textContent ?? "",
+      };
+    }),
+  );
+  expect(layout[0].dividers).toBe(3);
+  const maxHeight = page.viewportSize().width <= 760 ? 460 : 480;
   for (const card of layout) {
-    // Includes a four-probe card with a long link name; allow for platform font differences.
     expect(card.height).toBeLessThan(maxHeight);
     expect(card.titleSize).toBeGreaterThanOrEqual(16);
-    expect(card.smallestValue).toBeGreaterThanOrEqual(13);
     expect(card.clippedValues).toEqual([]);
-    expect(card.insetPanels).toBe(0);
+    expect(card.nestedPanels).toBe(0);
+    expect(card.graphics).toBe(0);
+    expect(card.footerText).toBe(false);
+    if (card.cellSizes.length) expect(card.cellSizes).toEqual(["5x14"]);
+    expect(card.probeText).not.toMatch(/目标|24H/);
   }
 }
 
-async function expectGlassMaterial(page, selector) {
-  const material = await page.locator(selector).first().evaluate((element) => {
-    const style = getComputedStyle(element);
-    const match = style.backgroundColor.match(/rgba?\(([^)]+)\)/);
-    const components = match ? match[1].split(/[ ,/]+/).filter(Boolean).map(Number) : [];
-    return {
-      connected: element.isConnected,
-      backdrop: style.getPropertyValue("backdrop-filter") || style.getPropertyValue("-webkit-backdrop-filter"),
-      alpha: components.length >= 4 ? components[3] : 1,
-    };
-  });
-  expect(material.connected).toBe(true);
-  expect(material.backdrop).toContain("blur(");
-  expect(material.alpha).toBeLessThan(0.8);
-}
-
-async function expectCompactSingleEdge(page, selector, maxRadius) {
-  const material = await page.locator(selector).first().evaluate((element) => {
-    const style = getComputedStyle(element);
-    return {
-      radius: parseFloat(style.borderTopLeftRadius),
-      shadow: style.boxShadow,
-      borderWidth: parseFloat(style.borderTopWidth),
-    };
-  });
-  expect(material.radius).toBeLessThanOrEqual(maxRadius);
-  expect(material.shadow).not.toContain("inset");
-  expect(material.borderWidth).toBeLessThanOrEqual(1);
-}
-
-async function expectStableSceneDuringMobileViewportChange(page) {
-  const before = await page.locator(".scene").evaluate((scene) => {
-    const image = scene.querySelector(".scene-image");
-    const sceneRect = scene.getBoundingClientRect();
-    const imageRect = image.getBoundingClientRect();
-    return {
-      sceneLeft: sceneRect.left,
-      sceneTop: sceneRect.top,
-      sceneWidth: sceneRect.width,
-      sceneHeight: sceneRect.height,
-      imageWidth: imageRect.width,
-      imageHeight: imageRect.height,
-    };
-  });
-
-  await page.setViewportSize({ width: 390, height: 700 });
-  await page.evaluate(() => {
-    window.scrollTo(0, 420);
-    return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  });
-
-  const after = await page.locator(".scene").evaluate((scene) => {
-    const image = scene.querySelector(".scene-image");
-    const sceneRect = scene.getBoundingClientRect();
-    const imageRect = image.getBoundingClientRect();
-    return {
-      sceneLeft: sceneRect.left,
-      sceneTop: sceneRect.top,
-      sceneWidth: sceneRect.width,
-      sceneHeight: sceneRect.height,
-      imageWidth: imageRect.width,
-      imageHeight: imageRect.height,
-    };
-  });
-
-  for (const key of Object.keys(before)) expect(Math.abs(after[key] - before[key])).toBeLessThanOrEqual(1);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.evaluate(() => window.scrollTo(0, 0));
-}
-
 async function expectSmallPhoneAndLandscapeLayout(page) {
-  for (const viewport of [{ width: 375, height: 812 }, { width: 812, height: 375 }]) {
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 812, height: 375 },
+  ]) {
     await page.setViewportSize(viewport);
-    await page.evaluate(() => window.dispatchEvent(new Event("orientationchange")));
     await page.waitForTimeout(280);
     await expectNoHorizontalOverflow(page);
     await expectCompactNodeCards(page);
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.evaluate(() => window.dispatchEvent(new Event("orientationchange")));
   await page.waitForTimeout(280);
+}
+
+async function expectTouchTargets(page, selector, minimum) {
+  const controls = page.locator(selector);
+  const count = await controls.count();
+  expect(count).toBeGreaterThan(0);
+  for (let index = 0; index < count; index += 1) {
+    const box = await controls.nth(index).boundingBox();
+    expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(minimum);
+  }
+}
+
+async function focusByKeyboard(page, selector) {
+  for (let step = 0; step < 40; step += 1) {
+    await page.keyboard.press("Tab");
+    if (await page.evaluate((selector) => document.activeElement?.matches(selector), selector)) return;
+  }
+  throw new Error(`Keyboard focus never reached ${selector}`);
 }
 
 async function attachScreenshot(page, testInfo, name) {
@@ -205,55 +175,33 @@ test("fleet page keeps its visual and responsive contract", async ({ page }, tes
   await openDashboard(page);
   await expectNoHorizontalOverflow(page);
   await expectCompactNodeCards(page);
+  await expect(page.locator("#settings-button")).toHaveCount(0);
+  await expect(page.locator("#summary-strip")).toHaveCount(0);
+  await expect(page.locator("#fleet-view")).not.toContainText(/拖动可调整顺序|节点$/);
+  const header = await page.locator("header").first().evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { backdrop: style.backdropFilter, background: style.backgroundColor };
+  });
+  expect(header.backdrop).toBe("none");
+  expect(header.background).not.toMatch(/rgba(.*,s*0?.d+)$/);
+  // 搜索框位于右侧且不再占满整行（手机竖屏除外）
+  const search = await page.locator("#node-search").boundingBox();
+  const grid = await page.locator("#node-grid").boundingBox();
+  expect(Math.abs(search.x + search.width - (grid.x + grid.width))).toBeLessThanOrEqual(1);
+  if (page.viewportSize().width >= 640) expect(search.width).toBeLessThanOrEqual(260);
 
-  const viewportWidth = page.viewportSize().width;
-  for (const selector of [".command-bar", ".dashboard-footer"]) {
-    const box = await page.locator(selector).boundingBox();
-    expect(box.x).toBeLessThanOrEqual(1);
-    expect(box.width).toBeGreaterThanOrEqual(viewportWidth - 1);
-  }
+  await focusByKeyboard(page, ".node-card");
+  const focusRing = await page.evaluate(() => getComputedStyle(document.activeElement).boxShadow);
+  expect(focusRing).not.toBe("none");
 
-  await expect(page.locator('.node-flag[aria-label="JP"] svg')).toBeVisible();
-  await expectGlassMaterial(page, ".node-card");
-  await expectGlassMaterial(page, ".command-bar");
-  await expectCompactSingleEdge(page, ".search-control", 8);
-  await expectCompactSingleEdge(page, ".node-card", 16);
+  if (testInfo.project.use.hasTouch) await expectTouchTargets(page, "#refresh-button, #theme-button", 44);
 
-  const markers = await page.locator(".node-card").first().locator(".resource-gauge-marker").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("cx")));
-  expect(new Set(markers).size).toBe(3);
-
-  const firstCard = page.locator(".node-card").first();
-  const restingBorderColor = await firstCard.evaluate((element) => getComputedStyle(element).borderColor);
-  await firstCard.hover();
-  const hoverBorderColor = await firstCard.evaluate((element) => getComputedStyle(element).borderColor);
-  expect(hoverBorderColor).toBe(restingBorderColor);
-  await firstCard.focus();
-  const focusStyle = await firstCard.evaluate((element) => ({
-    outlineWidth: parseFloat(getComputedStyle(element).outlineWidth),
-    titleDecoration: getComputedStyle(element.querySelector(".node-title strong")).textDecorationLine,
-  }));
-  expect(focusStyle.outlineWidth).toBe(0);
-  expect(focusStyle.titleDecoration).toContain("underline");
-
-  if (testInfo.project.name === "mobile-390" || testInfo.project.name === "tablet-768") {
-    const controls = page.locator("#refresh-button, #theme-button, #settings-button");
-    for (let index = 0; index < await controls.count(); index += 1) {
-      const box = await controls.nth(index).boundingBox();
-      expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
-    }
-  }
-
-  if (testInfo.project.name === "mobile-390") {
-    await expectStableSceneDuringMobileViewportChange(page);
-    await expectSmallPhoneAndLandscapeLayout(page);
-  }
+  if (testInfo.project.name === "mobile-390") await expectSmallPhoneAndLandscapeLayout(page);
 
   await attachScreenshot(page, testInfo, `${testInfo.project.name}-fleet-dark`);
 
   await page.locator("#theme-button").click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  await expectGlassMaterial(page, ".node-card");
   await expectNoHorizontalOverflow(page);
   await expectCompactNodeCards(page);
   await attachScreenshot(page, testInfo, `${testInfo.project.name}-fleet-light`);
@@ -263,32 +211,38 @@ test("node detail renders charts, color keys and mobile controls", async ({ page
   await openDashboard(page);
   await page.locator(".node-card").first().click();
   await expect(page.locator("#node-detail")).toBeVisible();
-  await expect(page.locator("#network-plot .history-chart")).toBeVisible();
-  await expect(page.locator("#traffic-plot .history-chart")).toBeVisible();
+  await expect(page.locator("#network-plot svg")).toBeVisible();
+  await expect(page.locator("#traffic-plot svg")).toBeVisible();
   await expect(page.locator(".detail-probe-card")).toHaveCount(5);
-  await expect(page.locator(".detail-probe-card").filter({ hasText: "TCP 443" })).toHaveAttribute("aria-label", /建连失败/);
+  await expect(page.locator(".detail-probe-card").filter({ hasText: "TCP 443" })).toHaveAttribute(
+    "aria-label",
+    /建连失败/,
+  );
   await expect(page.locator("#counter-section")).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
-  await expectGlassMaterial(page, ".chart-card");
-  await expectCompactSingleEdge(page, "#detail-range-switch", 9);
-  await expectCompactSingleEdge(page, ".detail-probe-card", 8);
 
-  const swatches = await page.locator(".detail-probe-swatch").evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).backgroundColor));
+  // 每个探针卡片的色块与图表曲线颜色一致；同类链路共用一种颜色
+  const swatches = await page
+    .locator(".detail-probe-swatch")
+    .evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).backgroundColor));
+  expect(swatches).toHaveLength(5);
   expect(new Set(swatches).size).toBe(4);
+  const lineColors = await page
+    .locator("#network-plot .line-layer path[stroke]")
+    .evaluateAll((paths) => paths.map((path) => getComputedStyle(path).stroke));
+  expect(new Set(lineColors)).toEqual(new Set(swatches));
 
-  const selected = page.locator(".detail-probe-card").first();
-  await page.keyboard.press("Tab");
-  await selected.focus();
-  const outlineWidth = await selected.evaluate((element) => parseFloat(getComputedStyle(element).outlineWidth));
-  expect(outlineWidth).toBeGreaterThanOrEqual(2);
+  await focusByKeyboard(page, ".detail-probe-card");
+  const focusRing = await page.evaluate(() => getComputedStyle(document.activeElement).boxShadow);
+  expect(focusRing).not.toBe("none");
 
-  if (testInfo.project.name === "mobile-390") {
-    await expect(page.locator(".detail-probe-card").first().locator('span[title="平均延迟"]')).toBeHidden();
-    const rangeButtons = page.locator("#detail-range-switch button");
-    for (let index = 0; index < await rangeButtons.count(); index += 1) {
-      const box = await rangeButtons.nth(index).boundingBox();
-      expect(box.height).toBeGreaterThanOrEqual(40);
-    }
+  // 图表按容器宽度绘制，手机上不会整体缩小
+  const plot = await page.locator("#network-plot svg").boundingBox();
+  expect(plot.height).toBeGreaterThanOrEqual(220);
+
+  if (testInfo.project.use.hasTouch) {
+    await expectTouchTargets(page, "#detail-range-switch button", 40);
+    await expectTouchTargets(page, "[data-probe-action], [data-network-layer], #detail-back", 44);
   }
 
   await attachScreenshot(page, testInfo, `${testInfo.project.name}-detail-dark`);

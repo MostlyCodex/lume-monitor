@@ -61,19 +61,6 @@ test("permanent deletion prunes browser preferences only after all deletion stag
     .poll(() =>
       page.evaluate((key) => JSON.parse(localStorage.getItem(key)), key),
     )
-    .toEqual({
-      brand: "My monitor",
-      nodes: {
-        "pending-node": {
-          label: "Cleanup pending",
-          role: "",
-          region: "",
-          country: "",
-        },
-        "transit-eb": { label: "Keep this", role: "", region: "", country: "" },
-      },
-      order: ["pending-node", "transit-eb"],
-      background: "",
-    });
+    .toEqual({ order: ["pending-node", "transit-eb"] });
   await expect(page.locator("#node-detail")).toHaveCount(0);
 });

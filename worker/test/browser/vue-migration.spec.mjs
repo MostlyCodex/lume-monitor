@@ -97,7 +97,7 @@ test("charts load on demand and release their observers when details close", asy
     window.chartObservers = () =>
       [...observers]
         .flatMap((observer) => [...observer.targets])
-        .filter((target) => target.classList.contains("echarts-host")).length;
+        .filter((target) => target.classList?.contains("history-chart")).length;
   });
   await open(page);
   expect(chunks).toHaveLength(0);
@@ -138,83 +138,90 @@ test("history errors can retry without losing the node or interpreting labels as
   fail = false;
   await page.locator("#refresh-button").click();
   await expect(page.locator("#detail-loading")).toBeHidden();
-  await expect(page.locator("#network-plot .history-chart")).toBeVisible();
+  await expect(page.locator("#network-plot svg")).toBeVisible();
   expect(await page.evaluate(() => window.injected)).toBeUndefined();
 });
 
-test("reordering node drafts retains unsaved edits and persists only on save", async ({ page }) => {
+test("dragging a node card reorders the fleet and persists the order", async ({ page }) => {
   await open(page);
-  await page.locator("#settings-button").click();
-  const row = page.locator('[data-settings-node="transit-eb"]');
-  await row.locator('[data-settings-field="label"]').fill("My second node");
-  await row.locator('[data-settings-field="country"]').fill("jp");
-  await row.locator('[data-settings-move="-1"]').click();
-  await expect(page.locator("[data-settings-node]").first()).toHaveAttribute(
-    "data-settings-node",
-    "transit-eb",
-  );
-  await expect(row.locator('[data-settings-field="label"]')).toHaveValue("My second node");
-  expect(await page.evaluate(() => localStorage.getItem("vpsmon-dashboard-layout-v1"))).toBeNull();
-  await page.locator("#settings-save").click();
+  const cards = page.locator("#node-grid [data-node]");
+  const ids = () => cards.evaluateAll((nodes) => nodes.map((node) => node.dataset.node));
+  const before = await ids();
+  const from = await cards.nth(0).boundingBox(),
+    to = await cards.nth(1).boundingBox();
+  await page.mouse.move(from.x + 40, from.y + 30);
+  await page.mouse.down();
+  // 拖到目标卡片中部，保持接近真实手速
+  for (let step = 1; step <= 20; step++) {
+    await page.mouse.move(
+      from.x + 40 + ((to.x + to.width * 0.6 - from.x - 40) * step) / 20,
+      from.y + 30 + ((to.y + to.height / 2 - from.y - 30) * step) / 20,
+    );
+    await page.waitForTimeout(16);
+  }
+  // 拖动中：浮起的副本挂在 body 上紧跟指针（无过渡），原位置留下占位
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const clone = document.querySelector(".node-card-drag");
+        return {
+          parent: clone?.parentElement?.tagName,
+          transition: clone && getComputedStyle(clone).transitionDuration,
+          placeholders: document.querySelectorAll("#node-grid .node-card-ghost").length,
+        };
+      }),
+    )
+    .toEqual({ parent: "BODY", transition: "0s", placeholders: 1 });
+  await page.mouse.up();
+  const expected = [before[1], before[0], ...before.slice(2)];
+  await expect.poll(ids).toEqual(expected);
+  await expect(page.locator("#node-detail")).toHaveCount(0);
   await page.reload({ waitUntil: "networkidle" });
-  await expect(page.locator(".node-card").first()).toHaveAttribute("data-node", "transit-eb");
-  await expect(page.locator(".node-title strong").first()).toHaveText("My second node");
-  await expect(page.locator(".node-flag").first()).toHaveAttribute("aria-label", "JP");
+  await expect.poll(ids).toEqual(expected);
 });
 
-test("long-range chart labels fit without overlapping in either theme", async ({ page }) => {
-  await page.addInitScript(() => {
-    const prototype = CanvasRenderingContext2D.prototype;
-    const fillText = prototype.fillText,
-      clearRect = prototype.clearRect;
-    prototype.clearRect = function (...args) {
-      this.canvas.dateLabels = [];
-      return clearRect.apply(this, args);
-    };
-    prototype.fillText = function (text, x, y, ...args) {
-      if (/^\d{2}\/\d{2}/.test(String(text))) {
-        const metrics = this.measureText(text);
-        (this.canvas.dateLabels ??= []).push({
-          text,
-          x: this.getTransform().transformPoint({ x, y }).x,
-          y: this.getTransform().transformPoint({ x, y }).y,
-          left: this.getTransform().transformPoint({ x: x - metrics.actualBoundingBoxLeft, y }).x,
-          right: this.getTransform().transformPoint({ x: x + metrics.actualBoundingBoxRight, y }).x,
-        });
-      }
-      return fillText.call(this, text, x, y, ...args);
-    };
-  });
+test("long-range chart labels show real dates and fit without overlapping in either theme", async ({
+  page,
+}) => {
   await open(page);
   await page.locator(".node-card").first().click();
+  const fixedNow = Number(process.env.PREVIEW_NOW) * 1000;
+  const monthOf = (time) =>
+    new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit" })
+      .format(new Date(time))
+      .replace(/[^0-9]/g, "");
   for (const hours of [168, 720]) {
     const response = page.waitForResponse(
       (response) => response.url().includes(`hours=${hours}`) && response.url().includes("node="),
     );
     await page.locator(`[data-hours="${hours}"]`).click();
     await response;
-    await expect(page.locator("#node-detail .history-chart")).toHaveCount(2);
-    await expect
-      .poll(async () =>
-        page
-          .locator("#node-detail .history-chart canvas")
-          .evaluateAll((canvases) => canvases.every((canvas) => canvas.dateLabels?.length > 0)),
-      )
-      .toBe(true);
-    const plots = await page.locator("#node-detail .history-chart canvas").evaluateAll((canvases) =>
-      canvases.map((canvas) => ({
-        width: canvas.width,
-        labels: [
-          ...new Map(
-            canvas.dateLabels.map((label) => [`${label.x}:${label.y}:${label.text}`, label]),
-          ).values(),
-        ].sort((a, b) => a.x - b.x),
-      })),
+    await expect(page.locator("#node-detail .history-chart svg")).toHaveCount(2);
+    const plots = await page.locator("#node-detail .history-chart svg").evaluateAll((svgs) =>
+      svgs.map((svg) => {
+        const frame = svg.getBoundingClientRect();
+        return {
+          left: frame.left,
+          right: frame.right,
+          labels: [...svg.querySelectorAll(".x-axis text")]
+            .map((text) => {
+              const box = text.getBoundingClientRect();
+              return { text: text.textContent.trim(), left: box.left, right: box.right };
+            })
+            .sort((a, b) => a.left - b.left),
+        };
+      }),
     );
+    // 坐标轴日期必须落在请求的时间范围内（曾出现时间戳被多除 1000、显示成 1970 年的回归）
+    const months = new Set();
+    for (let time = fixedNow - (hours + 24) * 3600_000; time <= fixedNow + 86400_000; time += 86400_000)
+      months.add(monthOf(time));
     for (const plot of plots) {
+      expect(plot.labels).toHaveLength(3);
       for (const [index, label] of plot.labels.entries()) {
-        expect(label.left).toBeGreaterThanOrEqual(0);
-        expect(label.right).toBeLessThanOrEqual(plot.width);
+        expect(months).toContain(label.text.slice(0, 2));
+        expect(label.left).toBeGreaterThanOrEqual(plot.left - 1);
+        expect(label.right).toBeLessThanOrEqual(plot.right + 1);
         if (index) expect(label.left - plot.labels[index - 1].right).toBeGreaterThanOrEqual(8);
       }
     }

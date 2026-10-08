@@ -37,19 +37,21 @@ npm run format:frontend    # 统一 Vue / TypeScript / CSS 格式
 
 | 目录 | 职责 |
 | --- | --- |
-| `components/` | Vue 模板、局部交互和图表挂载 |
-| `composables/` | 请求生命周期、缓存、轮询、偏好与设置草稿 |
+| `components/` | Vue 模板、局部交互和 SVG 图表；`ui/` 为 shadcn-vue 基础组件 |
+| `composables/` | 请求生命周期、缓存、轮询、主题与节点排序偏好 |
 | `domain/` | 不依赖页面状态的指标计算、格式化和展示模型 |
-| `services/` | API 与演示数据适配、图片校验和压缩 |
-| `charts/` | 时间序列对齐、ECharts 配置和失败标记 |
-| `styles/` | 主题、通用基础、页面分区和响应式样式；入口固定加载顺序 |
+| `services/` | API 与演示数据适配 |
+| `charts/` | 图表数值校验与 CSS 配色读取 |
+| `styles/` | Tailwind 入口与 shadcn 主题变量（`globals.css`）；样式主要写在组件的 Tailwind 类中 |
 | `types.ts` | 前端使用的公开 API 契约 |
 
-组件不直接请求 API。异步响应须检查所属会话和节点；监听器、计时器及图表实例在所属作用域销毁时清理。设置先编辑草稿，成功写入浏览器存储后才提交。注释说明约束和取舍，不重复代码含义。
+组件不直接请求 API。异步响应须检查所属会话和节点；监听器、计时器、拖拽实例及图表的尺寸监听在所属作用域销毁时清理。注释说明约束和取舍，不重复代码含义。
 
-`worker/public/dashboard/`、`worker/public/demo/` 是构建产物，不提交 Git；修改组件或 `frontend/static/` 中的背景后重新构建。Vue-ECharts 随详情按需加载，仅注册折线图、坐标轴、提示框和失败标记模块，生产包不依赖外部 CDN。组件负责图表更新、缩放监听及销毁；提示内容使用 Vue 模板转义，缺测保留断线。原浏览器设置键和 `/dashboard/?node=...` 链接继续有效。
+界面基于 Tailwind CSS 3 与 shadcn-vue 的组件和主题变量。`tailwind.config.js` 的 `content` 使用 `relative: true`，因为 npm 脚本的工作目录是 `worker/` 而不是 `frontend/`。触屏设备上的控件用自定义的 `coarse:` 变体放大到 44px。
 
-`npm run check` 包括生产构建、前端严格类型检查、格式检查和领域测试；Playwright 验证实际交互、样式、异步竞争与图表清理。新增行为优先通过公开输入输出验证，不读取源码字符串断言实现方式。
+`worker/public/dashboard/`、`worker/public/demo/` 是构建产物，不提交 Git；修改组件后重新构建。SVG 图表随详情按需加载，生产包不依赖外部 CDN；图表按容器宽度绘制，提示内容使用 Vue 模板转义，缺测保留断线。节点排序沿用原浏览器设置键（旧版的显示名、背景等字段读取时会被忽略），`/dashboard/?node=...` 链接继续有效。
+
+`npm run check` 包括生产构建、前端严格类型检查、格式检查和领域测试；Playwright 在桌面、平板和手机四种视口下验证实际交互、样式约定、拖拽排序、异步竞争与图表清理。新增行为优先通过公开输入输出验证，不读取源码字符串断言实现方式。
 
 ## 管理状态
 

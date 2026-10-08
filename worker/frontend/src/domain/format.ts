@@ -2,29 +2,9 @@ export function clamp(value: unknown, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, Number(value) || 0));
 }
 
-export function formatPercent(value: unknown, digits = 1) {
-  const numeric = clamp(value, 0, 100);
-  return `${numeric.toFixed(digits)}%`;
-}
-
 export function formatLoss(value: unknown) {
   const numeric = clamp(value, 0, 100);
   return `${Number.isInteger(numeric) ? numeric.toFixed(0) : numeric.toFixed(1)}%`;
-}
-
-export function formatAge(seconds: unknown) {
-  const value = Math.max(0, Math.round(Number(seconds) || 0));
-  if (value < 60) return `${value} 秒前`;
-  if (value < 3600) return `${Math.floor(value / 60)} 分钟前`;
-  if (value < 86400) return `${Math.floor(value / 3600)} 小时前`;
-  return `${Math.floor(value / 86400)} 天前`;
-}
-
-export function formatInterval(seconds: unknown) {
-  const value = Math.max(1, Math.round(Number(seconds) || 0));
-  if (value % 3600 === 0) return `${value / 3600} 小时`;
-  if (value % 60 === 0) return `${value / 60} 分钟`;
-  return `${value} 秒`;
 }
 
 export function formatUptime(seconds: unknown) {

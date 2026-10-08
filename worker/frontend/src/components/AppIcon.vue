@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ name: "refresh" | "theme" | "settings" | "search" }>();
+defineProps<{ name: "refresh" | "theme" | "search" }>();
 </script>
 <template>
   <svg v-if="name === 'refresh'" viewBox="0 0 24 24" aria-hidden="true">
@@ -9,14 +9,22 @@ defineProps<{ name: "refresh" | "theme" | "settings" | "search" }>();
     <circle cx="12" cy="12" r="8.5" />
     <path d="M12 3.5a8.5 8.5 0 0 0 0 17z" />
   </svg>
-  <svg v-else-if="name === 'settings'" viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="12" cy="12" r="3" />
-    <path
-      d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z"
-    />
-  </svg>
   <svg v-else-if="name === 'search'" viewBox="0 0 24 24" aria-hidden="true" fill="none">
     <circle cx="11" cy="11" r="6.5" />
     <path d="m16 16 4 4" />
   </svg>
 </template>
+
+<style scoped>
+/* :where() 保持零特异性，调用方的 h-4 w-4 等 Tailwind 类可以覆盖尺寸 */
+:where(svg) {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+</style>

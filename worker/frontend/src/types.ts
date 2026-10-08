@@ -129,10 +129,7 @@ export interface HistorySnapshot {
   annotations: HistoryEvent[];
 }
 export interface DashboardLayout {
-  brand: string;
   order: string[];
-  nodes: Record<string, NodeDisplay>;
-  background: string;
 }
 export interface EnergyBucket {
   empty: boolean;
