@@ -6,7 +6,7 @@ defineProps<{ brand: string; tagline: string }>();
 
 <template>
   <div class="brand-lockup">
-    <img class="lume-mark" :src="markUrl" width="36" height="36" alt="" aria-hidden="true" />
+    <img class="lume-mark" :src="markUrl" width="28" height="28" alt="" aria-hidden="true" />
     <div>
       <strong data-dashboard-brand>
         <!-- Outlined lettering keeps the chosen wordmark consistent without loading a font.
@@ -40,29 +40,29 @@ defineProps<{ brand: string; tagline: string }>();
 .brand-lockup {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 .lume-mark {
   display: block;
   flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
 }
 .lume-wordmark {
   display: block;
-  width: 100px;
-  height: 27px;
+  width: 78px;
+  height: 21px;
   fill: currentColor;
 }
 .brand-lockup > div {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
 }
 .brand-lockup strong {
   overflow: hidden;
-  font-size: 22px;
+  font-size: 17px;
   line-height: 1.2;
   letter-spacing: -0.03em;
   text-overflow: ellipsis;

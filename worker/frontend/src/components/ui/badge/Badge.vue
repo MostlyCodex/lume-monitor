@@ -17,32 +17,40 @@ const props = withDefaults(
   { variant: "default" },
 );
 
+// 对应 shadcn v4 badge.tsx；状态类变体统一为描边胶囊 + 状态色圆点
 const badgeVariants = {
-  default: "border-transparent bg-primary text-primary-foreground shadow hover:bg-primary/80",
-  secondary: "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
-  destructive:
-    "border-transparent bg-destructive text-destructive-foreground shadow hover:bg-destructive/80",
-  outline: "text-foreground border border-border",
-  healthy:
-    "border-emerald-500/25 bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 font-medium shadow-none",
-  degraded:
-    "border-amber-500/25 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium shadow-none",
-  critical:
-    "border-rose-500/25 bg-rose-500/10 text-rose-600 dark:text-rose-400 font-medium shadow-none",
-  stale:
-    "border-zinc-500/25 bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 font-medium shadow-none",
+  default: "bg-primary text-primary-foreground",
+  secondary: "bg-secondary text-secondary-foreground",
+  destructive: "bg-destructive text-white",
+  outline: "border-border text-foreground",
+  healthy: "border-border text-foreground",
+  degraded: "border-border text-foreground",
+  critical: "border-border text-foreground",
+  stale: "border-border text-muted-foreground",
+};
+const dots: Partial<Record<BadgeVariant, string>> = {
+  healthy: "bg-status-ok",
+  degraded: "bg-status-warn",
+  critical: "bg-status-bad",
+  stale: "bg-muted-foreground",
 };
 
 const classes = computed(() =>
   cn(
-    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+    "inline-flex w-fit shrink-0 items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-full border border-transparent px-2 py-0.5 text-xs font-medium",
     badgeVariants[props.variant],
     props.class,
   ),
 );
 </script>
 <template>
-  <div :class="classes">
+  <span :class="classes">
+    <span
+      v-if="dots[variant]"
+      class="size-1.5 shrink-0 rounded-full"
+      :class="dots[variant]"
+      aria-hidden="true"
+    ></span>
     <slot />
-  </div>
+  </span>
 </template>

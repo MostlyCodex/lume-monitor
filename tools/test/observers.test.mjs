@@ -8,7 +8,7 @@ import { normalizeNodeSpec, validateNodeId, validateSshTarget } from "../lumectl
 import { InputError, PromptCancelled, PromptClosed, choiceValue, displayValue, inputValue } from "../prompts.mjs";
 import {
   createCarrierProbes, editObserverEntries, externalProbes, mergeObserverEntries,
-  printObserverSummary, probeTarget, promptNetworkProbes, promptServices, selectedIndices,
+  printObserverSummary, probeTarget, promptNetworkProbes, promptNodeDisplay, promptServices, selectedIndices,
 } from "../observers.mjs";
 
 const carriers = createCarrierProbes({ region: "测试地区", targets: { ct: "192.0.2.1", cu: "198.51.100.1", cm: "203.0.113.1" } });
@@ -171,7 +171,7 @@ function configurationHarness({pending=false, configured=false, failDeploy=false
   const writes=[],deployments=[],lines=[];
   const context=vm.createContext({
     Object,JSON,Date,join,privateDir,statePath,validateNodeId,InputError,PromptCancelled,PromptClosed,inputValue,choiceValue,displayValue,
-    editObserverEntries,externalProbes,printObserverSummary,promptNetworkProbes,promptServices,promptAccounting,printAccountingSummary,readNetworkInventory:async()=>({interfaces:["eth0","eth1"],defaults:["eth0"]}),
+    editObserverEntries,externalProbes,printObserverSummary,promptNetworkProbes,promptNodeDisplay,promptServices,promptAccounting,printAccountingSummary,readNetworkInventory:async()=>({interfaces:["eth0","eth1"],defaults:["eth0"]}),
     line:(message)=>lines.push(message),fail:(message)=>{throw Error(message);},assertPlainObject:()=>{},
     loadState:async()=>structuredClone(state),exists:async(path)=>files.has(path),
     lstat:async()=>({isFile:()=>true,isSymbolicLink:()=>false}),
@@ -216,7 +216,7 @@ test("new-node wizard collects probes, previews them and installs from the same 
 });
 
 const reuseSteps=(save=true,deploy=true)=>[
-  ["yes",false,/systemd/],["text","2",/网络探针/],["text","2",/方式/],["text","1",/节点编号/],
+  ["yes",false,/显示名/],["yes",false,/systemd/],["text","2",/网络探针/],["text","2",/方式/],["text","1",/节点编号/],
   ["text","",/哪些探针/],
   ["yes",false,/流量/],["yes",save,/保存/],...(save?[["yes",deploy,/部署/]]:[]),
 ];
@@ -245,7 +245,7 @@ test("declining the configuration preview performs no writes or deployments",asy
 
 test("pending configuration can be deployed from the wizard even when nothing changes",async()=>{
   const h=configurationHarness({pending:true,configured:true});
-  await h.run(scriptedPrompt([["yes",false],["text","1"],["yes",false,/流量/],["yes",true,/部署/]]));
+  await h.run(scriptedPrompt([["yes",false,/显示名/],["yes",false],["text","1"],["yes",false,/流量/],["yes",true,/部署/]]));
   assert.deepEqual(h.writes,[]);
   assert.deepEqual(h.deployments,["beta"]);
 });
@@ -295,15 +295,46 @@ test("cancelling or skipping a replacement retains existing probes; explicit del
 
 test("cancelling a node configuration before preview saves nothing", async () => {
   const h = configurationHarness({});
-  await assert.rejects(h.run(scriptedPrompt([["yes",false],["text","/cancel"]])), PromptCancelled);
+  await assert.rejects(h.run(scriptedPrompt([["yes",false,/显示名/],["yes",false],["text","/cancel"]])), PromptCancelled);
   assert.deepEqual(h.writes, []);
   assert.deepEqual(h.deployments, []);
 });
 
 test("node configuration saves selected interfaces and an optional cycle without changing existing services or probes",async()=>{
  const h=configurationHarness({configured:true});
- const prompt=scriptedPrompt([["yes",false,/systemd/],["text","1",/网络探针/],["yes",true,/流量/],["text","2",/统计方式/],["text","2",/网卡编号/],["yes",true,/周期流量/],["text","15",/重置日/],["text","2",/时区/],["yes",true,/保存/],["yes",false,/部署/]]);
+ const prompt=scriptedPrompt([["yes",false,/显示名/],["yes",false,/systemd/],["text","1",/网络探针/],["yes",true,/流量/],["text","2",/统计方式/],["text","2",/网卡编号/],["yes",true,/周期流量/],["text","15",/重置日/],["text","2",/时区/],["yes",true,/保存/],["yes",false,/部署/]]);
  await h.run(prompt);const config=JSON.parse(h.files.get(h.configPath));
  assert.deepEqual(config.network_interfaces,["eth1"]);assert.deepEqual(config.traffic_cycle,{enabled:true,reset_day:15,time_zone:"Asia/Shanghai"});
  assert.deepEqual(config.services,[{name:"nginx.service"}]);assert.deepEqual(config.probes,carriers);assert.equal(config.secret,"beta-secret");assert.equal(h.state.nodes.beta.pendingApply,true);prompt.done();
+});
+
+test("node configuration can rename the panel display, role and region without touching secrets or probes", async () => {
+  const h = configurationHarness({ configured: true });
+  const prompt = scriptedPrompt([
+    ["yes", true, /显示名/],
+    ["text", "x".repeat(81), /面板显示名/], ["text", "香港 01", /面板显示名/],
+    ["text", "", /用途/], ["text", "香港", /国家/],
+    ["yes", false, /systemd/], ["text", "1", /网络探针/], ["yes", false, /流量/],
+    ["yes", true, /保存/], ["yes", false, /部署/],
+  ]);
+  await h.run(prompt);
+  const config = JSON.parse(h.files.get(h.configPath));
+  assert.deepEqual(
+    { name: config.node.display_name, role: config.node.role, region: config.node.region },
+    { name: "香港 01", role: "VPS", region: "香港" },
+  );
+  assert.equal(config.secret, "beta-secret");
+  assert.deepEqual(config.probes, carriers);
+  assert.ok(h.lines.some((line) => line.includes("输入无效")));
+  assert.ok(h.lines.some((line) => line.includes("面板显示：香港 01 · VPS · 香港")));
+  assert.equal(h.state.nodes.beta.pendingApply, true);
+  prompt.done();
+});
+
+test("declining the display prompt leaves the node display untouched", async () => {
+  const node = { id: "beta", display_name: "Beta", role: "中转", region: "东京" };
+  const prompt = scriptedPrompt([["yes", false, /显示名/]]);
+  assert.equal(await promptNodeDisplay(prompt, node, { line: () => {} }), false);
+  assert.deepEqual(node, { id: "beta", display_name: "Beta", role: "中转", region: "东京" });
+  prompt.done();
 });

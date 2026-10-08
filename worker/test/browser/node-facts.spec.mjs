@@ -47,7 +47,7 @@ test("node facts show hardware capacity in a compact grid in both themes", async
   await expect(factValue(page, "总内存")).toHaveText("1.00 GiB");
   await expect(factValue(page, "总磁盘")).toHaveText("20.00 GiB");
   await expect(page.locator("#detail-facts dt")).toHaveText([
-    "操作系统", "系统内核", "CPU 规格", "总内存", "总磁盘", "主机名称", "Agent 版本", "采集/发送错误", "统计网卡",
+    "操作系统", "系统内核", "CPU 规格", "总内存", "总磁盘", "主机名称", "统计网卡",
   ]);
   for (const theme of ["dark", "light"]) {
     if (theme === "light") await page.locator("#theme-button").click();

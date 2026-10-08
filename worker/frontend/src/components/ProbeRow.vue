@@ -57,38 +57,58 @@ function bucketTitle(bucket: EnergyBucket, kind: MetricKind) {
 
 const lossTone = computed(() => {
   const loss = metrics.value[1];
-  if (!loss || loss.raw == null || !props.probe.success) return "text-rose-500";
-  return loss.raw > 0 ? "text-amber-500" : "text-muted-foreground";
+  if (!loss || loss.raw == null || !props.probe.success) return "text-status-bad";
+  return loss.raw > 0 ? "text-status-warn" : "text-foreground";
 });
 
 function cellBg(bucket: EnergyBucket) {
   if (bucket.empty) return "bg-muted";
-  if (bucket.severity === "healthy") return "bg-emerald-500";
-  if (bucket.severity === "warning") return "bg-amber-400";
-  return "bg-rose-500";
+  if (bucket.severity === "healthy") return "bg-status-ok";
+  if (bucket.severity === "warning") return "bg-status-warn";
+  return "bg-status-bad";
 }
 </script>
 
 <template>
-  <div class="probe-row grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-1.5 text-xs">
-    <span class="truncate font-medium text-foreground" :title="displayProbeLabel(probe)">
+  <!-- 名称列最宽 4.5rem（手机）/ 5rem（电脑），空间不足时只压缩名称，两条格栅宽度固定，三列两端对齐、间距均分。
+       不依赖内容宽度或 subgrid，Safari 与 Chrome 排版一致。上行为数值（标在各自格栅右上方），
+       下行为名称与两条格栅 -->
+  <div
+    class="probe-row grid grid-cols-[minmax(0,4.5rem)_auto_auto] items-center justify-between gap-y-1.5 text-xs sm:grid-cols-[minmax(0,5rem)_auto_auto]"
+  >
+    <span
+      class="col-start-1 row-start-2 min-w-0 truncate text-sm leading-none"
+      :title="displayProbeLabel(probe)"
+    >
       {{ displayProbeLabel(probe) }}
     </span>
+    <span
+      v-for="metric in metrics"
+      :key="`value-${metric.kind}`"
+      class="row-start-1 justify-self-end text-xs font-medium leading-none tabular-nums"
+      :class="
+        metric.kind === 'loss' ? ['col-start-3', lossTone] : ['col-start-2', 'text-foreground']
+      "
+    >
+      {{ metric.value }}
+    </span>
 
-    <!-- 24H 状态格栅：格子固定尺寸，不随窗口宽度缩放 -->
-    <div class="flex shrink-0 gap-[2px]">
+    <!-- 格子固定尺寸，不随窗口宽度缩放 -->
+    <div
+      v-for="metric in metrics"
+      :key="metric.kind"
+      class="row-start-2 flex gap-[2px]"
+      :class="metric.kind === 'loss' ? 'col-start-3' : 'col-start-2'"
+      :data-metric="metric.kind"
+      :aria-label="`24 小时${metric.label}`"
+    >
       <div
-        v-for="(bucket, idx) in metrics[0]?.buckets"
+        v-for="(bucket, idx) in metric.buckets"
         :key="bucket.start || idx"
-        class="energy-cell h-3.5 w-[5px] rounded-[1.5px]"
+        class="energy-cell h-3.5 w-1 shrink-0 rounded-[1px]"
         :class="cellBg(bucket)"
-        :title="bucketTitle(bucket, 'latency')"
+        :title="bucketTitle(bucket, metric.kind)"
       ></div>
-    </div>
-
-    <div class="flex items-center gap-2 font-mono text-[11px] tabular-nums">
-      <span class="w-12 text-right text-foreground">{{ metrics[0]?.value }}</span>
-      <span class="w-9 text-right" :class="lossTone">{{ metrics[1]?.value }}</span>
     </div>
   </div>
 </template>

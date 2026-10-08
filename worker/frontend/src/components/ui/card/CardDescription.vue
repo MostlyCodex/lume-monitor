@@ -4,7 +4,7 @@ import { cn } from "../../../lib/utils";
 const props = defineProps<{ class?: HTMLAttributes["class"] }>();
 </script>
 <template>
-  <div :class="cn('grid auto-rows-min items-start gap-1.5 px-4 sm:px-6', props.class)">
+  <p :class="cn('text-sm text-muted-foreground', props.class)">
     <slot />
-  </div>
+  </p>
 </template>

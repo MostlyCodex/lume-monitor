@@ -2,28 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * shadcn/ui v4 "neutral" 主题（ui.shadcn.com 当前配色），OKLCH 已换算为 HSL 三元组。
+ * --border / --input 在深色模式下带透明度，因此不要对它们使用 /xx 透明度修饰。
+ */
 @layer base {
   :root {
+    --radius: 0.625rem;
     --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    --foreground: 0 0% 3.9%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --card-foreground: 0 0% 3.9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
     --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 357 100% 45.3%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
-    --radius: 0.75rem;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 63.9%;
+
+    /* 状态色：只用于正常 / 注意 / 异常，饱和度低于 Tailwind 默认色 */
+    --status-ok: 152 55% 36%;
+    --status-warn: 35 85% 44%;
+    --status-bad: 0 70% 50%;
 
     /* 图表探针配色（hex，供 charts/theme.ts 的 cssColor 直接读取） */
     --probe-telecom: #1769d2;
@@ -36,25 +45,29 @@
 
   .dark,
   [data-theme="dark"] {
-    --background: 240 10% 3.9%;
+    --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;
-    --card: 240 10% 5.5%;
+    --card: 0 0% 9%;
     --card-foreground: 0 0% 98%;
-    --popover: 240 10% 5.5%;
+    --popover: 0 0% 9%;
     --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
+    --primary: 0 0% 89.8%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
     --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 25.1%;
     --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 359 100% 69.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    --border: 0 0% 100% / 0.1;
+    --input: 0 0% 100% / 0.15;
+    --ring: 0 0% 45.1%;
+
+    --status-ok: 152 45% 48%;
+    --status-warn: 40 80% 56%;
+    --status-bad: 0 72% 64%;
 
     --probe-telecom: #3f8cff;
     --probe-unicom: #f26f8f;
@@ -72,25 +85,7 @@
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
+    /* 去掉 iOS Safari 点按时的灰色高亮，按钮状态只由自身样式表达 */
+    -webkit-tap-highlight-color: transparent;
   }
-}
-
-/* shadcn 标志性微弱点阵背景与顶部微光 */
-.bg-dot-pattern {
-  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1.2px, transparent 1.2px);
-  background-size: 24px 24px;
-}
-:root:not(.dark) .bg-dot-pattern {
-  background-image: radial-gradient(rgba(0, 0, 0, 0.05) 1.2px, transparent 1.2px);
-}
-
-.bg-radial-ambient {
-  background: radial-gradient(
-    circle 800px at 50% -120px,
-    rgba(255, 255, 255, 0.035),
-    transparent 75%
-  );
-}
-:root:not(.dark) .bg-radial-ambient {
-  background: radial-gradient(circle 800px at 50% -120px, rgba(0, 0, 0, 0.025), transparent 75%);
 }

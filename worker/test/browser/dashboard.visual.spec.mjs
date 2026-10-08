@@ -29,7 +29,9 @@ test("public demo works without authentication or telemetry requests", async ({ 
   await expect(page.locator("#demo-notice")).toContainText("虚构数据");
   await page.locator('.node-card[data-node="transit-la"]').click();
   await expect(page.locator("#node-detail")).toBeVisible();
-  await expect(page.locator(".detail-service")).toContainText([/nftables\s*运行正常/]);
+  // 服务只显示名称与状态色圆点，状态文字保留在 aria-label / title 中
+  await expect(page.locator(".detail-service")).toHaveText(["nftables"]);
+  await expect(page.locator(".detail-service")).toHaveAttribute("aria-label", /运行正常/);
   await expect(page.locator("#network-plot svg")).toBeVisible();
   await page.locator('#detail-range-switch button[data-hours="168"]').click();
   await expect(page.locator("#network-plot svg")).toBeVisible();
@@ -81,12 +83,14 @@ async function expectNoHorizontalOverflow(page) {
 }
 
 // 卡片是一个整体：没有内嵌面板、国旗、页脚；四个区块以分割线隔开；
-// 网络质量每行一条 18 格的 24 小时格栅，格子尺寸固定、不随视口缩放。
+// 网络质量每个探测点两条 18 格的 24 小时格栅（延迟、丢包率），格子尺寸固定、不随视口缩放。
 async function expectCompactNodeCards(page) {
   const firstCard = page.locator(".node-card").first();
   await expect(firstCard.locator(".node-network-row")).toHaveCount(2);
   await expect(firstCard.locator(".probe-row")).toHaveCount(4);
-  await expect(firstCard.locator(".energy-cell")).toHaveCount(4 * 18);
+  // 每个探测点两条格栅：延迟与丢包率
+  await expect(firstCard.locator('.probe-row [data-metric="latency"] .energy-cell')).toHaveCount(4 * 18);
+  await expect(firstCard.locator('.probe-row [data-metric="loss"] .energy-cell')).toHaveCount(4 * 18);
   const layout = await page.locator(".node-card").evaluateAll((cards) =>
     cards.map((card) => {
       const cardRect = card.getBoundingClientRect();
@@ -127,7 +131,7 @@ async function expectCompactNodeCards(page) {
     expect(card.nestedPanels).toBe(0);
     expect(card.graphics).toBe(0);
     expect(card.footerText).toBe(false);
-    if (card.cellSizes.length) expect(card.cellSizes).toEqual(["5x14"]);
+    if (card.cellSizes.length) expect(card.cellSizes).toEqual(["4x14"]);
     expect(card.probeText).not.toMatch(/目标|24H/);
   }
 }
@@ -144,16 +148,6 @@ async function expectSmallPhoneAndLandscapeLayout(page) {
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(280);
-}
-
-async function expectTouchTargets(page, selector, minimum) {
-  const controls = page.locator(selector);
-  const count = await controls.count();
-  expect(count).toBeGreaterThan(0);
-  for (let index = 0; index < count; index += 1) {
-    const box = await controls.nth(index).boundingBox();
-    expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(minimum);
-  }
 }
 
 async function focusByKeyboard(page, selector) {
@@ -193,8 +187,6 @@ test("fleet page keeps its visual and responsive contract", async ({ page }, tes
   await focusByKeyboard(page, ".node-card");
   const focusRing = await page.evaluate(() => getComputedStyle(document.activeElement).boxShadow);
   expect(focusRing).not.toBe("none");
-
-  if (testInfo.project.use.hasTouch) await expectTouchTargets(page, "#refresh-button, #theme-button", 44);
 
   if (testInfo.project.name === "mobile-390") await expectSmallPhoneAndLandscapeLayout(page);
 
@@ -236,14 +228,84 @@ test("node detail renders charts, color keys and mobile controls", async ({ page
   const focusRing = await page.evaluate(() => getComputedStyle(document.activeElement).boxShadow);
   expect(focusRing).not.toBe("none");
 
-  // 图表按容器宽度绘制，手机上不会整体缩小
+  // 详情顶部卡片不显示国旗，保持紧凑
+  await expect(page.locator("#detail-hero svg, #detail-hero img")).toHaveCount(0);
+  const narrow = page.viewportSize().width < 640;
+  if (narrow) {
+    const hero = await page.locator("#detail-hero").boundingBox();
+    expect(hero.height).toBeLessThan(200);
+    // 手机上探测点两列排列，5 个探测点不超过 3 行
+    const probeRows = await page
+      .locator(".detail-probe-card")
+      .evaluateAll((cards) => new Set(cards.map((card) => Math.round(card.getBoundingClientRect().top))).size);
+    expect(probeRows).toBeLessThanOrEqual(3);
+  }
+
+  // 图表按容器宽度绘制，手机上不会整体缩小；纵轴刻度只写数字、不带单位
   const plot = await page.locator("#network-plot svg").boundingBox();
   expect(plot.height).toBeGreaterThanOrEqual(220);
+  for (const id of ["#network-plot", "#traffic-plot"]) {
+    const axis = await page.locator(`${id} svg`).evaluate((svg) => {
+      const frame = svg.getBoundingClientRect();
+      const labels = [...svg.querySelectorAll("text")].filter((text) => !text.closest(".x-axis"));
+      return {
+        clipped: labels.some((text) => text.getBoundingClientRect().left < frame.left - 0.5),
+        axisWidth: Math.max(...labels.map((text) => text.getBoundingClientRect().right)) - frame.left,
+        numericOnly: labels.every((text) => /^[\d.]+$/.test(text.textContent.trim())),
+      };
+    });
+    expect(axis.clipped).toBe(false);
+    expect(axis.numericOnly).toBe(true);
+    if (narrow) expect(axis.axisWidth).toBeLessThanOrEqual(48);
+  }
 
   if (testInfo.project.use.hasTouch) {
-    await expectTouchTargets(page, "#detail-range-switch button", 40);
-    await expectTouchTargets(page, "[data-probe-action], [data-network-layer], #detail-back", 44);
+    // 点按图表出现提示，点按图表外部即可收起
+    await page.locator("#network-plot").scrollIntoViewIfNeeded();
+    const host = await page.locator("#network-plot").boundingBox();
+    await page.touchscreen.tap(host.x + host.width / 2, host.y + 80);
+    await expect(page.locator("#network-plot .plot-tooltip")).toBeVisible();
+    await page.touchscreen.tap(5, 5);
+    await expect(page.locator("#network-plot .plot-tooltip")).toHaveCount(0);
   }
 
   await attachScreenshot(page, testInfo, `${testInfo.project.name}-detail-dark`);
+});
+
+test("detail toggles show their state immediately and both chart layers can be hidden", async ({ page }, testInfo) => {
+  await openDashboard(page);
+  await page.locator(".node-card").first().click();
+  // 点击后指针仍停在按钮上（触屏上悬停状态会一直保留），状态也必须立即正确显示
+  const press = (locator) => (testInfo.project.use.hasTouch ? locator.tap() : locator.click());
+
+  const chip = page.locator(".detail-probe-card").first();
+  await press(chip);
+  await expect(chip).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(() => chip.evaluate((element) => Number(getComputedStyle(element).opacity))).toBeLessThan(0.7);
+  // 探测点和图层按钮都没有外框
+  for (const selector of [".detail-probe-card", "[data-network-layer]"])
+    expect(
+      await page.locator(selector).evaluateAll((elements) =>
+        elements.filter((element) => parseFloat(getComputedStyle(element).borderTopWidth) > 0).length,
+      ),
+    ).toBe(0);
+
+  const toolbar = await page.locator("#network-layer-switch").boundingBox();
+  const content = await page.locator("#detail-probe-summary").boundingBox();
+  // 图层按钮靠左，与上方探测点左边缘对齐
+  expect(Math.abs(toolbar.x - content.x)).toBeLessThanOrEqual(1);
+
+  for (const layer of ["loss", "latency"]) {
+    const button = page.locator(`[data-network-layer="${layer}"]`);
+    await press(button);
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+    await expect
+      .poll(() => button.evaluate((element) => getComputedStyle(element).backgroundColor))
+      .toBe("rgba(0, 0, 0, 0)");
+  }
+  await expect(page.locator("#network-empty")).toHaveText("未选择要显示的曲线或事件");
+  await press(page.locator('[data-network-layer="loss"]'));
+  await expect(page.locator("#network-plot svg")).toBeVisible();
+  await expect(page.locator("#network-plot .loss-layer")).toHaveCount(1);
+  await expect(page.locator("#network-plot .line-layer")).toHaveCount(0);
 });

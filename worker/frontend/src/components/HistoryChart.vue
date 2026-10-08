@@ -28,22 +28,32 @@ const showLoss = computed(() => props.kind === "network" && props.layers.include
 const root = ref<HTMLElement | null>(null);
 const width = ref(800);
 const height = 240;
-const padding = { top: 16, right: 16, bottom: 28, left: 64 };
 const LOSS_BAND = 36;
+// 窄屏（手机）下收窄右侧留白
+const compact = computed(() => width.value < 640);
 let resizeObserver: ResizeObserver | undefined;
+// 触屏点按图表以外的地方时收起提示
+function dismissOutside(event: PointerEvent) {
+  if (root.value && !root.value.contains(event.target as Node)) hoveredX.value = null;
+}
 onMounted(() => {
+  document.addEventListener("pointerdown", dismissOutside, true);
   if (!root.value) return;
   resizeObserver = new ResizeObserver(([entry]) => {
     if (entry.contentRect.width > 0) width.value = Math.round(entry.contentRect.width);
   });
   resizeObserver.observe(root.value);
 });
-onBeforeUnmount(() => resizeObserver?.disconnect());
+onBeforeUnmount(() => {
+  document.removeEventListener("pointerdown", dismissOutside, true);
+  resizeObserver?.disconnect();
+});
 
 // 时间戳单位为秒
 const bounds = computed(() => {
   let minX = Infinity,
     maxX = -Infinity,
+    minY = Infinity,
     maxY = -Infinity;
   for (const s of usable.value) {
     for (const p of [...s.points, ...(s.lossPoints ?? [])]) {
@@ -51,20 +61,61 @@ const bounds = computed(() => {
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;
     }
-    for (const p of s.points) if (finite(p.y) && p.y > maxY) maxY = p.y;
+    for (const p of s.points) {
+      if (!finite(p.y)) continue;
+      if (p.y > maxY) maxY = p.y;
+      if (p.y < minY) minY = p.y;
+    }
   }
   if (!isFinite(minX) || !isFinite(maxX) || minX === maxX) {
     maxX = Date.now() / 1000;
     minX = maxX - props.hours * 3600;
   }
-  if (!isFinite(maxY) || maxY <= 0) maxY = 10;
-  return { minX, maxX, minY: 0, maxY: maxY * 1.15 };
+  // 纵轴按数据范围自适应（上下各留 15%），不强制从 0 开始，避免数值接近的曲线挤成一团
+  if (!isFinite(maxY)) return { minX, maxX, minY: 0, maxY: 10 };
+  const span = maxY - minY || Math.max(1, maxY * 0.1);
+  return {
+    minX,
+    maxX,
+    minY: Math.max(0, minY - span * 0.15),
+    maxY: maxY + span * 0.15,
+  };
+});
+
+// 纵轴刻度只写数字（不带单位）；速率按最大值换算为 B/KB/MB… 的数值，带单位的完整数值见悬停提示
+const axisScale = computed(() => {
+  if (props.kind === "network") return 1;
+  let index = 0;
+  while (bounds.value.maxY / 1024 ** index >= 1024 && index < 4) index += 1;
+  return 1024 ** index;
+});
+function tickLabel(val: number) {
+  const scaled = val / axisScale.value;
+  // 小数位按相邻刻度间距决定：刻度贴得很近时多保留小数，避免出现重复的刻度值
+  const step = (bounds.value.maxY - bounds.value.minY) / 3 / axisScale.value;
+  const digits = step >= 10 ? 0 : step >= 1 ? (scaled < 10 ? 1 : 0) : step >= 0.1 ? 1 : 2;
+  return scaled.toFixed(digits);
+}
+const tickValues = computed(() => {
+  const { minY, maxY } = bounds.value;
+  return [0, 1, 2, 3].map((step) => minY + ((maxY - minY) * step) / 3);
+});
+const padding = computed(() => {
+  const longest = Math.max(...tickValues.value.map((val) => tickLabel(val).length));
+  // 12px Geist 数字约 7.2px 一个字符（tabular-nums）；纵轴宽度随最长刻度变化
+  return {
+    top: 16,
+    right: compact.value ? 8 : 16,
+    bottom: 28,
+    left: Math.max(24, Math.ceil(longest * 7.2) + 8),
+  };
 });
 
 function getX(val: number) {
   const { minX, maxX } = bounds.value;
   return (
-    padding.left + ((val - minX) / (maxX - minX)) * (width.value - padding.left - padding.right)
+    padding.value.left +
+    ((val - minX) / (maxX - minX)) * (width.value - padding.value.left - padding.value.right)
   );
 }
 
@@ -72,8 +123,8 @@ function getY(val: number) {
   const { minY, maxY } = bounds.value;
   return (
     height -
-    padding.bottom -
-    ((val - minY) / (maxY - minY)) * (height - padding.top - padding.bottom)
+    padding.value.bottom -
+    ((val - minY) / (maxY - minY)) * (height - padding.value.top - padding.value.bottom)
   );
 }
 
@@ -96,7 +147,7 @@ function generateSmoothPath(points: ChartPoint[]): { linePath: string; areaPath:
     line += ` C ${mx} ${y0}, ${mx} ${y1}, ${x1} ${y1}`;
   }
 
-  const baseLineY = height - padding.bottom;
+  const baseLineY = height - padding.value.bottom;
   const area = `${line} L ${getX(valid[valid.length - 1].x)} ${baseLineY} L ${getX(valid[0].x)} ${baseLineY} Z`;
   return { linePath: line, areaPath: area };
 }
@@ -112,13 +163,9 @@ const renderedSeries = computed(() =>
   })),
 );
 
-const yTicks = computed(() => {
-  const { maxY } = bounds.value;
-  return [0, maxY * 0.33, maxY * 0.66, maxY].map((val) => ({
-    y: getY(val),
-    label: props.kind === "network" ? `${Math.round(val)} ms` : formatRate(val),
-  }));
-});
+const yTicks = computed(() =>
+  tickValues.value.map((val) => ({ y: getY(val), label: tickLabel(val) })),
+);
 
 const xTicks = computed(() => {
   const { minX, maxX } = bounds.value;
@@ -137,11 +184,10 @@ async function onPointer(event: PointerEvent) {
   const svg = event.currentTarget as SVGSVGElement;
   const rect = svg.getBoundingClientRect();
   const relX = ((event.clientX - rect.left) / rect.width) * width.value;
-  const clampedX = Math.max(padding.left, Math.min(width.value - padding.right, relX));
+  const { left, right } = padding.value;
+  const clampedX = Math.max(left, Math.min(width.value - right, relX));
   const { minX, maxX } = bounds.value;
-  hoveredX.value =
-    minX +
-    ((clampedX - padding.left) / (width.value - padding.left - padding.right)) * (maxX - minX);
+  hoveredX.value = minX + ((clampedX - left) / (width.value - left - right)) * (maxX - minX);
   const x = event.clientX - rect.left,
     y = event.clientY - rect.top;
   await nextTick();
@@ -151,9 +197,9 @@ async function onPointer(event: PointerEvent) {
   if (!box || !host) return;
   const w = box.offsetWidth,
     h = box.offsetHeight;
-  const left = x + 14 + w > host.clientWidth ? x - 14 - w : x + 14;
+  const preferred = x + 14 + w > host.clientWidth ? x - 14 - w : x + 14;
   tooltipPos.value = {
-    left: Math.max(4, Math.min(host.clientWidth - w - 4, left)),
+    left: Math.max(4, Math.min(host.clientWidth - w - 4, preferred)),
     top: Math.max(4, Math.min(host.clientHeight - h - 4, y - h / 2)),
   };
 }
@@ -197,7 +243,7 @@ const activeTooltipData = computed(() => {
 
 <template>
   <div :id="id" ref="root" class="history-chart relative w-full overflow-hidden select-none">
-    <div v-if="usable.length" class="relative w-full">
+    <div v-if="usable.length && (showLines || showLoss)" class="relative w-full">
       <svg
         class="block w-full touch-pan-y"
         :width="width"
@@ -219,7 +265,7 @@ const activeTooltipData = computed(() => {
             x2="0"
             y2="1"
           >
-            <stop offset="0%" :stop-color="s.color" stop-opacity="0.25" />
+            <stop offset="0%" :stop-color="s.color" stop-opacity="0.2" />
             <stop offset="100%" :stop-color="s.color" stop-opacity="0.0" />
           </linearGradient>
         </defs>
@@ -236,8 +282,8 @@ const activeTooltipData = computed(() => {
           />
         </g>
 
-        <!-- Y 轴标签 -->
-        <g class="fill-muted-foreground text-[11px] font-mono">
+        <!-- Y 轴标签；窄屏时单位单独标在轴顶 -->
+        <g class="fill-muted-foreground text-xs tabular-nums">
           <text
             v-for="(tick, idx) in yTicks"
             :key="idx"
@@ -250,7 +296,7 @@ const activeTooltipData = computed(() => {
         </g>
 
         <!-- X 轴时间标签 -->
-        <g class="x-axis fill-muted-foreground text-[11px] font-mono">
+        <g class="x-axis fill-muted-foreground text-xs tabular-nums">
           <text
             v-for="(tick, idx) in xTicks"
             :key="idx"
@@ -280,7 +326,8 @@ const activeTooltipData = computed(() => {
         <!-- 面积阴影与折线 -->
         <g v-if="showLines" class="line-layer">
           <g v-for="s in renderedSeries" :key="s.id">
-            <path :d="s.areaPath" :fill="`url(#${s.gradientId})`" />
+            <!-- 多条延迟曲线只画线（填充叠加会混色）；速率图保留淡填充 -->
+            <path v-if="kind === 'rate'" :d="s.areaPath" :fill="`url(#${s.gradientId})`" />
             <path
               :d="s.linePath"
               fill="none"
@@ -313,7 +360,7 @@ const activeTooltipData = computed(() => {
         role="status"
       >
         <time
-          class="mb-1.5 block border-b border-border/40 pb-1 font-mono text-[11px] text-muted-foreground"
+          class="mb-1.5 block border-b border-border pb-1 tabular-nums text-xs text-muted-foreground"
         >
           {{ activeTooltipData.time }}
         </time>
@@ -330,8 +377,8 @@ const activeTooltipData = computed(() => {
               ></span>
               <span class="truncate">{{ row.label }}</span>
             </span>
-            <span class="font-mono font-semibold tabular-nums">{{ row.value }}</span>
-            <span v-if="kind === 'network'" class="font-mono tabular-nums text-muted-foreground">
+            <span class="tabular-nums font-semibold">{{ row.value }}</span>
+            <span v-if="kind === 'network'" class="tabular-nums text-muted-foreground">
               {{ row.lossLabel }} {{ row.loss }}
             </span>
           </div>
@@ -343,9 +390,15 @@ const activeTooltipData = computed(() => {
     <div
       v-else
       :id="emptyId"
-      class="flex h-48 w-full flex-col items-center justify-center rounded-lg border border-dashed border-border text-xs text-muted-foreground"
+      class="flex h-48 w-full flex-col items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground"
     >
-      {{ kind === "network" ? "暂无网络质量历史" : "暂无速率历史" }}
+      {{
+        kind === "rate"
+          ? "暂无速率历史"
+          : usable.length
+            ? "未选择要显示的曲线或事件"
+            : "暂无网络质量历史"
+      }}
     </div>
   </div>
 </template>

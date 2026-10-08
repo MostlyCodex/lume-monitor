@@ -4,7 +4,7 @@ import { cn } from "../../../lib/utils";
 const props = defineProps<{ class?: HTMLAttributes["class"] }>();
 </script>
 <template>
-  <div :class="cn('p-5 pt-0', props.class)">
+  <div :class="cn('px-4 sm:px-6', props.class)">
     <slot />
   </div>
 </template>

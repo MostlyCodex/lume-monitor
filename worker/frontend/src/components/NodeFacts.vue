@@ -22,11 +22,6 @@ const facts = computed(() => {
     { label: "总内存", value: formatCapacity(metrics.memory_total_bytes) },
     { label: "总磁盘", value: formatCapacity(metrics.disk_total_bytes) },
     { label: "主机名称", value: system?.hostname || "—" },
-    { label: "Agent 版本", value: `${agent?.version || "—"} (队列: ${agent?.queue_depth ?? 0})` },
-    {
-      label: "采集/发送错误",
-      value: String((agent?.collect_errors ?? 0) + (agent?.send_errors ?? 0)),
-    },
     {
       label: "统计网卡",
       value: metrics.network_interfaces?.length
@@ -43,27 +38,22 @@ const facts = computed(() => {
 </script>
 
 <template>
-  <Card class="border-border/80 bg-card">
-    <CardHeader class="p-5 pb-3">
-      <span class="text-[11px] font-mono text-muted-foreground uppercase tracking-wider block"
-        >NODE FACTS</span
-      >
-      <CardTitle class="text-base font-semibold mt-0.5">节点规格与详情</CardTitle>
+  <Card>
+    <CardHeader>
+      <CardTitle>节点规格</CardTitle>
     </CardHeader>
-    <CardContent class="p-5 pt-2">
-      <dl id="detail-facts" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    <CardContent>
+      <dl id="detail-facts" class="grid grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-3">
         <div
           v-for="fact in facts"
           :key="fact.label"
-          class="detail-fact flex min-w-0 flex-col gap-1 rounded-lg border border-border/50 bg-muted/20 p-3"
+          class="detail-fact flex min-w-0 flex-col gap-1"
           :class="{
-            'sm:col-span-2 lg:col-span-3': fact.label === '流量周期' || fact.label === '统计网卡',
+            'col-span-2 lg:col-span-3': fact.label === '流量周期',
           }"
         >
-          <dt class="text-[11px] font-medium text-muted-foreground">{{ fact.label }}</dt>
-          <dd class="text-xs font-semibold text-foreground font-mono break-all">
-            {{ fact.value }}
-          </dd>
+          <dt class="text-sm text-muted-foreground">{{ fact.label }}</dt>
+          <dd class="break-all text-sm font-medium tabular-nums">{{ fact.value }}</dd>
         </div>
       </dl>
     </CardContent>

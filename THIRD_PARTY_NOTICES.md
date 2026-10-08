@@ -39,6 +39,7 @@ ship in [`worker/frontend/static/THIRD_PARTY_NOTICES.txt`](worker/frontend/stati
 | [SortableJS](https://github.com/SortableJS/Sortable) — node-card drag-and-drop ordering | 1.15.7 | MIT |
 | [clsx](https://github.com/lukeed/clsx) | 2.1.1 | MIT |
 | [tailwind-merge](https://github.com/dcastil/tailwind-merge) | 2.6.1 | MIT |
+| [Geist](https://github.com/vercel/geist-font) via `@fontsource-variable/geist` — Latin UI typeface | 5.3.0 | SIL OFL 1.1 |
 
 The components in `worker/frontend/src/components/ui/` follow the structure and
 Tailwind class conventions of [shadcn/ui](https://github.com/shadcn-ui/ui) and

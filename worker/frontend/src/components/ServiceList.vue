@@ -14,22 +14,19 @@ function serviceVariant(state: string) {
 
 <template>
   <div id="detail-services" class="flex flex-wrap items-center gap-2">
-    <div v-if="!services.length" class="detail-service is-neutral text-xs text-muted-foreground">
+    <span v-if="!services.length" class="detail-service is-neutral text-sm text-muted-foreground">
       服务监测：暂无上报
-    </div>
-    <div
+    </span>
+    <Badge
       v-for="service in services"
       :key="service.name"
-      class="detail-service inline-flex items-center gap-2 rounded-lg border border-border/60 bg-card px-3 py-1.5 shadow-sm text-xs"
+      :variant="serviceVariant(service.state)"
+      class="detail-service"
       :data-state="service.state"
+      :title="`${serviceDisplayLabel(service)}：${serviceStateText(service.state)}`"
+      :aria-label="`${serviceDisplayLabel(service)} ${serviceStateText(service.state)}`"
     >
-      <span class="font-medium text-foreground">{{ serviceDisplayLabel(service) }}</span>
-      <Badge
-        :variant="serviceVariant(service.state)"
-        class="font-mono text-[11px] px-1.5 py-0 font-normal"
-      >
-        {{ serviceStateText(service.state) }}
-      </Badge>
-    </div>
+      {{ serviceDisplayLabel(service) }}
+    </Badge>
   </div>
 </template>

@@ -51,20 +51,7 @@ function reorder(order: string[]) {
 </script>
 
 <template>
-  <div
-    class="min-h-screen bg-background text-foreground antialiased selection:bg-primary selection:text-primary-foreground"
-  >
-    <!-- 页面底色：微弱点阵 + 顶部微光 -->
-    <div
-      class="fixed inset-0 -z-10 pointer-events-none overflow-hidden bg-background"
-      aria-hidden="true"
-    >
-      <div
-        class="absolute inset-0 bg-dot-pattern [mask-image:radial-gradient(ellipse_70%_60%_at_50%_0%,#000_60%,transparent_100%)]"
-      ></div>
-      <div class="absolute inset-0 bg-radial-ambient"></div>
-    </div>
-
+  <div class="min-h-screen bg-background font-sans text-foreground antialiased">
     <!-- 视图路由 -->
     <LoadingView v-if="view === 'loading'" />
     <AuthView v-else-if="view === 'auth'" @notify="notify" />
@@ -85,12 +72,12 @@ function reorder(order: string[]) {
         <aside
           v-if="DEMO_MODE"
           id="demo-notice"
-          class="flex items-center justify-between rounded-lg border border-border/80 bg-muted/40 px-4 py-2.5 text-xs text-muted-foreground shadow-sm"
+          class="flex items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground"
           aria-label="演示说明"
         >
           <span>公开演示环境（虚构数据），可随意点击节点体验链路图表与控制面板。</span>
           <a
-            class="font-medium text-primary hover:underline ml-2"
+            class="shrink-0 font-medium text-foreground underline-offset-4 hover:underline"
             href="https://github.com/MostlyCodex/lume-monitor/blob/main/docs/guide.md"
             target="_blank"
             rel="noreferrer"
@@ -124,21 +111,15 @@ function reorder(order: string[]) {
         />
       </main>
 
-      <footer class="border-t border-border/40 py-6 text-center text-xs text-muted-foreground">
-        <p>Lume · Secure Observability for Distributed Linux Nodes</p>
-      </footer>
+      <footer class="mt-2 h-6 border-t" aria-hidden="true"></footer>
     </div>
 
     <!-- 全局 Floating Toast 提示 -->
     <div
       v-if="toast.message"
       id="toast"
-      class="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-lg border px-4 py-3 text-xs shadow-lg transition-all"
-      :class="
-        toast.error
-          ? 'border-destructive/50 bg-popover text-rose-500'
-          : 'border-border bg-popover text-popover-foreground'
-      "
+      class="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-lg border bg-popover px-4 py-3 text-sm shadow-lg"
+      :class="toast.error ? 'text-destructive' : 'text-popover-foreground'"
       role="status"
       aria-live="polite"
     >

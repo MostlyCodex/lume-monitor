@@ -15,7 +15,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath } from "node:url";
 import { applyPending, keyProof, parseJsonc, validateImportedConfig, verifyKeyInventory, workerOrigin } from "./management.mjs";
-import { editObserverEntries, externalProbes, parseServices, printObserverSummary, promptNetworkProbes, promptServices } from "./observers.mjs";
+import { editObserverEntries, externalProbes, parseServices, printObserverSummary, promptNetworkProbes, promptNodeDisplay, promptServices } from "./observers.mjs";
 import { InputError, PromptCancelled, PromptClosed, choiceValue, displayValue, inputValue, makePrompter } from "./prompts.mjs";
 
 import { configFingerprint, configurationStatus, matchesAppliedReport, networkInventoryCommand, normalizeAccounting, parseNetworkInventory, printAccountingSummary, promptAccounting, serializeAgentConfig } from "./network-accounting.mjs";
@@ -1180,6 +1180,8 @@ async function configureNodeObservers(prompt, id) {
   printObserverSummary(config, line);
   printAccountingSummary(config,line);
   if (state.nodes[id].pendingApply) line("! 这份本地配置仍待部署；本次向导可以继续下发。");
+  assertPlainObject(config.node, "节点配置 node");
+  await promptNodeDisplay(prompt, config.node, { line });
   if (await prompt.yes("修改 systemd 服务列表（新列表替换原列表，留空清空）", false)) config.services = await promptServices(prompt, { line });
   config.probes = await editObserverEntries(prompt, {
     label: "网络探针（三网 / ICMP / TCP）", entries: config.probes, limit: 32, line,

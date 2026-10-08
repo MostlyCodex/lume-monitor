@@ -47,7 +47,7 @@ npm run format:frontend    # 统一 Vue / TypeScript / CSS 格式
 
 组件不直接请求 API。异步响应须检查所属会话和节点；监听器、计时器、拖拽实例及图表的尺寸监听在所属作用域销毁时清理。注释说明约束和取舍，不重复代码含义。
 
-界面基于 Tailwind CSS 3 与 shadcn-vue 的组件和主题变量。`tailwind.config.js` 的 `content` 使用 `relative: true`，因为 npm 脚本的工作目录是 `worker/` 而不是 `frontend/`。触屏设备上的控件用自定义的 `coarse:` 变体放大到 44px。
+界面基于 Tailwind CSS 3 与 shadcn-vue 的组件和主题变量。`tailwind.config.js` 的 `content` 使用 `relative: true`，因为 npm 脚本的工作目录是 `worker/` 而不是 `frontend/`。手机与电脑使用相同的控件尺寸。主题变量取自 shadcn v4 neutral 配色（`styles/globals.css`）；深色模式的 `--border`、`--input` 自带透明度，不要再加 `/xx` 透明度修饰。正常 / 注意 / 异常只用 `status-ok`、`status-warn`、`status-bad` 三个状态色，其余界面保持中性色。拉丁字符与数字使用打包的 Geist 字体（`@fontsource-variable/geist`），中文回落系统字体。
 
 `worker/public/dashboard/`、`worker/public/demo/` 是构建产物，不提交 Git；修改组件后重新构建。SVG 图表随详情按需加载，生产包不依赖外部 CDN；图表按容器宽度绘制，提示内容使用 Vue 模板转义，缺测保留断线。节点排序沿用原浏览器设置键（旧版的显示名、背景等字段读取时会被忽略），`/dashboard/?node=...` 链接继续有效。
 

@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import BrandLockup from "./BrandLockup.vue";
-import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
 
 const emit = defineEmits<{ notify: [message: string, error?: boolean] }>();
+
+const steps = [
+  { title: "发送命令", detail: "在已绑定的 Telegram 机器人私聊中发送 /panel" },
+  { title: "打开单次链接", detail: "链接 5 分钟内有效，只能使用一次" },
+  { title: "保持登录", detail: "登录状态在当前浏览器保留 30 天" },
+];
 
 const message = computed(() => {
   const reason = new URLSearchParams(location.search).get("login");
@@ -29,100 +34,56 @@ async function copyCommand() {
 <template>
   <main
     id="auth-view"
-    class="flex min-h-screen items-center justify-center p-4 sm:p-6 bg-background"
+    class="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6"
   >
-    <div class="w-full max-w-md space-y-6">
-      <Card class="border-border/80 bg-card p-6 shadow-xl">
-        <CardHeader class="p-0 pb-6 space-y-4">
-          <BrandLockup brand="Lume" tagline="MINIMAL OBSERVABILITY" />
-          <div class="space-y-2">
-            <Badge variant="healthy" class="px-2.5 py-0.5 text-xs font-normal">
-              <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>
-              Telegram 安全鉴权登录
-            </Badge>
-            <CardTitle class="text-xl font-bold tracking-tight text-foreground">
-              节点监控 · 一览无余
-            </CardTitle>
-            <p class="text-xs text-muted-foreground leading-relaxed">
-              请在已绑定的 Telegram 私密群或机器人私聊中发送
-              <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">/panel</code>
-              获取一次性登录链接。
-            </p>
-          </div>
-        </CardHeader>
+    <Card class="w-full max-w-sm">
+      <CardHeader>
+        <BrandLockup brand="Lume" tagline="MINIMAL OBSERVABILITY" class="mb-4" />
+        <CardTitle class="text-xl">登录面板</CardTitle>
+        <CardDescription>
+          在已绑定的 Telegram 机器人私聊中发送
+          <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">/panel</code>
+          获取一次性登录链接。
+        </CardDescription>
+      </CardHeader>
 
-        <CardContent class="p-0 space-y-5">
-          <!-- 登录步骤指引 -->
-          <div class="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-4">
-            <div class="flex items-start gap-3">
-              <span
-                class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-mono text-xs font-bold"
-                >1</span
-              >
-              <div class="text-xs">
-                <strong class="text-foreground block font-medium">发送命令</strong>
-                <span class="text-muted-foreground text-[11px]"
-                  >在已配置的 Telegram 机器人中发送 /panel</span
-                >
-              </div>
+      <CardContent class="flex flex-col gap-6">
+        <ol class="flex flex-col gap-4 text-sm">
+          <li v-for="(step, index) in steps" :key="step.title" class="flex items-start gap-3">
+            <span
+              class="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium tabular-nums"
+              >{{ index + 1 }}</span
+            >
+            <div class="flex flex-col gap-0.5">
+              <span class="font-medium">{{ step.title }}</span>
+              <span class="text-muted-foreground">{{ step.detail }}</span>
             </div>
-            <div class="flex items-start gap-3">
-              <span
-                class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-mono text-xs font-bold"
-                >2</span
-              >
-              <div class="text-xs">
-                <strong class="text-foreground block font-medium">打开单次链接</strong>
-                <span class="text-muted-foreground text-[11px]"
-                  >链接具备 5 分钟时效，仅可消耗使用一次</span
-                >
-              </div>
-            </div>
-            <div class="flex items-start gap-3">
-              <span
-                class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-mono text-xs font-bold"
-                >3</span
-              >
-              <div class="text-xs">
-                <strong class="text-foreground block font-medium">持久保持认证</strong>
-                <span class="text-muted-foreground text-[11px]"
-                  >认证会话将在当前浏览器保留 30 天</span
-                >
-              </div>
-            </div>
-          </div>
+          </li>
+        </ol>
 
-          <!-- 提示信息 -->
-          <div
-            v-if="message"
-            id="login-message"
-            class="rounded-md border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-500 font-medium"
-            role="alert"
+        <div
+          v-if="message"
+          id="login-message"
+          class="rounded-lg border px-4 py-3 text-sm text-status-warn"
+          role="alert"
+        >
+          {{ message }}
+        </div>
+
+        <div class="flex flex-col gap-2 sm:flex-row">
+          <Button id="copy-panel-command" class="flex-1" @click="copyCommand">
+            复制 /panel 命令
+          </Button>
+          <a
+            class="inline-flex h-9 flex-1 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:border-input dark:bg-white/[0.045] dark:hover:bg-white/[0.075]"
+            href="https://web.telegram.org/"
+            target="_blank"
+            rel="noreferrer"
           >
-            {{ message }}
-          </div>
-
-          <!-- 操作按钮 -->
-          <div class="flex items-center gap-3 pt-2">
-            <Button
-              id="copy-panel-command"
-              class="flex-1 text-xs h-9"
-              type="button"
-              @click="copyCommand"
-            >
-              复制 /panel 命令
-            </Button>
-            <a
-              class="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-xs font-medium text-foreground shadow-sm hover:bg-accent hover:text-accent-foreground h-9"
-              href="https://web.telegram.org/"
-              target="_blank"
-              rel="noreferrer"
-            >
-              打开 Web Telegram
-            </a>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+            打开 Web Telegram
+          </a>
+        </div>
+      </CardContent>
+    </Card>
   </main>
 </template>

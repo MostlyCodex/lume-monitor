@@ -13,7 +13,6 @@ import { finite } from "../charts/series";
 import { cssColor } from "../charts/theme";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
 
 const HistoryChart = defineAsyncComponent(() => import("./HistoryChart.vue"));
 
@@ -64,7 +63,6 @@ const cards = computed(() => {
       label,
       average,
       failure,
-      failed: Number(failureValue) > 0,
       failureLabel,
       color: cssColor(PROBE_COLOR_VARIABLES[probeColorTone(probe)]),
       tone: probeColorTone(probe),
@@ -103,116 +101,78 @@ function toggleProbe(name: string) {
 }
 
 function toggleLayer(layer: NetworkLayer) {
-  if (!layers.value.includes(layer)) layers.value = [...layers.value, layer];
-  else if (layers.value.length > 1) layers.value = layers.value.filter((value) => value !== layer);
+  layers.value = layers.value.includes(layer)
+    ? layers.value.filter((value) => value !== layer)
+    : [...layers.value, layer];
 }
 </script>
 
 <template>
-  <Card class="border-border/80 bg-card">
-    <CardHeader class="p-5 pb-3">
-      <div class="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <span class="text-[11px] font-mono text-muted-foreground uppercase tracking-wider block"
-            >NETWORK QUALITY</span
-          >
-          <CardTitle class="text-base font-semibold mt-0.5">{{
-            hasTcp ? "延迟与可达性监控" : "延迟与丢包监控"
-          }}</CardTitle>
-        </div>
-
-        <div id="detail-probe-actions" class="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            class="h-7 px-2.5 text-xs font-mono coarse:h-11 coarse:px-4"
-            data-probe-action="all"
-            :class="{
-              'bg-accent text-accent-foreground':
-                probes.length > 0 && probes.every((p) => selected.has(p.name)),
-            }"
-            @click="selected = new Set(probes.map((p) => p.name))"
-          >
-            全选
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            class="h-7 px-2.5 text-xs font-mono coarse:h-11 coarse:px-4"
-            data-probe-action="none"
-            :class="{ 'bg-accent text-accent-foreground': !selected.size }"
-            @click="selected = new Set()"
-          >
-            清空
-          </Button>
-        </div>
+  <Card>
+    <CardHeader class="grid-cols-[1fr_auto] items-center">
+      <CardTitle>{{ hasTcp ? "延迟与可达性" : "延迟与丢包" }}</CardTitle>
+      <div id="detail-probe-actions" class="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          class="h-7 px-2 text-xs sm:h-8 sm:px-3 sm:text-sm"
+          data-probe-action="all"
+          @click="selected = new Set(probes.map((p) => p.name))"
+        >
+          全选
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          class="h-7 px-2 text-xs sm:h-8 sm:px-3 sm:text-sm"
+          data-probe-action="none"
+          @click="selected = new Set()"
+        >
+          清空
+        </Button>
       </div>
     </CardHeader>
 
-    <CardContent class="p-5 pt-2 space-y-4">
-      <!-- 目标探针选择网格 -->
-      <div id="detail-probe-summary" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+    <CardContent class="space-y-4">
+      <!-- 探测点选择：仅颜色标识与名称；平均延迟和失败率保留在 aria-label 中 -->
+      <div id="detail-probe-summary" class="flex flex-wrap gap-1.5">
         <button
           v-for="card in cards"
           :key="card.name"
           type="button"
-          class="detail-probe-card flex flex-col gap-1.5 p-3 rounded-lg border text-left transition-all select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          :class="[
-            selected.has(card.name)
-              ? 'border-primary/50 bg-primary/5 shadow-sm'
-              : 'border-border/50 bg-muted/20 opacity-70 hover:opacity-100 hover:bg-muted/30',
-          ]"
+          class="detail-probe-card inline-flex h-7 max-w-full select-none items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-[color,box-shadow,opacity] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:h-8 sm:px-2.5 sm:text-sm"
+          :class="[selected.has(card.name) ? 'bg-accent text-accent-foreground' : 'opacity-50']"
           :data-detail-probe="card.name"
           :aria-pressed="selected.has(card.name)"
           :aria-label="card.description"
           @click="toggleProbe(card.name)"
         >
-          <div class="flex items-center justify-between gap-2 text-xs">
-            <span class="flex min-w-0 items-center gap-1.5">
-              <span
-                class="detail-probe-swatch h-2.5 w-2.5 shrink-0 rounded-full"
-                :style="{ backgroundColor: card.color }"
-                aria-hidden="true"
-              ></span>
-              <strong class="truncate font-semibold text-foreground">{{ card.label }}</strong>
-            </span>
-            <Badge
-              :variant="card.failed ? 'degraded' : 'healthy'"
-              class="text-[10px] font-mono px-1 py-0 font-normal"
-            >
-              {{ card.failure }}
-            </Badge>
-          </div>
-          <div class="flex items-center justify-between text-xs text-muted-foreground font-mono">
-            <span>平均延迟</span>
-            <span class="text-foreground font-semibold">{{ card.average }}</span>
-          </div>
+          <span
+            class="detail-probe-swatch h-2 w-2 shrink-0 rounded-full"
+            :style="{ backgroundColor: card.color }"
+            aria-hidden="true"
+          ></span>
+          <span class="truncate">{{ card.label }}</span>
         </button>
 
-        <div
-          v-if="!cards.length"
-          class="col-span-full py-4 text-center text-xs text-muted-foreground"
-        >
+        <div v-if="!cards.length" class="w-full py-4 text-center text-sm text-muted-foreground">
           此节点未配置通信探测
         </div>
       </div>
 
       <!-- 图表工具条 -->
-      <div
-        class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-border/40 text-xs text-muted-foreground"
-      >
-        <div id="network-layer-switch" class="inline-flex rounded-md bg-muted p-0.5">
+      <div class="flex items-center border-t pt-4">
+        <!-- 切换按钮无边框、无悬停样式：触屏点按后悬停状态会残留，状态只由底色区分 -->
+        <div id="network-layer-switch" class="flex items-center gap-2">
           <button
             type="button"
-            class="px-2.5 py-1 rounded-sm text-xs font-medium transition-all coarse:min-h-11 coarse:px-4"
+            class="inline-flex h-7 items-center rounded-md px-2 text-xs font-medium transition-[color,box-shadow] sm:h-8 sm:px-2.5 sm:text-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             data-network-layer="latency"
             :aria-pressed="layers.includes('latency')"
             :class="
               layers.includes('latency')
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'bg-accent text-accent-foreground'
+                : 'text-muted-foreground'
             "
             @click="toggleLayer('latency')"
           >
@@ -220,25 +180,16 @@ function toggleLayer(layer: NetworkLayer) {
           </button>
           <button
             type="button"
-            class="px-2.5 py-1 rounded-sm text-xs font-medium transition-all coarse:min-h-11 coarse:px-4"
+            class="inline-flex h-7 items-center rounded-md px-2 text-xs font-medium transition-[color,box-shadow] sm:h-8 sm:px-2.5 sm:text-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             data-network-layer="loss"
             :aria-pressed="layers.includes('loss')"
             :class="
-              layers.includes('loss')
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
+              layers.includes('loss') ? 'bg-accent text-accent-foreground' : 'text-muted-foreground'
             "
             @click="toggleLayer('loss')"
           >
             {{ hasTcp ? "失败事件" : "丢包事件" }}
           </button>
-        </div>
-
-        <div class="text-[11px] font-mono flex items-center gap-3">
-          <span>实线 = 延迟 (ms)</span>
-          <span class="text-muted-foreground/80">{{
-            hasTcp ? "建连失败或丢包事件" : "丢包分布事件"
-          }}</span>
         </div>
       </div>
 

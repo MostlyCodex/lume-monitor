@@ -83,7 +83,7 @@ onBeforeUnmount(() => sortable?.destroy());
           placeholder="搜索节点..."
           aria-label="搜索节点名称、角色、地区"
           autocomplete="off"
-          class="h-9 w-full rounded-md border border-input bg-background px-3 pl-9 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-colors coarse:h-11"
+          class="h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 pl-9 text-sm shadow-sm outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-white/[0.045]"
         />
       </div>
     </div>
@@ -108,11 +108,10 @@ onBeforeUnmount(() => sortable?.destroy());
     <!-- 搜索为空状态 -->
     <div
       v-if="!filtered.length"
-      class="flex flex-col items-center justify-center p-12 text-center rounded-xl border border-dashed border-border bg-card/40"
+      class="flex flex-col items-center justify-center rounded-xl border border-dashed p-12 text-center"
     >
-      <span class="text-3xl text-muted-foreground mb-2">◇</span>
-      <strong class="text-sm font-semibold text-foreground">没有符合条件的节点</strong>
-      <span class="text-xs text-muted-foreground mt-1">请尝试调整搜索关键词或清空筛选条件</span>
+      <strong class="text-sm font-medium">没有符合条件的节点</strong>
+      <span class="mt-1 text-sm text-muted-foreground">请尝试调整搜索关键词</span>
     </div>
   </section>
 </template>

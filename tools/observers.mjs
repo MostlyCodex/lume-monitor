@@ -202,8 +202,21 @@ export async function editObserverEntries(prompt, { label, entries, create, limi
   return entries.filter((_entry, index) => !selected.includes(index));
 }
 
+/**
+ * Panel display text lives in the Agent config; the Worker catalog adopts it from the next report.
+ * Each prompt defaults to the current value, so pressing Enter keeps it.
+ */
+export async function promptNodeDisplay(prompt, node, { line = console.log } = {}) {
+  if (!(await prompt.yes("修改面板显示名 / 用途 / 地区", false))) return false;
+  node.display_name = await displayValue(prompt, "面板显示名", node.display_name || node.id, { line });
+  node.role = await displayValue(prompt, "用途（如网站、备份、中转）", node.role || "VPS", { line });
+  node.region = await displayValue(prompt, "国家 / 城市", node.region || "unspecified", { line });
+  return true;
+}
+
 export function printObserverSummary(config, line = console.log) {
   line(`\n监测配置 · ${config.node.display_name || config.node.id} (${config.node.id})`);
+  line(`  面板显示：${[config.node.display_name || config.node.id, config.node.role, config.node.region].filter(Boolean).join(" · ")}`);
   line("  主机资源：CPU、内存、磁盘和网卡流量");
   line(`  systemd 服务：${config.services.length ? config.services.map((service) => service.name).join("、") : "未配置"}`);
   line(`  网络探针：${config.probes.length ? `${config.probes.length} 个` : "未配置（没有三网延迟/丢包检测）"}`);
