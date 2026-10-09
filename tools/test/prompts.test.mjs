@@ -1,7 +1,51 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { InputError, PromptCancelled, PromptClosed, booleanValue, inputValue, integerValue, makePrompter } from "../prompts.mjs";
+import { InputError, PromptCancelled, PromptClosed, booleanValue, inputValue, integerValue, makePrompter, suspendTerminalInput } from "../prompts.mjs";
+
+function fakeTty() {
+  const input = Object.assign(new PassThrough(), { isTTY: true, isRaw: false, modes: [] });
+  input.setRawMode = (value) => { input.isRaw = value; input.modes.push(value); return input; };
+  return input;
+}
+
+test("interactive children get the terminal to themselves and the prompter resumes afterwards", async () => {
+  const input = fakeTty(), output = new PassThrough(), signals = new EventEmitter();
+  const prompt = makePrompter({ input, output });
+  try {
+    const first = prompt.text("字段");
+    input.write("一\r");
+    assert.equal(await first, "一");
+    assert.equal(input.isRaw, true);
+    const restore = suspendTerminalInput(input, signals);
+    assert.equal(input.readableFlowing, false);
+    assert.equal(input.isRaw, false);
+    assert.equal(signals.listenerCount("SIGINT"), 1);
+    restore();
+    restore();
+    assert.equal(input.readableFlowing, true);
+    assert.equal(input.isRaw, true);
+    assert.equal(signals.listenerCount("SIGINT"), 0);
+    assert.deepEqual(input.modes.slice(-2), [false, true]);
+    const next = prompt.text("下一项");
+    input.write("二\r");
+    assert.equal(await next, "二");
+  } finally { prompt.close(); input.end(); output.end(); }
+});
+
+test("terminal hand-off leaves unread or non-terminal input exactly as it found it", () => {
+  const signals = new EventEmitter();
+  const unread = fakeTty();
+  suspendTerminalInput(unread, signals)();
+  assert.equal(unread.readableFlowing, null);
+  assert.deepEqual(unread.modes, []);
+  const piped = new PassThrough();
+  piped.resume();
+  suspendTerminalInput(piped, signals)();
+  assert.equal(piped.readableFlowing, true);
+  assert.equal(signals.listenerCount("SIGINT"), 0);
+});
 
 test("confirmation retries unknown answers instead of treating them as no", async () => {
   const input = new PassThrough(), output = new PassThrough();

@@ -16,7 +16,7 @@ import { isIP } from "node:net";
 import { fileURLToPath } from "node:url";
 import { applyPending, keyProof, parseJsonc, validateImportedConfig, verifyKeyInventory, workerOrigin } from "./management.mjs";
 import { editObserverEntries, externalProbes, parseServices, printObserverSummary, promptNetworkProbes, promptNodeDisplay, promptServices } from "./observers.mjs";
-import { InputError, PromptCancelled, PromptClosed, choiceValue, displayValue, inputValue, makePrompter } from "./prompts.mjs";
+import { InputError, PromptCancelled, PromptClosed, choiceValue, displayValue, inputValue, makePrompter, suspendTerminalInput } from "./prompts.mjs";
 
 import { configFingerprint, configurationStatus, matchesAppliedReport, networkInventoryCommand, normalizeAccounting, parseNetworkInventory, printAccountingSummary, promptAccounting, serializeAgentConfig } from "./network-accounting.mjs";
 
@@ -276,6 +276,7 @@ function commandProbe(command, args = ["--version"]) {
 function run(command, args, options = {}) {
   const visible = !options.capture || options.echo;
   if (options.interactive) terminal.markOutput();
+  const restoreInput = options.interactive ? suspendTerminalInput() : () => {};
   return new Promise((resolvePromise, rejectPromise) => {
     const capture = Boolean(options.capture);
     const child = spawn(command, args, {
@@ -307,7 +308,7 @@ function run(command, args, options = {}) {
         resolvePromise(result);
       }
     });
-  }).finally(() => { if (visible) terminal.separate(); });
+  }).finally(() => { restoreInput(); if (visible) terminal.separate(); });
 }
 
 async function wrangler(args, options = {}) {

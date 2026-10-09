@@ -92,6 +92,30 @@ export function booleanValue(value) {
   throw new InputError("只能输入 y / yes / 是，或 n / no / 否");
 }
 
+// Interactive children (ssh -t, wrangler login) share the console with the
+// prompter. A raw-mode reader left running competes with the child for keys,
+// and on Windows it stalls the tool after the child exits until a key is
+// pressed. Hand the terminal over for the child's lifetime; Ctrl+C belongs to
+// the child too, so the tool survives to report the child's exit status.
+export function suspendTerminalInput(input = process.stdin, signals = process) {
+  if (!input.isTTY) return () => {};
+  // readableFlowing is null for a stream nobody has read yet; resuming that
+  // would start draining stdin and keep the process alive after the menu ends.
+  const wasRaw = Boolean(input.isRaw), wasFlowing = input.readableFlowing === true;
+  const ignoreInterrupt = () => {};
+  if (wasFlowing) input.pause();
+  if (wasRaw) input.setRawMode(false);
+  signals.on("SIGINT", ignoreInterrupt);
+  let restored = false;
+  return () => {
+    if (restored) return;
+    restored = true;
+    signals.off("SIGINT", ignoreInterrupt);
+    if (wasRaw) input.setRawMode(true);
+    if (wasFlowing) input.resume();
+  };
+}
+
 export function makePrompter({ input = process.stdin, output = process.stdout } = {}) {
   const terminal = terminalFor(output);
   let muted = false;
