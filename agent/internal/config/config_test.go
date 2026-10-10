@@ -258,3 +258,17 @@ func TestDecodeFingerprintAndUnknownFields(t *testing.T) {
 		delete(scope, "unexpected_option")
 	}
 }
+
+// Shipped sample configurations must load under the same strict decoding the
+// Agent applies, so a schema change cannot leave them behind.
+func TestShippedSampleConfigurationsMatchTheSchema(t *testing.T) {
+	for _, path := range []string{"../../testdata/benchmark-config.json", "../../../deploy/config.example.json"} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := decode(raw); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+	}
+}

@@ -91,7 +91,10 @@ export async function testAgentReport() {
     const card = (await dashboard.json()).nodes.find(
       (node) => node.id === config.node.id,
     );
-    assert.equal(card.reported_at, report.generated_at);
+    // The real Agent report must reach the dashboard as a live node with its system facts.
+    assert.equal(card?.online, true);
+    assert.equal(card.data_error, undefined);
+    assert.equal(card.system.hostname, report.system.hostname);
     const stored = await runtime.query(
       "SELECT report_json FROM node_latest WHERE node_id='alpha-vps'",
     );
