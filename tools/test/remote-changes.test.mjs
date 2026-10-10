@@ -12,7 +12,7 @@ test("remote change summaries distinguish current, deleted, binary and link loca
   const rows = parseRemoteChanges(report([
     "changed\t/etc/vpsmon/config.json\ttext\t2,5\t2",
     "added\t/etc/systemd/system/vpsmon-agent.service\ttext\t-\t1-44",
-    "removed\t/etc/systemd/system/vpsmon-nftables-snapshot.timer\ttext\t1-8\t-",
+    "removed\t/var/lib/vpsmon/traffic.json\ttext\t1\t-",
     "changed\t/opt/vpsmon/vpsmon-agent\tbinary\t-\t-",
     "removed\t/etc/systemd/system/multi-user.target.wants/vpsmon-agent.service\tlink\t-\t-",
     "service\tvpsmon-agent.service\tactive/enabled\tinactive/disabled",
@@ -20,7 +20,7 @@ test("remote change summaries distinguish current, deleted, binary and link loca
   assert.deepEqual(rows.map(formatRemoteChange), [
     "  更新  /etc/vpsmon/config.json:2（原行 2,5）",
     "  新增  /etc/systemd/system/vpsmon-agent.service:1-44",
-    "  删除  /etc/systemd/system/vpsmon-nftables-snapshot.timer（原行 1-8）",
+    "  删除  /var/lib/vpsmon/traffic.json（原行 1）",
     "  更新  /opt/vpsmon/vpsmon-agent（二进制，无行号）",
     "  删除  /etc/systemd/system/multi-user.target.wants/vpsmon-agent.service（符号链接）",
     "  服务  vpsmon-agent.service  active/enabled → inactive/disabled",
@@ -28,7 +28,7 @@ test("remote change summaries distinguish current, deleted, binary and link loca
 });
 
 test("invalid or incomplete remote output is never presented as a verified change report", () => {
-  for (const value of ["LUME_CHANGES_V1\n", report(["added\t/etc/shadow\ttext\t-\t1"]), report(["changed\t/etc/vpsmon/config.json\ttext\tsecret-value\t1"])]) assert.throws(() => parseRemoteChanges(value));
+  for (const value of ["LUME_CHANGES_V1\n", report(["added\t/etc/shadow\ttext\t-\t1"]), report(["removed\t/etc/systemd/system/vpsmon-nftables-snapshot.timer\ttext\t1-8\t-"]), report(["changed\t/etc/vpsmon/config.json\ttext\tsecret-value\t1"])]) assert.throws(() => parseRemoteChanges(value));
   const messages=[], log=createRemoteChangeLog(value=>messages.push(value));
   log.record("fixture", "private-secret-marker");
   log.record("fixture", report([]));

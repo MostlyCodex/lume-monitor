@@ -21,12 +21,8 @@ report="$stage/changes.tsv"
 
 paths() {
   printf '%s\n' /opt/vpsmon/vpsmon-agent /etc/vpsmon/config.json \
-    /etc/systemd/system/vpsmon-agent.service \
-    /etc/systemd/system/vpsmon-nftables-snapshot.service \
-    /etc/systemd/system/vpsmon-nftables-snapshot.timer \
-    /var/lib/vpsmon/nftables-counters.json /var/lib/vpsmon/pending.json /var/lib/vpsmon/traffic.json
-  find /etc/systemd/system -mindepth 2 -maxdepth 2 -type l \
-    \( -name vpsmon-agent.service -o -name vpsmon-nftables-snapshot.service -o -name vpsmon-nftables-snapshot.timer \) -print
+    /etc/systemd/system/vpsmon-agent.service /var/lib/vpsmon/pending.json /var/lib/vpsmon/traffic.json
+  find /etc/systemd/system -mindepth 2 -maxdepth 2 -type l -name vpsmon-agent.service -print
 }
 backups() {
   if [ -d /var/lib/vpsmon ]; then
@@ -58,7 +54,7 @@ if [ "$action" = uninstall ]; then
   done
 fi
 : > "$snapshot/directories"
-for path in /etc/vpsmon /opt/vpsmon /var/lib/vpsmon /etc/systemd/system/vpsmon-agent.service.d /etc/systemd/system/vpsmon-nftables-snapshot.service.d /etc/systemd/system/vpsmon-nftables-snapshot.timer.d; do
+for path in /etc/vpsmon /opt/vpsmon /var/lib/vpsmon /etc/systemd/system/vpsmon-agent.service.d; do
   [ ! -d "$path" ] || printf '%s\n' "$path" >> "$snapshot/directories"
 done
 while IFS= read -r path; do

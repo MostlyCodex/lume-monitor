@@ -6,10 +6,7 @@ umask 077
 [ "${1:-}" = "--confirm" ] || { echo "usage: uninstall-agent.sh --confirm [expected-node-id-file]" >&2; exit 2; }
 
 managed_directories() {
-  printf '%s\n' /etc/vpsmon /opt/vpsmon /var/lib/vpsmon \
-    /etc/systemd/system/vpsmon-agent.service.d \
-    /etc/systemd/system/vpsmon-nftables-snapshot.service.d \
-    /etc/systemd/system/vpsmon-nftables-snapshot.timer.d
+  printf '%s\n' /etc/vpsmon /opt/vpsmon /var/lib/vpsmon /etc/systemd/system/vpsmon-agent.service.d
 }
 for path in $(managed_directories); do
   if [ -e "$path" ] || [ -L "$path" ]; then
@@ -46,22 +43,15 @@ if [ -n "$account" ]; then
   case "$account_shell" in */nologin|*/false) ;; *) echo "vpsmon is an interactive account; stopping" >&2; exit 1 ;; esac
 fi
 systemctl disable --now vpsmon-agent.service >/dev/null 2>&1 || true
-systemctl disable --now vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
-systemctl stop vpsmon-nftables-snapshot.service >/dev/null 2>&1 || true
-for unit in vpsmon-agent.service vpsmon-nftables-snapshot.service vpsmon-nftables-snapshot.timer; do
-  active=$(systemctl is-active "$unit" 2>/dev/null || true)
-  case "$active" in active|activating|reloading|deactivating) echo "service did not stop: $unit" >&2; exit 1 ;; esac
-done
+active=$(systemctl is-active vpsmon-agent.service 2>/dev/null || true)
+case "$active" in active|activating|reloading|deactivating) echo "service did not stop: vpsmon-agent.service" >&2; exit 1 ;; esac
 if [ -n "$account" ] && pgrep -u vpsmon >/dev/null 2>&1; then
   echo "vpsmon still owns running processes; stopping cleanup" >&2
   exit 1
 fi
 
-rm -f -- /etc/systemd/system/vpsmon-agent.service \
-  /etc/systemd/system/vpsmon-nftables-snapshot.service \
-  /etc/systemd/system/vpsmon-nftables-snapshot.timer
-find /etc/systemd/system -mindepth 2 -maxdepth 2 -type l \
-  \( -name vpsmon-agent.service -o -name vpsmon-nftables-snapshot.service -o -name vpsmon-nftables-snapshot.timer \) -delete
+rm -f -- /etc/systemd/system/vpsmon-agent.service
+find /etc/systemd/system -mindepth 2 -maxdepth 2 -type l -name vpsmon-agent.service -delete
 for path in $(managed_directories); do
   # Do not descend into another filesystem mounted beneath an Agent directory.
   rm -rf --one-file-system -- "$path"
@@ -70,7 +60,7 @@ done
 if [ -n "$account" ]; then userdel vpsmon; fi
 if getent group vpsmon >/dev/null; then groupdel vpsmon; fi
 systemctl daemon-reload
-systemctl reset-failed vpsmon-agent.service vpsmon-nftables-snapshot.service vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
+systemctl reset-failed vpsmon-agent.service >/dev/null 2>&1 || true
 ! getent passwd vpsmon >/dev/null || { echo "Agent account remains" >&2; exit 1; }
 ! getent group vpsmon >/dev/null || { echo "Agent group remains" >&2; exit 1; }
 

@@ -100,11 +100,8 @@ EOF
   done
   cp "$FIXTURE/old-agent" "$FIXTURE/opt/vpsmon/vpsmon-agent"
   echo old-config > "$FIXTURE/etc/vpsmon/config.json"
-  for unit in vpsmon-agent.service vpsmon-nftables-snapshot.service vpsmon-nftables-snapshot.timer; do
-    echo "$unit old" > "$FIXTURE/etc/systemd/system/$unit"
-    touch "$FIXTURE/state/$unit.active" "$FIXTURE/state/$unit.enabled"
-  done
-  echo old-snapshot > "$FIXTURE/var/lib/vpsmon/nftables-counters.json"
+  echo "vpsmon-agent.service old" > "$FIXTURE/etc/systemd/system/vpsmon-agent.service"
+  touch "$FIXTURE/state/vpsmon-agent.service.active" "$FIXTURE/state/vpsmon-agent.service.enabled"
   touch "$FIXTURE/state/nftables.service.active" "$FIXTURE/state/nftables.service.enabled"
   cp "$FIXTURE/new-agent" "$stage/vpsmon-agent"
   echo new-config > "$stage/config.json"
@@ -135,21 +132,12 @@ EOF
     cmp "$FIXTURE/new-agent" "$FIXTURE/opt/vpsmon/vpsmon-agent"
     [ "$(cat "$FIXTURE/etc/vpsmon/config.json")" = new-config ]
     grep -Fxq "$(printf 'changed\t%s/etc/vpsmon/config.json\ttext\t1\t1' "$FIXTURE")" "$stage/changes.tsv"
-    [ ! -f "$FIXTURE/etc/systemd/system/vpsmon-nftables-snapshot.service" ]
-    [ ! -f "$FIXTURE/etc/systemd/system/vpsmon-nftables-snapshot.timer" ]
-    [ ! -f "$FIXTURE/var/lib/vpsmon/nftables-counters.json" ]
-    [ ! -f "$FIXTURE/state/vpsmon-nftables-snapshot.timer.active" ]
-    [ ! -f "$FIXTURE/state/vpsmon-nftables-snapshot.timer.enabled" ]
   else
     if [ "$status" != 5 ]; then cat "$FIXTURE/output.log"; exit 1; fi
     cmp "$FIXTURE/old-agent" "$FIXTURE/opt/vpsmon/vpsmon-agent"
     [ "$(cat "$FIXTURE/etc/vpsmon/config.json")" = old-config ]
     if grep -Fq "$FIXTURE/etc/vpsmon/config.json" "$stage/changes.tsv"; then echo "rollback reported a config change"; exit 1; fi
-    [ "$(cat "$FIXTURE/var/lib/vpsmon/nftables-counters.json")" = old-snapshot ]
-    [ "$(cat "$FIXTURE/etc/systemd/system/vpsmon-nftables-snapshot.service")" = 'vpsmon-nftables-snapshot.service old' ]
-    [ "$(cat "$FIXTURE/etc/systemd/system/vpsmon-nftables-snapshot.timer")" = 'vpsmon-nftables-snapshot.timer old' ]
-    [ -f "$FIXTURE/state/vpsmon-nftables-snapshot.timer.active" ]
-    [ -f "$FIXTURE/state/vpsmon-nftables-snapshot.timer.enabled" ]
+    [ "$(cat "$FIXTURE/etc/systemd/system/vpsmon-agent.service")" = 'vpsmon-agent.service old' ]
   fi
   [ -f "$FIXTURE/state/vpsmon-agent.service.active" ]
   [ -f "$FIXTURE/state/vpsmon-agent.service.enabled" ]

@@ -123,17 +123,9 @@ if command -v systemd-analyze >/dev/null 2>&1; then
 fi
 
 new_services=$("$stage/vpsmon-agent" --config "$stage/config.json" --list-services)
-if old_services=$(/opt/vpsmon/vpsmon-agent --config /etc/vpsmon/config.json --list-services 2>/dev/null); then
-  :
-else
-  # Agent v1.0/v1.1 did not expose --list-services. The v3 converter requires
-  # the new service metadata to exactly match the old configuration, so the
-  # validated new list is also the complete protected list for that upgrade.
-  if [ "${VPSMON_V3_CONVERTED:-}" != "1" ]; then
-    echo "old Agent cannot list protected services; use the verified v3 conversion runner" >&2
-    exit 4
-  fi
-  old_services=$new_services
+if ! old_services=$(/opt/vpsmon/vpsmon-agent --config /etc/vpsmon/config.json --list-services 2>/dev/null); then
+  echo "existing Agent cannot list its protected services" >&2
+  exit 4
 fi
 protected_services=$(printf '%s\n%s\n' "$old_services" "$new_services" | sed '/^$/d' | sort -u)
 
@@ -151,61 +143,23 @@ configured_service_fingerprints() {
 before_services=$(printf '%s\n' "$protected_services" | configured_service_fingerprints)
 was_active=$(systemctl is-active vpsmon-agent.service 2>/dev/null || true)
 was_enabled=$(systemctl is-enabled vpsmon-agent.service 2>/dev/null || true)
-snapshot_service_existed=0
-snapshot_timer_existed=0
-snapshot_file_existed=0
-[ ! -f /etc/systemd/system/vpsmon-nftables-snapshot.service ] || snapshot_service_existed=1
-[ ! -f /etc/systemd/system/vpsmon-nftables-snapshot.timer ] || snapshot_timer_existed=1
-[ ! -f /var/lib/vpsmon/nftables-counters.json ] || snapshot_file_existed=1
-snapshot_timer_was_active=$(systemctl is-active vpsmon-nftables-snapshot.timer 2>/dev/null || true)
-snapshot_timer_was_enabled=$(systemctl is-enabled vpsmon-nftables-snapshot.timer 2>/dev/null || true)
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 backup="/var/lib/vpsmon/upgrade-backup.$stamp"
 install -d -o root -g root -m 0700 "$backup"
 cp -p -- /opt/vpsmon/vpsmon-agent "$backup/vpsmon-agent"
 cp -p -- /etc/vpsmon/config.json "$backup/config.json"
 cp -p -- /etc/systemd/system/vpsmon-agent.service "$backup/vpsmon-agent.service"
-if [ "$snapshot_service_existed" = "1" ]; then
-  cp -p -- /etc/systemd/system/vpsmon-nftables-snapshot.service "$backup/vpsmon-nftables-snapshot.service"
-fi
-if [ "$snapshot_timer_existed" = "1" ]; then
-  cp -p -- /etc/systemd/system/vpsmon-nftables-snapshot.timer "$backup/vpsmon-nftables-snapshot.timer"
-fi
-if [ "$snapshot_file_existed" = "1" ]; then
-  cp -p -- /var/lib/vpsmon/nftables-counters.json "$backup/nftables-counters.json"
-fi
 (
   cd "$backup"
-  set -- vpsmon-agent config.json vpsmon-agent.service
-  [ ! -f vpsmon-nftables-snapshot.service ] || set -- "$@" vpsmon-nftables-snapshot.service
-  [ ! -f vpsmon-nftables-snapshot.timer ] || set -- "$@" vpsmon-nftables-snapshot.timer
-  [ ! -f nftables-counters.json ] || set -- "$@" nftables-counters.json
-  sha256sum "$@" > checksums.sha256
+  sha256sum vpsmon-agent config.json vpsmon-agent.service > checksums.sha256
 )
 
 rollback() {
   echo "upgrade validation failed; restoring monitor backup" >&2
   systemctl stop vpsmon-agent.service >/dev/null 2>&1 || true
-  systemctl disable --now vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
-  systemctl stop vpsmon-nftables-snapshot.service >/dev/null 2>&1 || true
   install -o root -g root -m 0755 "$backup/vpsmon-agent" /opt/vpsmon/vpsmon-agent
   install -o root -g vpsmon -m 0640 "$backup/config.json" /etc/vpsmon/config.json
   install -o root -g root -m 0644 "$backup/vpsmon-agent.service" /etc/systemd/system/vpsmon-agent.service
-  if [ "$snapshot_service_existed" = "1" ]; then
-    install -o root -g root -m 0644 "$backup/vpsmon-nftables-snapshot.service" /etc/systemd/system/vpsmon-nftables-snapshot.service
-  else
-    rm -f -- /etc/systemd/system/vpsmon-nftables-snapshot.service
-  fi
-  if [ "$snapshot_timer_existed" = "1" ]; then
-    install -o root -g root -m 0644 "$backup/vpsmon-nftables-snapshot.timer" /etc/systemd/system/vpsmon-nftables-snapshot.timer
-  else
-    rm -f -- /etc/systemd/system/vpsmon-nftables-snapshot.timer
-  fi
-  if [ "$snapshot_file_existed" = "1" ]; then
-    cp -p -- "$backup/nftables-counters.json" /var/lib/vpsmon/nftables-counters.json
-  else
-    rm -f -- /var/lib/vpsmon/nftables-counters.json
-  fi
   systemctl daemon-reload >/dev/null 2>&1 || true
   if [ "$was_enabled" = "enabled" ]; then
     systemctl enable vpsmon-agent.service >/dev/null 2>&1 || true
@@ -215,20 +169,8 @@ rollback() {
   if [ "$was_active" = "active" ]; then
     systemctl start vpsmon-agent.service >/dev/null 2>&1 || true
   fi
-  if [ "$snapshot_timer_was_enabled" = "enabled" ]; then
-    systemctl enable vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
-  else
-    systemctl disable vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
-  fi
-  if [ "$snapshot_timer_was_active" = "active" ]; then
-    systemctl start vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
-  else
-    systemctl stop vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
-  fi
 }
 
-systemctl stop vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
-systemctl stop vpsmon-nftables-snapshot.service >/dev/null 2>&1 || true
 systemctl stop vpsmon-agent.service
 if ! install -o root -g root -m 0755 "$stage/vpsmon-agent" /opt/vpsmon/vpsmon-agent ||
    ! install -o root -g vpsmon -m 0640 "$stage/config.json" /etc/vpsmon/config.json ||
@@ -237,12 +179,7 @@ if ! install -o root -g root -m 0755 "$stage/vpsmon-agent" /opt/vpsmon/vpsmon-ag
   exit 5
 fi
 
-# Remove only Lume's retired snapshot helper. The host firewall is untouched.
-systemctl disable --now vpsmon-nftables-snapshot.timer >/dev/null 2>&1 || true
-systemctl stop vpsmon-nftables-snapshot.service >/dev/null 2>&1 || true
-if ! rm -f -- /etc/systemd/system/vpsmon-nftables-snapshot.service \
-  /etc/systemd/system/vpsmon-nftables-snapshot.timer /var/lib/vpsmon/nftables-counters.json ||
-   ! systemctl daemon-reload; then
+if ! systemctl daemon-reload; then
   rollback
   exit 5
 fi

@@ -1,6 +1,6 @@
 const accountPath = /^\/etc\/(?:passwd|group|shadow|gshadow|subuid|subgid)$/;
-const directoryPath = /^\/(?:etc\/vpsmon|opt\/vpsmon|var\/lib\/vpsmon|etc\/systemd\/system\/vpsmon-(?:agent\.service|nftables-snapshot\.(?:service|timer))\.d)$/;
-const managedPath = /^\/(?:opt\/vpsmon\/vpsmon-agent|etc\/vpsmon\/config\.json|etc\/systemd\/system\/(?:[a-zA-Z0-9_.@-]+\.(?:wants|requires)\/)?vpsmon-(?:agent\.service|nftables-snapshot\.(?:service|timer))|var\/lib\/vpsmon\/(?:nftables-counters\.json|pending\.json|traffic\.json|upgrade-backup\.[0-9]{8}T[0-9]{6}Z))$/;
+const directoryPath = /^\/(?:etc\/vpsmon|opt\/vpsmon|var\/lib\/vpsmon|etc\/systemd\/system\/vpsmon-agent\.service\.d)$/;
+const managedPath = /^\/(?:opt\/vpsmon\/vpsmon-agent|etc\/vpsmon\/config\.json|etc\/systemd\/system\/(?:[a-zA-Z0-9_.@-]+\.(?:wants|requires)\/)?vpsmon-agent\.service|var\/lib\/vpsmon\/(?:pending\.json|traffic\.json|upgrade-backup\.[0-9]{8}T[0-9]{6}Z))$/;
 const lineRanges = /^(?:-|[1-9][0-9]*(?:-[1-9][0-9]*)?(?:,[1-9][0-9]*(?:-[1-9][0-9]*)?)*)$/;
 const actions = { added: "新增", changed: "更新", removed: "删除", attributes: "属性", backup: "备份", pruned: "清理", entries: "账号条目" };
 const kinds = new Set(["text", "binary", "link", "directory"]);
