@@ -111,6 +111,8 @@ npm --prefix worker run preview:dashboard
 
 生产部署使用 `npm run deploy`；本地开发在 `worker/` 执行 `npm run db:local`。这两个入口共用同一结构文件。修改表或索引定义时，同时更新 SQL 中的 `database_schema` 和管理工具的 `DATABASE_SCHEMA`，并通过空库测试。
 
+已有数据的库不在代码中迁移：结构变化随版本说明提供一次性 SQL（用 `npx wrangler d1 execute <数据库名> --remote --file <文件>` 在部署前执行一次），SQL 只接受上一版结构标识，执行后结构与新的 `schema.sql` 完全一致。仓库只保留当前结构，不积累历史迁移代码。
+
 ## 更新与回滚 Worker
 
 在 `worker/` 执行 `npm run deploy`，管理菜单共用以下流程：

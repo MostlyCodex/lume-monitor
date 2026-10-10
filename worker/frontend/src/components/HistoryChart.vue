@@ -1,34 +1,28 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
-import type { ChartPoint, ChartSeries, NetworkLayer, Theme } from "../types";
+import type { ChartPoint, ChartSeries, Theme } from "../types";
 import { finite } from "../charts/series";
 import { formatAxisTime, formatLoss, formatRate, formatTime } from "../domain/format";
 
+// 延迟（ms）、丢包率（%）和速率（B/s）共用同一种折线图
 const props = defineProps<{
   id: string;
   emptyId: string;
+  emptyText: string;
   series: ChartSeries[];
-  kind: "network" | "rate";
+  kind: "latency" | "loss" | "rate";
   hours: number;
   theme: Theme;
-  layers: readonly NetworkLayer[];
 }>();
 
 const usable = computed(() =>
-  props.series.filter(
-    (series) =>
-      series.points.some((point) => finite(point.y)) ||
-      (props.kind === "network" && series.lossPoints?.some((point) => finite(point.y))),
-  ),
+  props.series.filter((series) => series.points.some((point) => finite(point.y))),
 );
-const showLines = computed(() => props.kind === "rate" || props.layers.includes("latency"));
-const showLoss = computed(() => props.kind === "network" && props.layers.includes("loss"));
 
 // 按容器实际宽度绘制、高度固定，避免手机上整张图等比缩小到无法阅读
 const root = ref<HTMLElement | null>(null);
 const width = ref(800);
 const height = 240;
-const LOSS_BAND = 36;
 // 窄屏（手机）下收窄右侧留白
 const compact = computed(() => width.value < 640);
 let resizeObserver: ResizeObserver | undefined;
@@ -56,23 +50,26 @@ const bounds = computed(() => {
     minY = Infinity,
     maxY = -Infinity;
   for (const s of usable.value) {
-    for (const p of [...s.points, ...(s.lossPoints ?? [])]) {
-      if (!finite(p.x)) continue;
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-    }
     for (const p of s.points) {
-      if (!finite(p.y)) continue;
-      if (p.y > maxY) maxY = p.y;
-      if (p.y < minY) minY = p.y;
+      if (finite(p.x)) {
+        minX = Math.min(minX, p.x);
+        maxX = Math.max(maxX, p.x);
+      }
+      if (finite(p.y)) {
+        minY = Math.min(minY, p.y);
+        maxY = Math.max(maxY, p.y);
+      }
     }
   }
   if (!isFinite(minX) || !isFinite(maxX) || minX === maxX) {
     maxX = Date.now() / 1000;
     minX = maxX - props.hours * 3600;
   }
-  // 纵轴按数据范围自适应（上下各留 15%），不强制从 0 开始，避免数值接近的曲线挤成一团
   if (!isFinite(maxY)) return { minX, maxX, minY: 0, maxY: 10 };
+  // 丢包率从 0 起画，至少显示到 5%，最多 100%
+  if (props.kind === "loss")
+    return { minX, maxX, minY: 0, maxY: Math.min(100, Math.max(5, maxY * 1.15)) };
+  // 其余纵轴按数据范围自适应（上下各留 15%），不强制从 0 开始，避免数值接近的曲线挤成一团
   const span = maxY - minY || Math.max(1, maxY * 0.1);
   return {
     minX,
@@ -84,7 +81,7 @@ const bounds = computed(() => {
 
 // 纵轴刻度只写数字（不带单位）；速率按最大值换算为 B/KB/MB… 的数值，带单位的完整数值见悬停提示
 const axisScale = computed(() => {
-  if (props.kind === "network") return 1;
+  if (props.kind !== "rate") return 1;
   let index = 0;
   while (bounds.value.maxY / 1024 ** index >= 1024 && index < 4) index += 1;
   return 1024 ** index;
@@ -157,9 +154,6 @@ const renderedSeries = computed(() =>
     ...s,
     gradientId: `grad-${props.id}-${idx}`,
     ...generateSmoothPath(s.points),
-    lossBars: (s.lossPoints ?? [])
-      .filter((p): p is { x: number; y: number } => finite(p.x) && finite(p.y) && p.y > 0)
-      .map((p) => ({ x: getX(p.x), h: Math.max(2, (Math.min(p.y, 100) / 100) * LOSS_BAND) })),
   })),
 );
 
@@ -209,6 +203,11 @@ function onPointerLeave(event: PointerEvent) {
   if (event.pointerType === "mouse") hoveredX.value = null;
 }
 
+function formatValue(value: number) {
+  if (props.kind === "latency") return `${Math.round(value)} ms`;
+  return props.kind === "loss" ? formatLoss(value) : formatRate(value);
+}
+
 function closest(points: ChartPoint[] | undefined, target: number) {
   let best: ChartPoint | undefined;
   for (const p of points ?? [])
@@ -221,19 +220,11 @@ const activeTooltipData = computed(() => {
   const target = hoveredX.value;
   const rows = usable.value.map((s) => {
     const point = closest(s.points, target);
-    const loss = closest(s.lossPoints, target);
     return {
       id: s.id,
       label: s.label,
       color: s.color,
-      value:
-        point && finite(point.y)
-          ? props.kind === "network"
-            ? `${Math.round(point.y)} ms`
-            : formatRate(point.y)
-          : "—",
-      lossLabel: s.failureLabel || "丢包",
-      loss: loss && finite(loss.y) ? formatLoss(loss.y) : "—",
+      value: point && finite(point.y) ? formatValue(point.y) : "—",
     };
   });
   const anchor = closest(usable.value[0]?.points, target)?.x ?? target;
@@ -243,14 +234,16 @@ const activeTooltipData = computed(() => {
 
 <template>
   <div :id="id" ref="root" class="history-chart relative w-full overflow-hidden select-none">
-    <div v-if="usable.length && (showLines || showLoss)" class="relative w-full">
+    <div v-if="usable.length" class="relative w-full">
       <svg
         class="block w-full touch-pan-y"
         :width="width"
         :height="height"
         :viewBox="`0 0 ${width} ${height}`"
         role="img"
-        :aria-label="kind === 'network' ? '网络质量历史曲线' : '网络速率历史曲线'"
+        :aria-label="
+          { latency: '延迟历史曲线', loss: '丢包率历史曲线', rate: '网络速率历史曲线' }[kind]
+        "
         @pointermove="onPointer"
         @pointerdown="onPointer"
         @pointerleave="onPointerLeave"
@@ -308,25 +301,10 @@ const activeTooltipData = computed(() => {
           </text>
         </g>
 
-        <!-- 丢包 / 建连失败事件：自底部向上的细柱，高度对应失败比例 -->
-        <g v-if="showLoss" class="loss-layer">
-          <g v-for="s in renderedSeries" :key="`loss-${s.id}`" :fill="s.color" fill-opacity="0.7">
-            <rect
-              v-for="(bar, idx) in s.lossBars"
-              :key="idx"
-              :x="bar.x - 1.5"
-              :y="height - padding.bottom - bar.h"
-              width="3"
-              :height="bar.h"
-              rx="1"
-            />
-          </g>
-        </g>
-
         <!-- 面积阴影与折线 -->
-        <g v-if="showLines" class="line-layer">
+        <g class="line-layer">
           <g v-for="s in renderedSeries" :key="s.id">
-            <!-- 多条延迟曲线只画线（填充叠加会混色）；速率图保留淡填充 -->
+            <!-- 多条曲线只画线（填充叠加会混色）；速率图保留淡填充 -->
             <path v-if="kind === 'rate'" :d="s.areaPath" :fill="`url(#${s.gradientId})`" />
             <path
               :d="s.linePath"
@@ -368,7 +346,7 @@ const activeTooltipData = computed(() => {
           <div
             v-for="row in activeTooltipData.rows"
             :key="row.id"
-            class="plot-tooltip-row grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3"
+            class="plot-tooltip-row grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3"
           >
             <span class="flex min-w-0 items-center gap-1.5 font-medium">
               <span
@@ -378,9 +356,6 @@ const activeTooltipData = computed(() => {
               <span class="truncate">{{ row.label }}</span>
             </span>
             <span class="tabular-nums font-semibold">{{ row.value }}</span>
-            <span v-if="kind === 'network'" class="tabular-nums text-muted-foreground">
-              {{ row.lossLabel }} {{ row.loss }}
-            </span>
           </div>
         </div>
       </div>
@@ -392,13 +367,7 @@ const activeTooltipData = computed(() => {
       :id="emptyId"
       class="flex h-48 w-full flex-col items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground"
     >
-      {{
-        kind === "rate"
-          ? "暂无速率历史"
-          : usable.length
-            ? "未选择要显示的曲线或事件"
-            : "暂无网络质量历史"
-      }}
+      {{ emptyText }}
     </div>
   </div>
 </template>

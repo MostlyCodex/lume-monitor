@@ -2,14 +2,13 @@
 import { computed } from "vue";
 import type { NodeSnapshot } from "../types";
 import { formatCapacity } from "../domain/format";
-import { cycleDescription } from "../domain/traffic";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
 
 const props = defineProps<{ node: NodeSnapshot }>();
 
 const facts = computed(() => {
-  const { metrics, system, agent } = props.node;
-  const values = [
+  const { metrics, system } = props.node;
+  return [
     { label: "操作系统", value: system?.os || "—" },
     { label: "系统内核", value: system?.kernel || "—" },
     {
@@ -31,9 +30,6 @@ const facts = computed(() => {
           : "未上报",
     },
   ];
-  return metrics.traffic_cycle_enabled || metrics.traffic_cycle
-    ? [...values, { label: "流量周期", value: cycleDescription(metrics.traffic_cycle) }]
-    : values;
 });
 </script>
 
@@ -48,9 +44,6 @@ const facts = computed(() => {
           v-for="fact in facts"
           :key="fact.label"
           class="detail-fact flex min-w-0 flex-col gap-1"
-          :class="{
-            'col-span-2 lg:col-span-3': fact.label === '流量周期',
-          }"
         >
           <dt class="text-sm text-muted-foreground">{{ fact.label }}</dt>
           <dd class="break-all text-sm font-medium tabular-nums">{{ fact.value }}</dd>

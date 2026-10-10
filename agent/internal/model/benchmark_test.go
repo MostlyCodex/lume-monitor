@@ -6,35 +6,28 @@ import (
 )
 
 func representativeReport() Report {
-	loss := 0.0
 	probes := make([]ProbeResult, 4)
 	for index := range probes {
 		probes[index] = ProbeResult{
 			Name: "beijing_carrier_icmp_" + string(rune('1'+index)), Label: "Beijing carrier", Category: "carrier-reference",
-			Kind: "icmp", Target: "monitor.example", WarningMS: 200, CriticalMS: 350,
+			Kind: "icmp", WarningMS: 200, CriticalMS: 350,
 			WarningFailurePercent: 5, CriticalFailurePercent: 30, Severity: "P2",
-			DisplayOrder: (index + 1) * 10, Success: true, Complete: true,
-			DurationMS: 151.2, AverageDurationMS: 151.7, P95DurationMS: 153.4,
-			MinDurationMS: 149.8, MaxDurationMS: 153.7, RangeMS: 3.9, JitterMS: 1.2,
-			Samples: 5, AttemptedSamples: 5, SuccessfulSamples: 5,
-			PacketLossPercent: &loss, CheckedAt: 1787472000,
+			DisplayOrder: (index + 1) * 10, Success: true, Complete: true, DurationMS: 151.2,
+			Samples: 5, AttemptedSamples: 5, SuccessfulSamples: 5, CheckedAt: 1787472000,
 		}
 	}
 	return Report{
 		SchemaVersion: 2, AgentVersion: "benchmark", NodeID: "benchmark-node",
 		Node: NodeMetadata{
-			ID: "benchmark-node", DisplayName: "Benchmark Node",
-			Role: "VPS", Group: "benchmark", Region: "Test Region", StaleSeconds: 180,
-			DisplayOrder: 100, Color: "green", OfflineSeverity: "P1", IPChangeSeverity: "P2",
+			ID: "benchmark-node", DisplayName: "Benchmark Node", Role: "VPS", Region: "Test Region",
+			StaleSeconds: 180, DisplayOrder: 100, IPChangeSeverity: "P2",
 		},
 		GeneratedAt: 1787472000,
 		System: SystemMetrics{
-			Hostname: "benchmark", OS: "Linux", Kernel: "6.x", Arch: "amd64",
-			BootID: "00000000-0000-0000-0000-000000000000", UptimeSeconds: 86400,
-			CPUPercent: 3.2, Load1: 0.1, Load5: 0.1, Load15: 0.1,
+			Hostname: "benchmark", OS: "Linux", Kernel: "6.x",
+			BootID: "00000000-0000-0000-0000-000000000000", UptimeSeconds: 86400, CPUPercent: 3.2,
 			MemoryTotalBytes: 1 << 30, MemoryAvailableBytes: 800 << 20,
-			RootTotalBytes: 20 << 30, RootFreeBytes: 15 << 30,
-			RootUsedPercent: 25, RootInodeUsedPercent: 3,
+			RootTotalBytes: 20 << 30, RootUsedPercent: 25,
 			NetworkRXBytes: 1 << 30, NetworkTXBytes: 2 << 30,
 		},
 		Services: []ServiceStatus{{Name: "example.service", Label: "Example", Severity: "P1", State: "active"}},

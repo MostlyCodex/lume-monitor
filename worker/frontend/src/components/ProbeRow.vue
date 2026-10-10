@@ -1,12 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { EnergyBucket, HistorySnapshot, MetricKind, NodeSnapshot, Probe } from "../types";
-import {
-  aggregateMetricEnergy,
-  displayProbeLabel,
-  historicalRows,
-  probeMetricSeverity,
-} from "../domain/probes";
+import { aggregateMetricEnergy, displayProbeLabel } from "../domain/probes";
 import { formatLoss, formatTime } from "../domain/format";
 
 const props = defineProps<{
@@ -16,33 +11,23 @@ const props = defineProps<{
   now: number;
 }>();
 
+// ICMP 显示延迟与丢包两条格栅；TCP 只显示延迟，连不上时延迟格变红
 const metrics = computed(() =>
-  (["latency", "loss"] as MetricKind[]).map((kind) => {
-    const raw =
+  (props.probe.kind === "icmp"
+    ? (["latency", "loss"] as MetricKind[])
+    : (["latency"] as MetricKind[])
+  ).map((kind) => ({
+    kind,
+    label: kind === "latency" ? "延迟" : "丢包",
+    value:
       kind === "latency"
-        ? props.probe.duration_ms
-        : (props.probe.packet_loss_percent ?? props.probe.sample_failure_percent);
-    return {
-      kind,
-      raw,
-      label: kind === "latency" ? "延迟" : "丢包",
-      value:
-        kind === "latency"
-          ? props.probe.success && raw != null
-            ? `${Math.round(raw)} ms`
-            : "— ms"
-          : formatLoss(raw ?? 100),
-      severity: probeMetricSeverity(
-        kind,
-        raw,
-        props.probe,
-        historicalRows(props.node.id, props.probe.name, props.history),
-        props.probe.success,
-        props.probe.complete,
-      ),
-      buckets: aggregateMetricEnergy(props.node.id, props.probe, kind, props.history, props.now),
-    };
-  }),
+        ? props.probe.success && props.probe.duration_ms != null
+          ? `${Math.round(props.probe.duration_ms)} ms`
+          : "— ms"
+        : formatLoss(props.probe.packet_loss_percent ?? 100),
+    tone: kind === "latency" ? latencyTone.value : lossTone.value,
+    buckets: aggregateMetricEnergy(props.node.id, props.probe, kind, props.history, props.now),
+  })),
 );
 
 function bucketTitle(bucket: EnergyBucket, kind: MetricKind) {
@@ -55,10 +40,14 @@ function bucketTitle(bucket: EnergyBucket, kind: MetricKind) {
   return `${time} · 丢包 ${formatLoss(bucket.value)}${packets}${bucket.severeFiveMinuteLoss ? " · 含5分钟严重丢包" : ""}`;
 }
 
+const latencyTone = computed(() =>
+  props.probe.kind === "tcp" && !props.probe.success ? "text-status-bad" : "text-foreground",
+);
+
 const lossTone = computed(() => {
-  const loss = metrics.value[1];
-  if (!loss || loss.raw == null || !props.probe.success) return "text-status-bad";
-  return loss.raw > 0 ? "text-status-warn" : "text-foreground";
+  const loss = props.probe.packet_loss_percent;
+  if (loss == null || !props.probe.success) return "text-status-bad";
+  return loss > 0 ? "text-status-warn" : "text-foreground";
 });
 
 function cellBg(bucket: EnergyBucket) {
@@ -70,11 +59,11 @@ function cellBg(bucket: EnergyBucket) {
 </script>
 
 <template>
-  <!-- 名称列最宽 4.5rem（手机）/ 5rem（电脑），空间不足时只压缩名称，两条格栅宽度固定，三列两端对齐、间距均分。
+  <!-- 名称列最宽 4.5rem（手机）/ 5rem（电脑），空间不足时只压缩名称；格栅列固定 106px（18 格 × 4px + 17 × 2px 间距），三列两端对齐、间距均分。
        不依赖内容宽度或 subgrid，Safari 与 Chrome 排版一致。上行为数值（标在各自格栅右上方），
-       下行为名称与两条格栅 -->
+       下行为名称与格栅；TCP 只有延迟一列，丢包列留空以保持对齐 -->
   <div
-    class="probe-row grid grid-cols-[minmax(0,4.5rem)_auto_auto] items-center justify-between gap-y-1.5 text-xs sm:grid-cols-[minmax(0,5rem)_auto_auto]"
+    class="probe-row grid grid-cols-[minmax(0,4.5rem)_6.625rem_6.625rem] items-center justify-between gap-y-1.5 text-xs sm:grid-cols-[minmax(0,5rem)_6.625rem_6.625rem]"
   >
     <span
       class="col-start-1 row-start-2 min-w-0 truncate text-sm leading-none"
@@ -86,9 +75,7 @@ function cellBg(bucket: EnergyBucket) {
       v-for="metric in metrics"
       :key="`value-${metric.kind}`"
       class="row-start-1 justify-self-end text-xs font-medium leading-none tabular-nums"
-      :class="
-        metric.kind === 'loss' ? ['col-start-3', lossTone] : ['col-start-2', 'text-foreground']
-      "
+      :class="[metric.kind === 'loss' ? 'col-start-3' : 'col-start-2', metric.tone]"
     >
       {{ metric.value }}
     </span>

@@ -13,7 +13,7 @@ func TestSelectedInterfaceDoesNotDoubleCountBridgeTraffic(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := selectNetwork(available, []string{"eth0"}, nil)
-	if err != nil || result.RX != 100 || result.TX != 200 || result.RXErrors != 2 || result.TXDrops != 5 {
+	if err != nil || result.RX != 100 || result.TX != 200 {
 		t.Fatalf("unexpected totals: %+v %v", result, err)
 	}
 	if _, ok := available["lo"]; ok {

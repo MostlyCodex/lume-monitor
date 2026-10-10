@@ -90,11 +90,16 @@ async function testFreshDatabase(root) {
   const persistence = join(root, "fresh");
   const config = "wrangler.test.jsonc";
   await prepareDatabase({query:sql=>query(config,persistence,sql)});
+  // Expired rows for the retention check, plus samples from two days ago that
+  // the daily scheduled run must roll up once Alpha's catalog exists.
+  const twoDaysAgo = Math.floor(Date.now() / 1000) - 2 * 86400;
   runWrangler([
     "d1", "execute", "DB", "--local", "--config", config, "--persist-to", persistence,
     "--command",
-    "INSERT INTO metric_samples VALUES (1,'expired-fixture',1,'expired-boot',0,0,0,0,0,0,0,0,0,0,NULL,NULL,0,0,0,0); " +
-      "INSERT INTO probe_rounds VALUES (1,'expired-fixture',1,'[]');",
+    "INSERT INTO metric_samples VALUES (1,'expired-fixture',1,NULL,NULL); " +
+      "INSERT INTO probe_rounds VALUES (1,'expired-fixture',1,'[]'); " +
+      `INSERT INTO metric_samples VALUES (${twoDaysAgo},'alpha-vps',${twoDaysAgo},100,200); ` +
+      `INSERT INTO probe_rounds VALUES (${twoDaysAgo},'alpha-vps',${twoDaysAgo},'[["peer_icmp",${twoDaysAgo},1,11.5,5,5]]');`,
     "--yes",
   ], true);
 
@@ -146,7 +151,7 @@ async function testFreshDatabase(root) {
       "(SELECT COUNT(*) FROM probe_series_rollups) AS probes",
   );
   if (Number(rollups[0]?.metrics) === 0 || Number(rollups[0]?.probes) === 0) {
-    throw new Error(`observability rebuild did not create rollups: ${JSON.stringify(rollups)}`);
+    throw new Error(`the daily scheduled run did not create rollups: ${JSON.stringify(rollups)}`);
   }
   console.log("retention_and_rollups_ok=true");
 }

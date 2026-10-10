@@ -206,7 +206,7 @@ test("new-node wizard collects probes, previews them and installs from the same 
     ["text","Beta"],["text","VPS"],["text","Test"],
     ["text","nginx service",/systemd/],["text","",/systemd/],
     ["text","2"],["text","1"],["text",""],
-    ["text","user@host:22",/SSH/],["text","ssh-beta",/SSH/],["text","1",/统计方式/],["yes",false,/周期流量/],["yes",true,/以上配置/],
+    ["text","user@host:22",/SSH/],["text","ssh-beta",/SSH/],["text","1",/统计方式/],["text","1",/重置日/],["text","1",/时区/],["yes",true,/以上配置/],
   ]);
   await context.addNode(prompt,new Map());
   assert.deepEqual(created[0].probes,carriers);
@@ -300,11 +300,11 @@ test("cancelling a node configuration before preview saves nothing", async () =>
   assert.deepEqual(h.deployments, []);
 });
 
-test("node configuration saves selected interfaces and an optional cycle without changing existing services or probes",async()=>{
+test("node configuration saves selected interfaces and the traffic cycle without changing existing services or probes",async()=>{
  const h=configurationHarness({configured:true});
- const prompt=scriptedPrompt([["yes",false,/显示名/],["yes",false,/systemd/],["text","1",/网络探针/],["yes",true,/流量/],["text","2",/统计方式/],["text","2",/网卡编号/],["yes",true,/周期流量/],["text","15",/重置日/],["text","2",/时区/],["yes",true,/保存/],["yes",false,/部署/]]);
+ const prompt=scriptedPrompt([["yes",false,/显示名/],["yes",false,/systemd/],["text","1",/网络探针/],["yes",true,/流量/],["text","2",/统计方式/],["text","2",/网卡编号/],["text","15",/重置日/],["text","2",/时区/],["yes",true,/保存/],["yes",false,/部署/]]);
  await h.run(prompt);const config=JSON.parse(h.files.get(h.configPath));
- assert.deepEqual(config.network_interfaces,["eth1"]);assert.deepEqual(config.traffic_cycle,{enabled:true,reset_day:15,time_zone:"Asia/Shanghai"});
+ assert.deepEqual(config.network_interfaces,["eth1"]);assert.deepEqual(config.traffic_cycle,{reset_day:15,time_zone:"Asia/Shanghai"});
  assert.deepEqual(config.services,[{name:"nginx.service"}]);assert.deepEqual(config.probes,carriers);assert.equal(config.secret,"beta-secret");assert.equal(h.state.nodes.beta.pendingApply,true);prompt.done();
 });
 

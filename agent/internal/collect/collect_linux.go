@@ -73,10 +73,10 @@ func (c *Collector) cpuPercent() (float64, error) {
 	return percent, nil
 }
 
-func memoryMetrics() (total, available, swapTotal, swapUsed uint64, err error) {
+func memoryMetrics() (total, available uint64, err error) {
 	file, err := os.Open("/proc/meminfo")
 	if err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, err
 	}
 	defer file.Close()
 	values := map[string]uint64{}
@@ -91,50 +91,21 @@ func memoryMetrics() (total, available, swapTotal, swapUsed uint64, err error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, err
 	}
-	total = values["MemTotal"]
-	available = values["MemAvailable"]
-	swapTotal = values["SwapTotal"]
-	if free := values["SwapFree"]; swapTotal >= free {
-		swapUsed = swapTotal - free
-	}
-	return total, available, swapTotal, swapUsed, nil
+	return values["MemTotal"], values["MemAvailable"], nil
 }
 
-func loadMetrics() (float64, float64, float64, error) {
-	line, err := readFirst("/proc/loadavg")
-	if err != nil {
-		return 0, 0, 0, err
-	}
-	fields := strings.Fields(line)
-	if len(fields) < 3 {
-		return 0, 0, 0, fmt.Errorf("unexpected /proc/loadavg")
-	}
-	values := make([]float64, 3)
-	for i := 0; i < 3; i++ {
-		values[i], err = strconv.ParseFloat(fields[i], 64)
-		if err != nil {
-			return 0, 0, 0, err
-		}
-	}
-	return values[0], values[1], values[2], nil
-}
-
-func diskMetrics() (total, free uint64, usedPercent, inodeUsedPercent float64, err error) {
+func diskMetrics() (total uint64, usedPercent float64, err error) {
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs("/", &stat); err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, err
 	}
 	total = stat.Blocks * uint64(stat.Bsize)
-	free = stat.Bavail * uint64(stat.Bsize)
 	if stat.Blocks > 0 {
 		usedPercent = float64(stat.Blocks-stat.Bfree) / float64(stat.Blocks) * 100
 	}
-	if stat.Files > 0 {
-		inodeUsedPercent = float64(stat.Files-stat.Ffree) / float64(stat.Files) * 100
-	}
-	return total, free, usedPercent, inodeUsedPercent, nil
+	return total, usedPercent, nil
 }
 
 func (c *Collector) Collect() (model.SystemMetrics, []error) {
@@ -163,15 +134,11 @@ func (c *Collector) Collect() (model.SystemMetrics, []error) {
 	if err != nil {
 		errorsFound = append(errorsFound, err)
 	}
-	load1, load5, load15, err := loadMetrics()
+	memTotal, memAvailable, err := memoryMetrics()
 	if err != nil {
 		errorsFound = append(errorsFound, err)
 	}
-	memTotal, memAvailable, swapTotal, swapUsed, err := memoryMetrics()
-	if err != nil {
-		errorsFound = append(errorsFound, err)
-	}
-	rootTotal, rootFree, rootUsed, inodeUsed, err := diskMetrics()
+	rootTotal, rootUsed, err := diskMetrics()
 	if err != nil {
 		errorsFound = append(errorsFound, err)
 	}
@@ -180,13 +147,11 @@ func (c *Collector) Collect() (model.SystemMetrics, []error) {
 		errorsFound = append(errorsFound, err)
 	}
 	return model.SystemMetrics{
-		Hostname: hostname, OS: readOS(), Kernel: kernel, Arch: runtime.GOARCH, BootID: bootID,
-		UptimeSeconds: uptime, CPUPercent: cpu, CPUCount: runtime.NumCPU(), Load1: load1, Load5: load5, Load15: load15,
+		Hostname: hostname, OS: readOS(), Kernel: kernel, BootID: bootID,
+		UptimeSeconds: uptime, CPUPercent: cpu, CPUCount: runtime.NumCPU(),
 		MemoryTotalBytes: memTotal, MemoryAvailableBytes: memAvailable,
-		SwapTotalBytes: swapTotal, SwapUsedBytes: swapUsed,
-		RootTotalBytes: rootTotal, RootFreeBytes: rootFree, RootUsedPercent: rootUsed, RootInodeUsedPercent: inodeUsed,
-		NetworkRXBytes: network.RX, NetworkTXBytes: network.TX, NetworkRXErrors: network.RXErrors, NetworkTXErrors: network.TXErrors,
-		NetworkRXDrops: network.RXDrops, NetworkTXDrops: network.TXDrops,
+		RootTotalBytes: rootTotal, RootUsedPercent: rootUsed,
+		NetworkRXBytes: network.RX, NetworkTXBytes: network.TX,
 		NetworkInterfaces: network.Interfaces, NetworkValid: err == nil, NetworkScope: network.Scope, NetworkCounters: network.Counters,
 	}, errorsFound
 }

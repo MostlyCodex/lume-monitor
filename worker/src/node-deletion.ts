@@ -4,13 +4,11 @@ import type { Env } from "./types";
 // An explicit table inventory keeps node deletion separate from shared settings,
 // authentication, schema metadata and the database itself.
 const nodeTables = [
-  "ip_history",
   "metric_series_rollups",
   "probe_series_rollups",
   "observability_events",
   "service_catalog",
   "node_latest",
-  "snapshots",
   "probe_rounds",
   "metric_samples",
   "probe_catalog",
@@ -40,11 +38,8 @@ export async function nodeDeletionSummary(env: Env, nodeId: string) {
     (table) =>
       "(SELECT COUNT(*) FROM " + table + " WHERE node_id=?) AS " + table,
   );
-  selections.push(
-    "(SELECT COUNT(*) FROM business_routes WHERE source_node_id=? OR target_node_id=?) AS business_routes",
-  );
   const counts = await env.DB.prepare("SELECT " + selections.join(", "))
-    .bind(...tables.map(() => nodeId), nodeId, nodeId)
+    .bind(...tables.map(() => nodeId))
     .first<Record<string, number>>();
   const peers = await env.DB.prepare(
     "SELECT node_id,probe_name FROM probe_catalog WHERE target_node_id=? AND node_id<>? ORDER BY node_id,probe_name",
@@ -90,9 +85,6 @@ export async function prepareNodeDeletion(env: Env, nodeId: string, now: number)
     env.DB.prepare(
       "UPDATE probe_catalog SET enabled = 0, updated_at = ? WHERE (node_id = ? OR target_node_id = ?) AND enabled = 1",
     ).bind(now, nodeId, nodeId),
-    env.DB.prepare(
-      "UPDATE business_routes SET enabled = 0, updated_at = ? WHERE (source_node_id = ? OR target_node_id = ?) AND enabled = 1",
-    ).bind(now, nodeId, nodeId),
   ]);
   return {
     ok: true,
@@ -113,19 +105,16 @@ export async function permanentlyDeleteNode(env: Env, nodeId: string) {
     throw new NodeDeletionConflict("prepare node deletion first");
   const before = await nodeDeletionSummary(env, nodeId);
   const statements: D1PreparedStatement[] = [];
-  for (const table of ["node_latest", "snapshots"]) {
-    // A peer archive contains other valid probes and host metrics. Keep the
-    // archive and remove only observations that refer to the deleted node.
+  {
+    // A peer's latest report contains other valid probes and host metrics. Keep
+    // the report and remove only observations that refer to the deleted node.
     const match =
       "(coalesce(json_extract(q.value,'$.target_node_id'),'')=? OR EXISTS " +
       "(SELECT 1 FROM probe_catalog p WHERE p.target_node_id=? AND p.node_id=" +
-      table +
-      ".node_id AND p.probe_name=json_extract(q.value,'$.name')))";
+      "node_latest.node_id AND p.probe_name=json_extract(q.value,'$.name')))";
     statements.push(
       env.DB.prepare(
-        "UPDATE " +
-          table +
-          " SET report_json=json_set(report_json,'$.probes',json(" +
+        "UPDATE node_latest SET report_json=json_set(report_json,'$.probes',json(" +
           "(SELECT json_group_array(json(q.value)) FROM json_each(report_json,'$.probes') q WHERE NOT " +
           match +
           "))) " +
@@ -167,11 +156,6 @@ export async function permanentlyDeleteNode(env: Env, nodeId: string) {
       ),
     );
   }
-  statements.push(
-    env.DB.prepare(
-      "DELETE FROM business_routes WHERE source_node_id=? OR target_node_id=?",
-    ).bind(nodeId, nodeId),
-  );
   await env.DB.batch(statements);
   const remaining = await nodeDeletionSummary(env, nodeId);
   if (remaining.rows || remaining.peers.length)

@@ -12,17 +12,14 @@ const secrets = {
 // future samples or make the result depend on a five-minute boundary.
 const reportEpoch = Math.floor(Date.now() / 1000) - 240;
 
-function nodeMetadata(id, name, order, color) {
+function nodeMetadata(id, name, order) {
   return {
     id,
     display_name: name,
     role: "VPS",
-    group: "integration",
     region: "Test Region",
     stale_seconds: 180,
     display_order: order,
-    color,
-    offline_severity: "P1",
     ip_change_severity: "P2",
   };
 }
@@ -34,34 +31,22 @@ function report(id = "alpha-vps") {
     schema_version: 2,
     agent_version: "integration-test",
     node_id: id,
-    node: nodeMetadata(id, alpha ? "Alpha VPS" : "Beta VPS", alpha ? 10 : 20, alpha ? "green" : "blue"),
+    node: nodeMetadata(id, alpha ? "Alpha VPS" : "Beta VPS", alpha ? 10 : 20),
     generated_at: now,
     system: {
       hostname: `integration-${id}`,
       os: "Debian test",
       kernel: "6.12-test",
-      arch: "amd64",
       boot_id: `integration-${id}-boot-id`,
       uptime_seconds: 1000,
       cpu_percent: 2,
       ...(alpha ? { cpu_count: 4 } : {}),
-      load1: 0.1,
-      load5: 0.1,
-      load15: 0.1,
       memory_total_bytes: 1_000_000_000,
       memory_available_bytes: 900_000_000,
-      swap_total_bytes: 0,
-      swap_used_bytes: 0,
       root_total_bytes: 10_000_000_000,
-      root_free_bytes: 9_000_000_000,
       root_used_percent: 10,
-      root_inode_used_percent: 2,
       network_rx_bytes: 100,
       network_tx_bytes: 200,
-      network_rx_errors: 0,
-      network_tx_errors: 0,
-      network_rx_drops: 0,
-      network_tx_drops: 0,
     },
     services: alpha
       ? [{ name: "example.service", label: "Example Service", severity: "P1", state: "active" }]
@@ -74,28 +59,18 @@ function report(id = "alpha-vps") {
             category: "node-link",
             target_node_id: "beta-vps",
             kind: "icmp",
-            target: "beta.example",
             warning_ms: 30,
             critical_ms: 50,
             warning_failure_percent: 20,
             critical_failure_percent: 60,
             severity: "P1",
             display_order: 10,
-            primary: true,
             success: true,
             complete: true,
             duration_ms: 11.5,
-            average_duration_ms: 11.7,
-            p95_duration_ms: 12.9,
-            min_duration_ms: 10.2,
-            max_duration_ms: 13.1,
-            range_ms: 2.9,
-            jitter_ms: 1.0,
             samples: 5,
             attempted_samples: 5,
             successful_samples: 5,
-            sample_failure_percent: 0,
-            packet_loss_percent: 0,
             checked_at: now,
           },
           {
@@ -103,7 +78,6 @@ function report(id = "alpha-vps") {
             label: "External ICMP",
             category: "external",
             kind: "icmp",
-            target: "192.0.2.1",
             warning_ms: 100,
             critical_ms: 200,
             warning_failure_percent: 30,
@@ -113,23 +87,14 @@ function report(id = "alpha-vps") {
             success: true,
             complete: true,
             duration_ms: 20,
-            average_duration_ms: 20.5,
-            p95_duration_ms: 22.5,
-            min_duration_ms: 18,
-            max_duration_ms: 23,
-            range_ms: 5,
-            jitter_ms: 1.8,
             samples: 5,
             attempted_samples: 5,
             successful_samples: 4,
-            sample_failure_percent: 20,
-            packet_loss_percent: 20,
             checked_at: now,
           },
         ]
       : [],
-    counters: [],
-    agent: { queue_depth: 0, collect_errors: 0, send_errors: 0, started_at: now - 1000 },
+    agent: { started_at: now - 1000 },
   };
 }
 
@@ -219,41 +184,18 @@ optionalReport.probes.push({
   category: "node-link",
   target_node_id: "beta-vps",
   kind: "tcp",
-  target: "beta.example",
-  port: 443,
   warning_ms: 30,
   critical_ms: 50,
-  warning_failure_percent: 1,
-  critical_failure_percent: 60,
   severity: "P2",
   display_order: 20,
   success: true,
   complete: true,
   duration_ms: 12.4,
-  average_duration_ms: 12.4,
-  p95_duration_ms: 13.1,
-  min_duration_ms: 11.9,
-  max_duration_ms: 13.2,
-  range_ms: 1.3,
-  jitter_ms: 0.5,
   samples: 3,
   attempted_samples: 3,
   successful_samples: 2,
-  sample_failure_percent: 100 / 3,
   checked_at: optionalReport.generated_at,
 });
-optionalReport.counters = [{
-  name: "relay_443",
-  label: "443 转发规则",
-  kind: "nftables-rule",
-  unit: "matches",
-  display_order: 10,
-  complete: true,
-  delta: 12,
-  interval_seconds: 60,
-  rate_per_minute: 12,
-  observed_at: optionalReport.generated_at,
-}];
 const optionalAccepted = await fetch(
   `${base}/api/v1/report`,
   signedRequest(JSON.stringify(optionalReport)),
@@ -267,14 +209,11 @@ const betaAccepted = await fetch(
 );
 assert(betaAccepted.status === 202, `plain host-only report returned ${betaAccepted.status}`);
 
-const unauthorized = await fetch(`${base}/api/v1/status`);
-assert(unauthorized.status === 401, `unauthorized status returned ${unauthorized.status}`);
-
 const adminHeaders = { authorization: "Bearer local-admin-token-with-32-characters" };
-const status = await fetch(`${base}/api/v1/status`, { headers: adminHeaders });
-const statusBody = await status.json();
-assert(status.status === 200 && statusBody.nodes.some((node) => node.node_id === "alpha-vps"), "status omitted Alpha VPS");
-assert(statusBody.nodes.some((node) => node.node_id === "beta-vps"), "status omitted Beta VPS");
+for (const removed of ["/api/v1/status", "/api/v1/canary?probe_id=test&nonce=abcdefgh12345678", "/api/v1/admin/telegram-diagnostics"]) {
+  const response = await fetch(`${base}${removed}`, { headers: adminHeaders });
+  assert(response.status === 404, `removed endpoint ${removed} returned ${response.status}`);
+}
 
 const dashboardUnauthorized = await fetch(`${base}/api/v1/dashboard/latest`);
 assert(dashboardUnauthorized.status === 401, `unauthorized dashboard returned ${dashboardUnauthorized.status}`);
@@ -283,12 +222,14 @@ const dashboard = await fetch(`${base}/api/v1/dashboard/latest`, { headers: admi
 const dashboardBody = await dashboard.json();
 assert(dashboard.status === 200 && dashboardBody.nodes.some((node) => node.id === "alpha-vps"), "dashboard omitted Alpha VPS");
 assert(dashboardBody.nodes.some((node) => node.id === "beta-vps"), "dashboard omitted Beta VPS");
-assert(dashboardBody.summary.total_nodes === 2, "dashboard fleet is not catalog-driven");
 assert(dashboardBody.schema_version === 2, "dashboard schema version is incorrect");
 assert(dashboardBody.catalog.nodes.length === 2, "node catalog is incomplete");
-assert(dashboardBody.catalog.services.length === 1, "service catalog is incomplete");
-assert(dashboardBody.catalog.routes.length === 2, "node-link routes were not registered");
-assert(!("counters" in dashboardBody.catalog), "retired counter catalog is still exposed");
+// The dashboard response carries only what the page displays.
+assert(
+  JSON.stringify(Object.keys(dashboardBody).sort()) === JSON.stringify(["catalog", "nodes", "schema_version", "server_time"]) &&
+    JSON.stringify(Object.keys(dashboardBody.catalog).sort()) === JSON.stringify(["known_node_ids", "nodes"]),
+  `dashboard exposes undisplayed data: ${Object.keys(dashboardBody)} / ${Object.keys(dashboardBody.catalog)}`,
+);
 const alphaLatest = dashboardBody.nodes.find((node) => node.id === "alpha-vps");
 const betaLatest = dashboardBody.nodes.find((node) => node.id === "beta-vps");
 assert(alphaLatest.metrics.cpu_count === 4, "CPU capacity was lost between report and dashboard");
@@ -299,25 +240,31 @@ assert(alphaLatest.metrics.network_rx_rate_bps === 100, `network RX rate was not
 assert(alphaLatest.metrics.network_tx_rate_bps === 200, `network TX rate was not derived correctly: ${alphaLatest.metrics.network_tx_rate_bps}`);
 assert(alphaLatest.probes.find((probe) => probe.name === "external_icmp")?.packet_loss_percent === 20, "ICMP packet loss was not exposed");
 const tcpLatest = alphaLatest.probes.find((probe) => probe.name === "peer_tcp_443");
-assert(tcpLatest?.kind === "tcp" && tcpLatest.packet_loss_percent === null, "TCP failure was mislabeled as packet loss");
-assert(Math.round(tcpLatest?.sample_failure_percent) === 33, "TCP connect failure rate is missing");
-assert(!("counters" in alphaLatest), "retired counters are still exposed in latest reports");
+assert(tcpLatest?.kind === "tcp" && tcpLatest.success === true && tcpLatest.packet_loss_percent === null, "TCP probes must only report latency and reachability");
+assert(tcpLatest.warning_failure_percent === null && !("sample_failure_percent" in tcpLatest), "TCP failure rates are still exposed");
+assert(
+  JSON.stringify(Object.keys(alphaLatest).sort()) ===
+    JSON.stringify(["country", "id", "label", "metrics", "online", "order", "probes", "received_at", "region", "role", "services", "system"]),
+  `latest node exposes undisplayed fields: ${Object.keys(alphaLatest)}`,
+);
 assert(betaLatest.services.length === 0 && betaLatest.probes.length === 0, "host-only node gained unwanted optional checks");
 
 const history = await fetch(`${base}/api/v1/dashboard/history?hours=24`, { headers: adminHeaders });
 const historyBody = await history.json();
 assert(history.status === 200 && historyBody.metrics.length >= 1, "dashboard history failed");
-assert(historyBody.bucket_seconds === 300, `fleet history should use 5-minute buckets: ${historyBody.bucket_seconds}`);
-assert(historyBody.routes.length === 2, "generic node-link statistics are missing");
-const alphaRoute = historyBody.routes.find((route) => route.key === "alpha-vps--peer_icmp");
-assert(alphaRoute?.rounds >= 2 && alphaRoute?.latency_p50_ms === 11.5, "node-link statistics are incorrect");
+assert(
+  JSON.stringify(Object.keys(historyBody).sort()) ===
+    JSON.stringify(["annotations", "hours", "metrics", "probes", "schema_version", "selected_node", "server_time"]),
+  `history exposes undisplayed data: ${Object.keys(historyBody)}`,
+);
+assert(historyBody.metrics.every((row) => Object.keys(row).length === 4), "metric history carries undisplayed series");
 const alphaHistory = historyBody.probes.find((probe) => probe.node_id === "alpha-vps" && probe.probe_name === "peer_icmp");
 assert(alphaHistory?.latency_ms === 11.5, `repeated probe sample was not deduplicated: ${alphaHistory?.latency_ms}`);
 const icmpHistoryRows = historyBody.probes.filter(
   (probe) => probe.node_id === "alpha-vps" && probe.probe_name === "external_icmp",
 );
 assert(
-  icmpHistoryRows.length >= 1 && icmpHistoryRows.every((probe) => probe.kind === "icmp" && probe.packet_loss_percent === 20),
+  icmpHistoryRows.length >= 1 && icmpHistoryRows.every((probe) => probe.packet_loss_percent === 20),
   "ICMP history semantics are incorrect",
 );
 const icmpAttemptedSamples = icmpHistoryRows.reduce((sum, probe) => sum + Number(probe.attempted_samples ?? 0), 0);
@@ -330,13 +277,11 @@ assert(
 const detail = await fetch(`${base}/api/v1/dashboard/history?hours=24&node=alpha-vps`, { headers: adminHeaders });
 const detailBody = await detail.json();
 assert(detail.status === 200 && detailBody.selected_node === "alpha-vps", "node detail history failed");
-assert(detailBody.bucket_seconds === 60, `node detail history should use 1-minute buckets: ${detailBody.bucket_seconds}`);
 assert(detailBody.metrics.every((row) => row.node_id === "alpha-vps"), "node detail leaked another node into metric rows");
-assert(detailBody.probe_summaries.some((probe) => probe.probe_name === "peer_icmp"), "node probe summary is missing");
-const tcpSummary = detailBody.probe_summaries.find((probe) => probe.probe_name === "peer_tcp_443");
-assert(tcpSummary?.packet_loss_percent === null && Math.round(tcpSummary?.sample_failure_percent) === 33, "TCP detail semantics are incorrect");
-assert(!("counters" in detailBody), "retired counter history is still exposed");
-assert(detailBody.routes.length === 0, "node detail performed unused fleet route aggregation");
+const detailTimes = [...new Set(detailBody.metrics.map((row) => row.timestamp))];
+assert(detailTimes.length >= 2 && detailTimes.every((time) => time % 60 === 0), "node detail history should use 1-minute buckets");
+const tcpHistory = detailBody.probes.filter((probe) => probe.probe_name === "peer_tcp_443");
+assert(tcpHistory.length >= 1 && tcpHistory.every((probe) => probe.packet_loss_percent === null), "TCP history must not carry loss");
 
 for (const hours of [720, 2160]) {
   const ranged = await fetch(`${base}/api/v1/dashboard/history?hours=${hours}`, { headers: adminHeaders });
@@ -344,15 +289,6 @@ for (const hours of [720, 2160]) {
   assert(ranged.status === 200 && rangedBody.hours === hours, `${hours}-hour dashboard range failed`);
 }
 
-const rebuildUnauthorized = await fetch(`${base}/api/v1/admin/rebuild-observability?offset_days=0`, { method: "POST" });
-assert(rebuildUnauthorized.status === 401, "observability rebuild accepted an unauthenticated request");
-for (const offsetDays of [0, 1]) {
-  const rebuild = await fetch(`${base}/api/v1/admin/rebuild-observability?offset_days=${offsetDays}`, {
-    method: "POST",
-    headers: adminHeaders,
-  });
-  assert(rebuild.status === 200 && (await rebuild.json()).ok === true, `observability rebuild failed for day offset ${offsetDays}`);
-}
 
 const dashboardPage = await fetch(`${base}/dashboard/`);
 assert(dashboardPage.status === 200 && (dashboardPage.headers.get("content-type") ?? "").includes("text/html"), "dashboard asset failed");
@@ -373,14 +309,10 @@ for (const asset of frontendAssets) {
 const logout = await fetch(`${base}/auth/logout`, { method: "POST" });
 assert(logout.status === 204 && (logout.headers.get("set-cookie") ?? "").includes("Max-Age=0"), "dashboard logout failed");
 
-const canary = await fetch(`${base}/api/v1/canary?probe_id=test&nonce=abcdefgh12345678`);
-assert(canary.status === 200 && (await canary.json()).nonce === "abcdefgh12345678", "canary failed");
-
 const hostOnlyAlpha = report();
 hostOnlyAlpha.generated_at += 240;
 hostOnlyAlpha.services = [];
 hostOnlyAlpha.probes = [];
-hostOnlyAlpha.counters = [];
 const hostOnlyAccepted = await fetch(
   `${base}/api/v1/report`,
   signedRequest(JSON.stringify(hostOnlyAlpha)),
@@ -390,8 +322,6 @@ const hostOnlyDashboard = await fetch(`${base}/api/v1/dashboard/latest`, { heade
 const hostOnlyDashboardBody = await hostOnlyDashboard.json();
 const hostOnlyAlphaLatest = hostOnlyDashboardBody.nodes.find((node) => node.id === "alpha-vps");
 assert(hostOnlyAlphaLatest.services.length === 0 && hostOnlyAlphaLatest.probes.length === 0, "removed optional checks remained on the node");
-assert(hostOnlyDashboardBody.catalog.services.length === 0 && hostOnlyDashboardBody.catalog.routes.length === 0, "removed optional catalogs remained enabled");
-assert(hostOnlyDashboardBody.mode === "passive" && hostOnlyDashboardBody.alerts.length === 0, "passive dashboard exposed alert state");
 const hostOnlyHistory = await fetch(`${base}/api/v1/dashboard/history?hours=24`, { headers: adminHeaders });
 const hostOnlyHistoryBody = await hostOnlyHistory.json();
 assert(
@@ -401,8 +331,6 @@ assert(
 const hostOnlyDetail = await fetch(`${base}/api/v1/dashboard/history?hours=24&node=alpha-vps`, { headers: adminHeaders });
 const hostOnlyDetailBody = await hostOnlyDetail.json();
 assert(hostOnlyDetailBody.probes.length === 0, "disabled probes remained in node detail history");
-assert(hostOnlyDetailBody.probe_summaries.length === 0, "disabled probes remained in node detail summaries");
-assert(!("counters" in hostOnlyDetailBody), "retired counters remained in node detail history");
 
 // Keep a normal node-link report for the following deletion integration.
 const relinkedAlpha = report();
@@ -440,10 +368,8 @@ const accountingReport = report("alpha-vps");
 accountingReport.generated_at = Math.max(Math.floor(Date.now() / 1000), relinkedAlpha.generated_at + 1);
 accountingReport.probes.forEach(probe => {probe.checked_at = accountingReport.generated_at;});
 accountingReport.agent.config_fingerprint = "d".repeat(64);
-const accountingDate = new Date(accountingReport.generated_at * 1000);
 Object.assign(accountingReport.system, {
-  network_valid:true, network_interfaces:["eth0"], network_scope:"a".repeat(64),traffic_cycle_enabled:true,
-  traffic_cycle:{reset_day:1,time_zone:"UTC",period_start:Date.UTC(accountingDate.getUTCFullYear(),accountingDate.getUTCMonth(),1)/1000,period_end:Date.UTC(accountingDate.getUTCFullYear(),accountingDate.getUTCMonth()+1,1)/1000,observed_since:accountingReport.generated_at,rx_bytes:123,tx_bytes:456,partial:true},
+  network_valid:true, network_interfaces:["eth0"], network_scope:"a".repeat(64), traffic_cycle:{rx_bytes:123,tx_bytes:456},
 });
 const accountingAccepted = await fetch(`${base}/api/v1/report`,signedRequest(JSON.stringify(accountingReport)));
 assert(accountingAccepted.status === 202,`accounting report returned ${accountingAccepted.status}: ${await accountingAccepted.text()}`);
@@ -456,7 +382,7 @@ assert(configNode.generated_at === accountingReport.generated_at,"configuration 
 assert(configNode.network_interfaces.join(",") === "eth0" && configNode.network_valid === true,"actual network interfaces missing");
 const accountingDashboard = await (await fetch(`${base}/api/v1/dashboard/latest`,{headers:adminHeaders})).json();
 const accountingNode = accountingDashboard.nodes.find(node=>node.id === "alpha-vps");
-assert(accountingNode.metrics.traffic_cycle.rx_bytes === 123 && accountingNode.metrics.traffic_cycle_enabled,"cycle accounting was lost in the dashboard");
+assert(JSON.stringify(accountingNode.metrics.traffic_cycle) === JSON.stringify({rx_bytes:123,tx_bytes:456}) && !("network_rx_bytes" in accountingNode.metrics),"cycle accounting was lost in the dashboard");
 assert(accountingNode.metrics.network_rx_rate_bps === null,"changing network scope fabricated a rate");
 assert(!JSON.stringify(accountingDashboard).includes(accountingReport.agent.config_fingerprint),"private config fingerprint leaked into the dashboard");
 

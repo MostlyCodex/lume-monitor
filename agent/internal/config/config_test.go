@@ -66,7 +66,7 @@ func TestValidateAppliesGenericSafeDefaults(t *testing.T) {
 		cfg.Probes[0].Samples != 5 || cfg.Probes[0].SampleIntervalMS != 250 {
 		t.Fatalf("safe defaults not applied: %+v", cfg)
 	}
-	if cfg.Node.DisplayName != "future-vps-01" || cfg.Node.Role != "VPS" || cfg.Node.OfflineSeverity != "P1" {
+	if cfg.Node.DisplayName != "future-vps-01" || cfg.Node.Role != "VPS" || cfg.Node.IPChangeSeverity != "P2" {
 		t.Fatalf("node defaults not applied: %+v", cfg.Node)
 	}
 	if cfg.Services[0].Label != "example.service" || cfg.Services[0].Severity != "P1" {
@@ -150,6 +150,7 @@ func TestValidateRejectsUnsafeTCPProbe(t *testing.T) {
 		{Name: "peer_tcp", Kind: "tcp", Target: "peer.example", Port: 0},
 		{Name: "peer_tcp", Kind: "tcp", Target: "peer.example:443", Port: 443},
 		{Name: "peer_tcp", Kind: "tcp", Target: "peer.example", Port: 443, TimeoutSeconds: 1, Samples: 3, SampleIntervalMS: 250, ConnectTimeoutMS: 1000},
+		{Name: "peer_tcp", Kind: "tcp", Target: "peer.example", Port: 443, WarningFailurePercent: 1},
 	} {
 		cfg := baseConfig()
 		cfg.Probes = []Probe{probe}
@@ -190,7 +191,7 @@ func TestAccountingConfigurationValidation(t *testing.T) {
 	}
 	cfg := baseConfig()
 	cfg.NetworkInterfaces = []string{"eth0", "wg0"}
-	cfg.TrafficCycle = TrafficCycle{Enabled: true, ResetDay: 31, TimeZone: "Asia/Shanghai"}
+	cfg.TrafficCycle = TrafficCycle{ResetDay: 31, TimeZone: "Asia/Shanghai"}
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}

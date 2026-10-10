@@ -137,13 +137,7 @@ const rateSeries = computed<ChartSeries[]>(() => {
 
     <!-- 详情主内容 -->
     <div v-if="!loading" id="detail-content" class="space-y-4">
-      <NetworkQuality
-        :node="node"
-        :history="history"
-        :fleet-history="fleetHistory"
-        :hours="hours"
-        :theme="theme"
-      />
+      <NetworkQuality :node="node" :history="history" :hours="hours" :theme="theme" />
 
       <!-- 网络吞吐速率 -->
       <Card>
@@ -164,11 +158,11 @@ const rateSeries = computed<ChartSeries[]>(() => {
           <HistoryChart
             id="traffic-plot"
             empty-id="traffic-empty"
+            empty-text="暂无速率历史"
             :series="rateSeries"
             kind="rate"
             :hours="hours"
             :theme="theme"
-            :layers="[]"
           />
         </CardContent>
       </Card>

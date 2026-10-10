@@ -59,33 +59,11 @@ export function serviceDisplayLabel(entry: ServiceStatus) {
   );
 }
 
-export function serviceSummary(node: NodeSnapshot | null | undefined): {
-  label: string;
-  text: string;
-  severity: Severity | "neutral";
-} {
-  const services = Array.isArray(node?.services) ? node.services : [];
-  if (!services.length) return { label: "服务监测", text: "暂无上报", severity: "neutral" };
-  const unhealthy = services.find((service) => service.state !== "active");
-  if (services.length === 1) {
-    return {
-      label: services[0].label || services[0].name || "服务",
-      text: serviceStateText(services[0].state),
-      severity:
-        services[0].state === "active"
-          ? "healthy"
-          : services[0].state === "failed"
-            ? "critical"
-            : "warning",
-    };
-  }
-  return {
-    label: "服务状态",
-    text: unhealthy
-      ? `${unhealthy.label || unhealthy.name} · ${serviceStateText(unhealthy.state)}`
-      : `${services.length} 项均正常`,
-    severity: unhealthy ? (unhealthy.state === "failed" ? "critical" : "warning") : "healthy",
-  };
+// A failed service is critical, any other inactive state needs attention.
+function serviceSeverity(node: NodeSnapshot): Severity {
+  const services = Array.isArray(node.services) ? node.services : [];
+  if (services.some((service) => service.state === "failed")) return "critical";
+  return services.some((service) => service.state !== "active") ? "warning" : "healthy";
 }
 
 export function median(values: number[]) {
@@ -188,7 +166,7 @@ export function currentProbeSeverity(
   return measurementSeverity(
     {
       latency: probe.duration_ms,
-      loss: probe.packet_loss_percent ?? probe.sample_failure_percent,
+      loss: probe.packet_loss_percent,
       success: probe.success,
       complete: probe.complete,
     },
@@ -199,8 +177,7 @@ export function currentProbeSeverity(
 
 export function nodeSeverity(node: NodeSnapshot, history: HistorySnapshot | null): Severity {
   if (!node?.online || node.data_error) return "offline";
-  const serviceState = serviceSummary(node).severity;
-  const service: Severity = serviceState === "neutral" ? "healthy" : serviceState;
+  const service = serviceSeverity(node);
   const probeSeverities = allProbes(node).map((probe) =>
     currentProbeSeverity(probe, node.id, history),
   );
@@ -248,7 +225,7 @@ export function aggregateMetricEnergy(
         (total, row) => {
           const attempted = Number(row.attempted_samples);
           const successful = Number(row.successful_samples);
-          const measurement = row.packet_loss_percent ?? row.sample_failure_percent;
+          const measurement = row.packet_loss_percent;
           const rawLoss = measurement == null ? NaN : Number(measurement);
           if (Number.isFinite(attempted) && attempted > 0 && Number.isFinite(successful)) {
             total.attempted += attempted;

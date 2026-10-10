@@ -51,7 +51,7 @@ export async function testAgentReport() {
       probe_interval_seconds: 60,
       services: [],
       probes: [],
-      traffic_cycle: { enabled: false },
+      traffic_cycle: { reset_day: 1, time_zone: "UTC" },
       spool_path:
         "/var/lib/vpsmon/report-test-" +
         randomBytes(8).toString("hex") +

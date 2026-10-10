@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -30,16 +29,14 @@ type metricsCollector interface {
 }
 
 type application struct {
-	config        config.Config
-	collector     metricsCollector
-	sender        *sender.Sender
-	startedAt     int64
-	collectErrors atomic.Uint64
-	sendErrors    atomic.Uint64
-	lastProbeAt   time.Time
-	lastProbes    []model.ProbeResult
-	traffic       *traffic.Tracker
-	clock         func() time.Time
+	config      config.Config
+	collector   metricsCollector
+	sender      *sender.Sender
+	startedAt   int64
+	lastProbeAt time.Time
+	lastProbes  []model.ProbeResult
+	traffic     *traffic.Tracker
+	clock       func() time.Time
 }
 
 func (a *application) runOnce(parent context.Context, dryRun bool) error {
@@ -47,18 +44,11 @@ func (a *application) runOnce(parent context.Context, dryRun bool) error {
 	defer cancel()
 
 	pending, pendingErr := spool.Load(a.config.SpoolPath)
-	queueDepth := 0
 	if pendingErr != nil {
-		a.collectErrors.Add(1)
-	} else if len(pending) > 0 {
-		queueDepth = 1
-		if !dryRun {
-			if err := a.sender.Send(ctx, pending); err == nil {
-				_ = spool.Delete(a.config.SpoolPath)
-				queueDepth = 0
-			} else {
-				a.sendErrors.Add(1)
-			}
+		log.Printf("pending report unreadable: %v", pendingErr)
+	} else if len(pending) > 0 && !dryRun {
+		if err := a.sender.Send(ctx, pending); err == nil {
+			_ = spool.Delete(a.config.SpoolPath)
 		}
 	}
 
@@ -67,13 +57,13 @@ func (a *application) runOnce(parent context.Context, dryRun bool) error {
 		sampledAt = a.clock()
 	}
 	system, collectionErrors := a.collector.Collect()
-	system.TrafficCycleEnabled = a.config.TrafficCycle.Enabled
-	a.collectErrors.Add(uint64(len(collectionErrors)))
+	for _, collectionErr := range collectionErrors {
+		log.Printf("collection error: %v", collectionErr)
+	}
 	if a.traffic != nil {
 		var trafficErr error
 		system.TrafficCycle, trafficErr = a.traffic.Observe(sampledAt, a.config.TrafficCycle, system, !dryRun)
 		if trafficErr != nil {
-			a.collectErrors.Add(1)
 			log.Printf("traffic accounting unavailable: %v", trafficErr)
 		}
 	}
@@ -92,12 +82,9 @@ func (a *application) runOnce(parent context.Context, dryRun bool) error {
 			ID:               a.config.Node.ID,
 			DisplayName:      a.config.Node.DisplayName,
 			Role:             a.config.Node.Role,
-			Group:            a.config.Node.Group,
 			Region:           a.config.Node.Region,
 			StaleSeconds:     a.config.Node.StaleSeconds,
 			DisplayOrder:     a.config.Node.DisplayOrder,
-			Color:            a.config.Node.Color,
-			OfflineSeverity:  a.config.Node.OfflineSeverity,
 			IPChangeSeverity: a.config.Node.IPChangeSeverity,
 		},
 		GeneratedAt: sampledAt.Unix(),
@@ -106,9 +93,6 @@ func (a *application) runOnce(parent context.Context, dryRun bool) error {
 		Probes:      a.lastProbes,
 		Agent: model.AgentHealth{
 			ConfigFingerprint: a.config.Fingerprint,
-			QueueDepth:        queueDepth,
-			CollectErrors:     a.collectErrors.Load(),
-			SendErrors:        a.sendErrors.Load(),
 			StartedAt:         a.startedAt,
 		},
 	}
@@ -124,14 +108,13 @@ func (a *application) runOnce(parent context.Context, dryRun bool) error {
 		return nil
 	}
 	if err := a.sender.Send(ctx, body); err != nil {
-		a.sendErrors.Add(1)
 		if spoolErr := spool.Save(a.config.SpoolPath, body); spoolErr != nil {
 			return fmt.Errorf("%w; save pending report: %v", err, spoolErr)
 		}
 		return err
 	}
 	if err := spool.Delete(a.config.SpoolPath); err != nil {
-		a.collectErrors.Add(1)
+		log.Printf("delete pending report: %v", err)
 	}
 	return nil
 }
@@ -160,7 +143,7 @@ func main() {
 	app := &application{
 		config:    cfg,
 		collector: collect.New(cfg.NetworkInterfaces...),
-		traffic:   traffic.New("/var/lib/vpsmon/traffic.json", time.Duration(cfg.ReportIntervalSeconds)*time.Second),
+		traffic:   traffic.New("/var/lib/vpsmon/traffic.json"),
 		sender:    sender.New(cfg.Endpoint, cfg.Node.ID, cfg.Secret, version),
 		startedAt: time.Now().Unix(),
 	}

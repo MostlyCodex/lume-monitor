@@ -1,4 +1,5 @@
 // Fictional, deterministic fixtures. No network, credentials or production data.
+// The shapes match the dashboard API exactly: only fields the page displays.
 export function createDemoData(previewNow = Math.floor(Date.now() / 1000)) {
 const nodeDefinitions = [
   { id: "transit-la", label: "Transit-Los-Angeles", role: "线路中转机", region: "Los Angeles", country: "US", service: ["nftables", "nftables"], bases: [151, 158, 181, 8], resources: [18.4, 34.2, 28.5] },
@@ -17,78 +18,76 @@ function probeDefinitions(node) {
     { name: "beijing-cm", label: "北京移动", category: "carrier", base: node.bases[2], order: 3 },
   ];
   if (node.bases[3]) probes.push({ name: "node-link", label: `${node.label} → Egress-Las-Vegas`, category: "node-link", base: node.bases[3], order: 4 });
-  if (node.id === "transit-la") probes.push({ name: "peer-tcp-443", label: "Egress-Las-Vegas · TCP 443", category: "node-link", kind: "tcp", port: 443, base: 12, order: 5 });
+  if (node.id === "transit-la") probes.push({ name: "peer-tcp-443", label: "Egress-Las-Vegas · TCP 443", category: "node-link", kind: "tcp", base: 12, order: 5 });
   return probes;
 }
 
 function currentProbe(node, probe, index) {
   const elevated = node.id === "hybrid-sg" && probe.name === "beijing-cm";
+  const icmp = probe.kind !== "tcp";
   return {
     name: probe.name,
     label: probe.label,
     category: probe.category,
-    kind: probe.kind || "icmp",
-    ...(probe.kind === "tcp" ? { port: probe.port } : {}),
-    primary: index === 0,
+    kind: /** @type {"icmp" | "tcp"} */ (icmp ? "icmp" : "tcp"),
     order: probe.order,
     warning_ms: probe.base * 1.35,
     critical_ms: probe.base * 1.7,
-    warning_failure_percent: 1,
-    critical_failure_percent: 5,
+    warning_failure_percent: icmp ? 1 : null,
+    critical_failure_percent: icmp ? 5 : null,
     success: true,
     complete: true,
     duration_ms: Math.round((elevated ? probe.base * 1.42 : probe.base + Math.sin(index + 0.8) * 3) * 10) / 10,
-    packet_loss_percent: probe.kind === "tcp" ? null : elevated ? 6 : index === 1 && node.id === "transit-la" ? 2 : 0,
-    sample_failure_percent: elevated ? 6 : index === 1 && node.id === "transit-la" ? 2 : 0,
-    samples: 20,
-    attempted_samples: 20,
-    successful_samples: elevated ? 19 : 20,
+    samples: icmp ? 20 : 3,
+    packet_loss_percent: icmp ? (elevated ? 5 : 0) : null,
+  };
+}
+
+// 演示节点的本月流量：用量随月内天数增长
+function demoTrafficCycle(nodeIndex) {
+  const date = new Date(previewNow * 1000);
+  const start = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1) / 1000;
+  const days = Math.max(1, (previewNow - start) / 86400);
+  return {
+    rx_bytes: Math.round(days * (2.7 + nodeIndex * 0.55) * 1024 ** 3),
+    tx_bytes: Math.round(days * (1.4 + nodeIndex * 0.3) * 1024 ** 3),
   };
 }
 
 function latestData() {
   const now = previewNow;
   const nodes = nodeDefinitions.map((definition, nodeIndex) => ({
-    ...definition,
+    id: definition.id,
+    label: definition.label,
+    role: definition.role,
+    region: definition.region,
     order: nodeIndex + 1,
     online: true,
-    age_seconds: 18 + nodeIndex * 5,
     received_at: now - 18 - nodeIndex * 5,
-    reported_at: now - 20 - nodeIndex * 5,
-    source_ip: nodeIndex % 2 ? "198.51.100.x" : "203.0.113.x",
-    source_asn: 64500 + nodeIndex,
-    colo: definition.region,
-    system: { hostname: definition.id, os: "Debian GNU/Linux 12", kernel: "6.1.0", arch: "x86_64" },
+    country: definition.country,
+    system: { hostname: definition.id, os: "Debian GNU/Linux 12", kernel: "6.1.0" },
     metrics: {
       cpu_percent: definition.resources[0], memory_used_percent: definition.resources[1], disk_used_percent: definition.resources[2],
       cpu_count: 1 + (nodeIndex % 4),
       memory_total_bytes: 1024 ** 3 * (1 + (nodeIndex % 3)),
-      memory_available_bytes: 1024 ** 3 * (1 + (nodeIndex % 3)) * (1 - definition.resources[1] / 100),
       disk_total_bytes: 1024 ** 3 * (20 + nodeIndex * 5),
-      disk_free_bytes: 1024 ** 3 * (20 + nodeIndex * 5) * (1 - definition.resources[2] / 100),
-      load1: 0.08 + nodeIndex * 0.03, load5: 0.11 + nodeIndex * 0.02, load15: 0.09 + nodeIndex * 0.025,
       uptime_seconds: 86400 * (18 + nodeIndex * 7) + 3600 * nodeIndex,
+      network_interfaces: ["eth0"],
+      network_valid: true,
+      traffic_cycle: demoTrafficCycle(nodeIndex),
       network_rx_rate_bps: 180000 + nodeIndex * 46000, network_tx_rate_bps: 92000 + nodeIndex * 22000,
-      network_rx_bytes: 83000000000 + nodeIndex * 17000000000, network_tx_bytes: 42000000000 + nodeIndex * 9000000000,
     },
     services: [{ name: definition.service[0], label: definition.service[1], state: "active" }],
     probes: probeDefinitions(definition).map((probe, index) => currentProbe(definition, probe, index)),
-    agent: { version: "0.0.2", queue_depth: 0, collect_errors: 0, send_errors: 0 },
   }));
   return {
     schema_version: 2,
     server_time: now,
-    app_version: "preview",
-    mode: "live",
-    summary: { online_nodes: nodes.length, total_nodes: nodes.length, active_alerts: 0, pending_alerts: 0, p1_alerts: 0 },
     catalog: {
+      known_node_ids: nodeDefinitions.map((node) => node.id),
       nodes: nodeDefinitions.map((node, index) => ({ id: node.id, label: node.label, role: node.role, region: node.region, order: index + 1 })),
-      routes: [],
     },
     nodes,
-    alerts: [],
-    recent_events: [],
-    cadence: { resources_seconds: 60, probes_seconds: 60 },
   };
 }
 
@@ -106,9 +105,6 @@ function historyData(hours, selectedNode) {
       const cycle = step / 9 + nodeIndex * 0.7;
       metrics.push({
         node_id: node.id, timestamp,
-        cpu_percent: Math.max(1, node.resources[0] + Math.sin(cycle) * 7 + (step % 67 === 0 ? 19 : 0)),
-        memory_used_percent: Math.max(1, node.resources[1] + Math.sin(cycle / 3) * 4),
-        disk_used_percent: node.resources[2] + (step / steps) * 0.4,
         network_rx_rate_bps: 150000 + Math.abs(Math.sin(cycle * 1.7)) * 620000,
         network_tx_rate_bps: 70000 + Math.abs(Math.cos(cycle * 1.4)) * 280000,
       });
@@ -117,21 +113,17 @@ function historyData(hours, selectedNode) {
         const loss = step % 97 === 93 ? 8 : step % 47 === 31 ? 2 : 0;
         const missing = step % 113 === 42;
         probes.push({
-          node_id: node.id, probe_name: probe.name, label: probe.label, category: probe.category, kind: probe.kind || "icmp", timestamp,
+          node_id: node.id, probe_name: probe.name, timestamp,
           latency_ms: missing ? null : Math.max(1, probe.base + Math.sin(cycle + probe.order) * Math.max(1.5, probe.base * 0.04) + burst),
           packet_loss_percent: probe.kind === "tcp" ? null : missing ? 100 : loss,
-          sample_failure_percent: missing ? 100 : loss,
           success_percent: missing ? 0 : 100,
           rounds: 1,
-          warning_ms: probe.base * 1.35, critical_ms: probe.base * 1.7,
-          warning_failure_percent: 1, critical_failure_percent: 5,
         });
       }
     }
   }
   return {
-    schema_version: 2, server_time: now, hours, bucket_seconds: bucket, selected_node: selectedNode || null,
-    catalog: { nodes: nodeDefinitions.map((node, index) => ({ id: node.id, label: node.label, order: index + 1 })) },
+    schema_version: 2, server_time: now, hours, selected_node: selectedNode || null,
     metrics, probes,
     annotations: selectedNode ? [
       { node_id: selectedNode, timestamp: now - Math.min(hours * 1800, 5 * 3600), severity: "INFO", title: "Agent 启动", detail: "监控进程完成一次正常重启" },

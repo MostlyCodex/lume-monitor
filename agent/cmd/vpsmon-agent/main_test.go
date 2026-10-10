@@ -46,8 +46,8 @@ func TestReportFailureKeepsLatestAndPreservesLocalTraffic(t *testing.T) {
 	folder := t.TempDir()
 	collector := &testCollector{}
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	cfg := config.Config{Node: config.Node{ID: "test-node"}, SpoolPath: filepath.Join(folder, "pending.json"), ReportIntervalSeconds: 60, ProbeIntervalSeconds: 60, TrafficCycle: config.TrafficCycle{Enabled: true, ResetDay: 1, TimeZone: "UTC"}}
-	app := &application{config: cfg, collector: collector, sender: sender.New(server.URL, "test-node", "test-secret", "test"), traffic: traffic.New(filepath.Join(folder, "traffic.json"), time.Minute), clock: func() time.Time { return now }}
+	cfg := config.Config{Node: config.Node{ID: "test-node"}, SpoolPath: filepath.Join(folder, "pending.json"), ReportIntervalSeconds: 60, ProbeIntervalSeconds: 60, TrafficCycle: config.TrafficCycle{ResetDay: 1, TimeZone: "UTC"}}
+	app := &application{config: cfg, collector: collector, sender: sender.New(server.URL, "test-node", "test-secret", "test"), traffic: traffic.New(filepath.Join(folder, "traffic.json")), clock: func() time.Time { return now }}
 	for i := 1; i <= 3; i++ {
 		collector.rx = uint64(100 * i)
 		online = i == 3
@@ -68,7 +68,7 @@ func TestReportFailureKeepsLatestAndPreservesLocalTraffic(t *testing.T) {
 				t.Fatal("pending report was not replaced")
 			}
 			cycle := pending.System.TrafficCycle
-			if cycle == nil || cycle.Partial || cycle.RXBytes != uint64((i-1)*100) {
+			if cycle == nil || cycle.RXBytes != uint64((i-1)*100) {
 				t.Fatalf("network failure changed local accounting: %+v", cycle)
 			}
 		}

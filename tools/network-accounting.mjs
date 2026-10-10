@@ -9,22 +9,28 @@ export function normalizeAccounting(config = {}) {
  }
  const cycle = config.traffic_cycle ?? {};
  if (!cycle || typeof cycle !== "object" || Array.isArray(cycle)) throw new InputError("周期流量配置须为对象");
- const enabled = cycle.enabled ?? false;
+ // 周期统计始终开启；旧配置里的 enabled 字段直接丢弃
  const day = cycle.reset_day ?? 1;
  const zone = cycle.time_zone ?? "UTC";
- if (typeof enabled !== "boolean") throw new InputError("周期流量 enabled 须为 true 或 false");
  if (!Number.isInteger(day) || day < 1 || day > 31) throw new InputError("流量重置日须为 1–31 的整数");
  if (!["UTC", "Asia/Shanghai"].includes(zone)) throw new InputError("流量时区只能是 UTC 或 Asia/Shanghai");
- return {network_interfaces:[...names],traffic_cycle:{enabled,reset_day:day,time_zone:zone}};
+ return {network_interfaces:[...names],traffic_cycle:{reset_day:day,time_zone:zone}};
 }
 
+const nodeFields = ["id", "display_name", "role", "region", "stale_seconds", "display_order", "ip_change_severity"];
+const probeFields = {
+ icmp: ["name", "label", "category", "target_node_id", "kind", "target", "timeout_seconds", "samples", "sample_interval_ms",
+  "warning_ms", "critical_ms", "warning_failure_percent", "critical_failure_percent", "severity", "display_order"],
+ tcp: ["name", "label", "category", "target_node_id", "kind", "target", "port", "timeout_seconds", "connect_timeout_ms",
+  "samples", "sample_interval_ms", "warning_ms", "critical_ms", "severity", "display_order"],
+};
+const pick = (value, fields) => Object.fromEntries(fields.filter(key => Object.hasOwn(value ?? {}, key)).map(key => [key, value[key]]));
+
 export function serializeAgentConfig(config) {
- // Rebuild metadata at the deployment boundary so saved configurations use
- // exactly the current Agent schema.
- const fields = ["id", "display_name", "role", "group", "region", "stale_seconds",
-  "display_order", "color", "offline_severity", "ip_change_severity"];
- const node = Object.fromEntries(fields.filter(key => Object.hasOwn(config.node ?? {}, key)).map(key => [key, config.node[key]]));
- const staged = {...config,node,...normalizeAccounting(config)};
+ // Rebuild node and probe entries at the deployment boundary so saved
+ // configurations use exactly the current Agent schema.
+ const probes = Array.isArray(config.probes) ? config.probes.map(probe => pick(probe, probeFields[probe?.kind] ?? Object.keys(probe ?? {}))) : config.probes;
+ const staged = {...config,node:pick(config.node,nodeFields),probes,...normalizeAccounting(config)};
  return `${JSON.stringify(staged, null, 2)}\n`;
 }
 export function configFingerprint(text) { return createHash("sha256").update(text).digest("hex"); }
@@ -85,21 +91,17 @@ export async function promptAccounting(prompt, config, {discover, line = console
   }});
   line(`  统计范围：${names.join("、")}。所选接口会相加；请避免同时选择桥接或隧道及其底层接口。`);
  }
- const enabled = await prompt.yes("启用周期流量统计",current.traffic_cycle.enabled);
- let {reset_day:day,time_zone:zone} = current.traffic_cycle;
- if (enabled) {
-  day = await integerValue(prompt,"每月流量重置日",1,31,day,{line});
-  line("流量统计时区：1. UTC / 2. 北京时间（Asia/Shanghai）");
-  zone = await choiceValue(prompt,"选择时区",["1","2"],zone === "UTC" ? "1" : "2",{line}) === "1" ? "UTC" : "Asia/Shanghai";
-  line("  在所选时区的重置日 00:00 开始新周期；当月没有该日时使用月末。首次启用从当前计数起算。");
- }
- return {network_interfaces:names,traffic_cycle:{enabled,reset_day:day,time_zone:zone}};
+ const day = await integerValue(prompt,"每月流量重置日",1,31,current.traffic_cycle.reset_day,{line});
+ line("流量统计时区：1. UTC / 2. 北京时间（Asia/Shanghai）");
+ const zone = await choiceValue(prompt,"选择时区",["1","2"],current.traffic_cycle.time_zone === "UTC" ? "1" : "2",{line}) === "1" ? "UTC" : "Asia/Shanghai";
+ line("  在所选时区的重置日 00:00 开始新周期；当月没有该日时使用月末。Agent 首次统计从当前计数起算。");
+ return {network_interfaces:names,traffic_cycle:{reset_day:day,time_zone:zone}};
 }
 
 export function printAccountingSummary(config,line=console.log) {
  const value=normalizeAccounting(config);
  line(`  流量网卡：${value.network_interfaces.length ? value.network_interfaces.join("、") : "自动（单一默认路由网卡）"}`);
- line(`  周期流量：${value.traffic_cycle.enabled ? `每月 ${value.traffic_cycle.reset_day} 日 00:00 重置 · ${value.traffic_cycle.time_zone}` : "未启用"}`);
+ line(`  周期流量：每月 ${value.traffic_cycle.reset_day} 日 00:00 重置 · ${value.traffic_cycle.time_zone}`);
 }
 export function matchesAppliedReport(node,{fingerprint,since=0,version}={}) {
  return Boolean(node && Number.isInteger(node.last_report_at) && node.last_report_at>0 && node.last_report_at>=since && Number.isInteger(node.generated_at) && node.generated_at>0 && node.generated_at>=since &&

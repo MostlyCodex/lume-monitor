@@ -17,7 +17,6 @@ const NODE_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const SERVICE_NAME = /^[A-Za-z0-9_.@-]{1,80}$/;
 const PROBE_NAME = /^[a-z0-9][a-z0-9_-]{0,79}$/;
 const CATEGORY = /^[a-z][a-z0-9_-]{0,31}$/;
-const COLOR = /^[a-z][a-z0-9_-]{0,23}$/;
 
 function record(value: unknown, name: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -62,6 +61,8 @@ function severityValue(value: unknown, name: string): Severity {
   return result;
 }
 
+// Reports are read field by field: only the values the dashboard and Telegram
+// use are kept, and anything else a report carries is dropped here.
 function nodeMetadata(value: unknown, expectedId: string): NodeMetadata {
   const v = record(value, "node");
   const id = patternValue(v.id, "node.id", NODE_ID, 32);
@@ -70,48 +71,44 @@ function nodeMetadata(value: unknown, expectedId: string): NodeMetadata {
     id,
     display_name: stringValue(v.display_name, "node.display_name", 80),
     role: stringValue(v.role, "node.role", 80),
-    group: stringValue(v.group, "node.group", 80),
     region: stringValue(v.region, "node.region", 80),
     stale_seconds: integerValue(v.stale_seconds, "node.stale_seconds", 60, 3600),
     display_order: integerValue(v.display_order, "node.display_order", 1, 10000),
-    color: patternValue(v.color, "node.color", COLOR, 24),
-    offline_severity: severityValue(v.offline_severity, "node.offline_severity"),
     ip_change_severity: severityValue(v.ip_change_severity, "node.ip_change_severity"),
   };
 }
 
 function networkFields(v: Record<string, unknown>): Partial<SystemMetrics> {
- const result: Partial<SystemMetrics> = {};
- if (v.traffic_cycle_enabled !== undefined) {
-  if (typeof v.traffic_cycle_enabled !== "boolean") throw new Error("traffic cycle enabled must be a boolean");
-  result.traffic_cycle_enabled = v.traffic_cycle_enabled;
- }
- if (v.network_valid !== undefined) {
-  if (typeof v.network_valid !== "boolean") throw new Error("system.network_valid must be a boolean");
-  result.network_valid = v.network_valid;
- }
- if (v.network_interfaces !== undefined) {
-  if (!Array.isArray(v.network_interfaces) || v.network_interfaces.length > 16) throw new Error("system.network_interfaces must be an array up to 16 entries");
-  const names = v.network_interfaces.map(name => patternValue(name,"network interface",/^(?!lo$|\.{1,2}$)[A-Za-z0-9_.:-]{1,15}$/,15));
-  if (new Set(names).size !== names.length) throw new Error("network interfaces must be unique");
-  result.network_interfaces = names.sort();
- }
- if (v.network_scope !== undefined) result.network_scope = patternValue(v.network_scope,"system.network_scope",/^[a-f0-9]{64}$/,64);
- if (result.network_valid === true && (!result.network_interfaces?.length || !result.network_scope)) throw new Error("valid network metrics require interface identities");
- if (v.traffic_cycle !== undefined) {
-  if (result.network_valid !== true || result.traffic_cycle_enabled === false) throw new Error("traffic cycle requires enabled accounting and valid network metrics");
-  const c = record(v.traffic_cycle,"system.traffic_cycle");
-  if (c.time_zone !== "UTC" && c.time_zone !== "Asia/Shanghai") throw new Error("traffic cycle timezone is invalid");
-  if (typeof c.partial !== "boolean") throw new Error("traffic cycle partial must be a boolean");
-  const start = integerValue(c.period_start,"traffic cycle start",1);
-  const end = integerValue(c.period_end,"traffic cycle end",start + 1,start + 32 * 86400);
-  result.traffic_cycle = {
-   reset_day:integerValue(c.reset_day,"traffic cycle reset day",1,31), time_zone:c.time_zone,
-   period_start:start,period_end:end,observed_since:integerValue(c.observed_since,"traffic observed since",start,end-1),
-   rx_bytes:integerValue(c.rx_bytes,"traffic cycle RX"),tx_bytes:integerValue(c.tx_bytes,"traffic cycle TX"),partial:c.partial,
-  };
- }
- return result;
+  const result: Partial<SystemMetrics> = {};
+  if (v.network_valid !== undefined) {
+    if (typeof v.network_valid !== "boolean") throw new Error("system.network_valid must be a boolean");
+    result.network_valid = v.network_valid;
+  }
+  if (v.network_interfaces !== undefined) {
+    if (!Array.isArray(v.network_interfaces) || v.network_interfaces.length > 16) {
+      throw new Error("system.network_interfaces must be an array up to 16 entries");
+    }
+    const names = v.network_interfaces.map((name) =>
+      patternValue(name, "network interface", /^(?!lo$|\.{1,2}$)[A-Za-z0-9_.:-]{1,15}$/, 15),
+    );
+    if (new Set(names).size !== names.length) throw new Error("network interfaces must be unique");
+    result.network_interfaces = names.sort();
+  }
+  if (v.network_scope !== undefined) {
+    result.network_scope = patternValue(v.network_scope, "system.network_scope", /^[a-f0-9]{64}$/, 64);
+  }
+  if (result.network_valid === true && (!result.network_interfaces?.length || !result.network_scope)) {
+    throw new Error("valid network metrics require interface identities");
+  }
+  if (v.traffic_cycle !== undefined) {
+    if (result.network_valid !== true) throw new Error("traffic cycle requires valid network metrics");
+    const cycle = record(v.traffic_cycle, "system.traffic_cycle");
+    result.traffic_cycle = {
+      rx_bytes: integerValue(cycle.rx_bytes, "traffic cycle RX"),
+      tx_bytes: integerValue(cycle.tx_bytes, "traffic cycle TX"),
+    };
+  }
+  return result;
 }
 
 function systemMetrics(value: unknown): SystemMetrics {
@@ -121,28 +118,16 @@ function systemMetrics(value: unknown): SystemMetrics {
     hostname: stringValue(v.hostname, "system.hostname", 128),
     os: stringValue(v.os, "system.os", 256),
     kernel: stringValue(v.kernel, "system.kernel", 128),
-    arch: stringValue(v.arch, "system.arch", 32),
     boot_id: stringValue(v.boot_id, "system.boot_id", 128),
     uptime_seconds: numberValue(v.uptime_seconds, "system.uptime_seconds"),
     cpu_percent: numberValue(v.cpu_percent, "system.cpu_percent", 0, 100),
     cpu_count: v.cpu_count === undefined ? undefined : integerValue(v.cpu_count, "system.cpu_count", 1, 65536),
-    load1: numberValue(v.load1, "system.load1", 0, 100000),
-    load5: numberValue(v.load5, "system.load5", 0, 100000),
-    load15: numberValue(v.load15, "system.load15", 0, 100000),
     memory_total_bytes: integerValue(v.memory_total_bytes, "system.memory_total_bytes"),
     memory_available_bytes: integerValue(v.memory_available_bytes, "system.memory_available_bytes"),
-    swap_total_bytes: integerValue(v.swap_total_bytes, "system.swap_total_bytes"),
-    swap_used_bytes: integerValue(v.swap_used_bytes, "system.swap_used_bytes"),
     root_total_bytes: integerValue(v.root_total_bytes, "system.root_total_bytes"),
-    root_free_bytes: integerValue(v.root_free_bytes, "system.root_free_bytes"),
     root_used_percent: numberValue(v.root_used_percent, "system.root_used_percent", 0, 100),
-    root_inode_used_percent: numberValue(v.root_inode_used_percent, "system.root_inode_used_percent", 0, 100),
     network_rx_bytes: integerValue(v.network_rx_bytes, "system.network_rx_bytes"),
     network_tx_bytes: integerValue(v.network_tx_bytes, "system.network_tx_bytes"),
-    network_rx_errors: integerValue(v.network_rx_errors, "system.network_rx_errors"),
-    network_tx_errors: integerValue(v.network_tx_errors, "system.network_tx_errors"),
-    network_rx_drops: integerValue(v.network_rx_drops, "system.network_rx_drops"),
-    network_tx_drops: integerValue(v.network_tx_drops, "system.network_tx_drops"),
   };
 }
 
@@ -173,107 +158,68 @@ function probes(value: unknown): ProbeResult[] {
     names.add(name);
     const kind = stringValue(v.kind, `probes[${index}].kind`, 16);
     if (kind !== "icmp" && kind !== "tcp") throw new Error("probe kind must be icmp or tcp");
-    const port = kind === "tcp"
-      ? integerValue(v.port, `probes[${index}].port`, 1, 65535)
-      : undefined;
-    if (kind === "icmp" && v.port !== undefined) {
-      throw new Error(`probes[${index}].port is only valid for TCP probes`);
-    }
     if (typeof v.success !== "boolean") throw new Error(`probes[${index}].success must be boolean`);
-    if (v.primary !== undefined && typeof v.primary !== "boolean") throw new Error(`probes[${index}].primary must be boolean`);
     const warning = optionalNumber(v.warning_ms, `probes[${index}].warning_ms`, 0, 120000);
     const critical = optionalNumber(v.critical_ms, `probes[${index}].critical_ms`, 0, 120000);
     if (warning > 0 && critical > 0 && warning > critical) throw new Error("probe latency thresholds are invalid");
-    const warningFailure = optionalNumber(
-      v.warning_failure_percent,
-      `probes[${index}].warning_failure_percent`,
-      0,
-      100,
-    );
-    const criticalFailure = optionalNumber(
-      v.critical_failure_percent,
-      `probes[${index}].critical_failure_percent`,
-      0,
-      100,
-    );
-    if (warningFailure > 0 && criticalFailure > 0 && warningFailure > criticalFailure) {
-      throw new Error("probe failure-rate thresholds are invalid");
+    // Packet-loss thresholds only exist for ICMP; TCP rounds report latency and reachability.
+    const warningLoss = kind === "icmp"
+      ? optionalNumber(v.warning_failure_percent, `probes[${index}].warning_failure_percent`, 0, 100)
+      : 0;
+    const criticalLoss = kind === "icmp"
+      ? optionalNumber(v.critical_failure_percent, `probes[${index}].critical_failure_percent`, 0, 100)
+      : 0;
+    if (warningLoss > 0 && criticalLoss > 0 && warningLoss > criticalLoss) {
+      throw new Error("probe packet-loss thresholds are invalid");
     }
-    const sampleCount = v.samples === undefined ? 5 : integerValue(v.samples, `probes[${index}].samples`, 1, 10);
-    const attemptedSamples = v.attempted_samples === undefined
-      ? sampleCount
-      : integerValue(v.attempted_samples, `probes[${index}].attempted_samples`, 0, sampleCount);
-    const successfulSamples = v.successful_samples === undefined
-      ? (v.success ? attemptedSamples : 0)
-      : integerValue(v.successful_samples, `probes[${index}].successful_samples`, 0, attemptedSamples);
-    const complete = v.complete === undefined ? attemptedSamples === sampleCount : v.complete;
-    if (typeof complete !== "boolean" || complete !== (attemptedSamples === sampleCount)) {
-      throw new Error(`probes[${index}].complete is inconsistent with attempted samples`);
-    }
-    const derivedSuccess = complete && successfulSamples > sampleCount / 2;
-    if (v.success !== derivedSuccess) {
+    const sampleCount = integerValue(v.samples, `probes[${index}].samples`, 1, 10);
+    const attemptedSamples = integerValue(v.attempted_samples, `probes[${index}].attempted_samples`, 0, sampleCount);
+    const successfulSamples = integerValue(
+      v.successful_samples,
+      `probes[${index}].successful_samples`,
+      0,
+      attemptedSamples,
+    );
+    const complete = attemptedSamples === sampleCount;
+    if (v.complete !== complete) throw new Error(`probes[${index}].complete is inconsistent with attempted samples`);
+    if (v.success !== (complete && successfulSamples > sampleCount / 2)) {
       throw new Error(`probes[${index}].success is inconsistent with sample counts`);
-    }
-    const derivedFailure = attemptedSamples > 0
-      ? 100 * (attemptedSamples - successfulSamples) / attemptedSamples
-      : 100;
-    const sampleFailure = v.sample_failure_percent === undefined
-      ? derivedFailure
-      : numberValue(v.sample_failure_percent, `probes[${index}].sample_failure_percent`, 0, 100);
-    if (Math.abs(sampleFailure - derivedFailure) > 0.011) {
-      throw new Error(`probes[${index}].sample_failure_percent is inconsistent with sample counts`);
-    }
-    let packetLoss: number | undefined;
-    if (kind === "icmp") {
-      packetLoss = v.packet_loss_percent === undefined
-        ? sampleFailure
-        : numberValue(v.packet_loss_percent, `probes[${index}].packet_loss_percent`, 0, 100);
-      if (Math.abs(packetLoss - sampleFailure) > 0.011) {
-        throw new Error(`probes[${index}].packet_loss_percent is inconsistent with ICMP samples`);
-      }
-    } else if (v.packet_loss_percent !== undefined) {
-      throw new Error(`probes[${index}].packet_loss_percent is not valid for TCP probes`);
     }
     const result: ProbeResult = {
       name,
       label: stringValue(v.label, `probes[${index}].label`, 80),
       category: patternValue(v.category, `probes[${index}].category`, CATEGORY, 32),
       kind,
-      target: stringValue(v.target, `probes[${index}].target`, 256),
       warning_ms: warning,
       critical_ms: critical,
-      warning_failure_percent: warningFailure,
-      critical_failure_percent: criticalFailure,
+      warning_failure_percent: warningLoss,
+      critical_failure_percent: criticalLoss,
       severity: severityValue(v.severity, `probes[${index}].severity`),
       display_order: integerValue(v.display_order, `probes[${index}].display_order`, 1, 10000),
-      primary: v.primary === true,
       success: v.success,
       complete,
       duration_ms: numberValue(v.duration_ms, `probes[${index}].duration_ms`, 0, 120000),
       samples: sampleCount,
       attempted_samples: attemptedSamples,
       successful_samples: successfulSamples,
-      sample_failure_percent: sampleFailure,
       checked_at: integerValue(v.checked_at, `probes[${index}].checked_at`, 1),
     };
-    if (port !== undefined) result.port = port;
-    if (packetLoss !== undefined) result.packet_loss_percent = packetLoss;
     if (v.target_node_id !== undefined) {
       result.target_node_id = patternValue(v.target_node_id, `probes[${index}].target_node_id`, NODE_ID, 32);
     }
     if (result.category === "node-link" && !result.target_node_id) {
       throw new Error(`probes[${index}].target_node_id is required for node-link probes`);
     }
-    if (v.min_duration_ms !== undefined) result.min_duration_ms = numberValue(v.min_duration_ms, `probes[${index}].min_duration_ms`, 0, 120000);
-    if (v.max_duration_ms !== undefined) result.max_duration_ms = numberValue(v.max_duration_ms, `probes[${index}].max_duration_ms`, 0, 120000);
-    if (v.average_duration_ms !== undefined) result.average_duration_ms = numberValue(v.average_duration_ms, `probes[${index}].average_duration_ms`, 0, 120000);
-    if (v.p95_duration_ms !== undefined) result.p95_duration_ms = numberValue(v.p95_duration_ms, `probes[${index}].p95_duration_ms`, 0, 120000);
-    if (v.range_ms !== undefined) result.range_ms = numberValue(v.range_ms, `probes[${index}].range_ms`, 0, 120000);
-    if (v.jitter_ms !== undefined) result.jitter_ms = numberValue(v.jitter_ms, `probes[${index}].jitter_ms`, 0, 120000);
-    if (v.remote_ip !== undefined) result.remote_ip = stringValue(v.remote_ip, `probes[${index}].remote_ip`, 64);
-    if (v.error !== undefined) result.error = cleanDiagnostic(stringValue(v.error, `probes[${index}].error`, 160));
     return result;
   });
+}
+
+/** ICMP packet loss of one round, derived from its sample counts. */
+export function packetLossPercent(probe: ProbeResult): number | null {
+  if (probe.kind !== "icmp") return null;
+  return probe.attempted_samples > 0
+    ? (100 * (probe.attempted_samples - probe.successful_samples)) / probe.attempted_samples
+    : 100;
 }
 
 export function validateReportEnvelope(value: unknown): ReportEnvelope {
@@ -289,7 +235,6 @@ export function validateReportEnvelope(value: unknown): ReportEnvelope {
 export function validateReport(value: unknown): AgentReport {
   const v = record(value, "report");
   const envelope = validateReportEnvelope(v);
-  if (envelope.schema_version !== 2) throw new Error("unsupported schema_version");
   const nodeId = envelope.node_id;
   const agent = record(v.agent, "agent");
   return {
@@ -302,15 +247,10 @@ export function validateReport(value: unknown): AgentReport {
     services: services(v.services),
     probes: probes(v.probes),
     agent: {
-      config_fingerprint: agent.config_fingerprint === undefined ? undefined : patternValue(agent.config_fingerprint,"agent.config_fingerprint",/^[a-f0-9]{64}$/,64),
-      queue_depth: integerValue(agent.queue_depth, "agent.queue_depth", 0, 10000),
-      collect_errors: integerValue(agent.collect_errors, "agent.collect_errors"),
-      send_errors: integerValue(agent.send_errors, "agent.send_errors"),
+      config_fingerprint: agent.config_fingerprint === undefined
+        ? undefined
+        : patternValue(agent.config_fingerprint, "agent.config_fingerprint", /^[a-f0-9]{64}$/, 64),
       started_at: integerValue(agent.started_at, "agent.started_at", 1),
     },
   };
-}
-
-export function cleanDiagnostic(value: string): string {
-  return value.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").slice(0, 160);
 }

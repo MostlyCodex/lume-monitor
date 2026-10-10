@@ -103,8 +103,8 @@ test("charts load on demand and release their observers when details close", asy
   expect(chunks).toHaveLength(0);
   for (let attempt = 0; attempt < 3; attempt++) {
     await page.locator(".node-card").first().click();
-    await expect(page.locator("#node-detail .history-chart")).toHaveCount(2);
-    await expect.poll(() => page.evaluate(() => window.chartObservers())).toBe(2);
+    await expect(page.locator("#node-detail .history-chart")).toHaveCount(3);
+    await expect.poll(() => page.evaluate(() => window.chartObservers())).toBe(3);
     await page.locator("#detail-back").click();
     await expect.poll(() => page.evaluate(() => window.chartObservers())).toBe(0);
   }
@@ -138,7 +138,7 @@ test("history errors can retry without losing the node or interpreting labels as
   fail = false;
   await page.locator("#refresh-button").click();
   await expect(page.locator("#detail-loading")).toBeHidden();
-  await expect(page.locator("#network-plot svg")).toBeVisible();
+  await expect(page.locator("#latency-plot svg")).toBeVisible();
   expect(await page.evaluate(() => window.injected)).toBeUndefined();
 });
 
@@ -196,7 +196,7 @@ test("long-range chart labels show real dates and fit without overlapping in eit
     );
     await page.locator(`[data-hours="${hours}"]`).click();
     await response;
-    await expect(page.locator("#node-detail .history-chart svg")).toHaveCount(2);
+    await expect(page.locator("#node-detail .history-chart svg")).toHaveCount(3);
     const plots = await page.locator("#node-detail .history-chart svg").evaluateAll((svgs) =>
       svgs.map((svg) => {
         const frame = svg.getBoundingClientRect();

@@ -21,18 +21,14 @@ var servicePattern = regexp.MustCompile(`^[A-Za-z0-9_.@-]{1,80}$`)
 var probeNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,79}$`)
 var categoryPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
 var interfaceNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,15}$`)
-var colorPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,23}$`)
 
 type Node struct {
 	ID               string `json:"id"`
 	DisplayName      string `json:"display_name"`
 	Role             string `json:"role"`
-	Group            string `json:"group"`
 	Region           string `json:"region"`
 	StaleSeconds     int    `json:"stale_seconds"`
 	DisplayOrder     int    `json:"display_order"`
-	Color            string `json:"color"`
-	OfflineSeverity  string `json:"offline_severity"`
 	IPChangeSeverity string `json:"ip_change_severity"`
 }
 
@@ -60,11 +56,10 @@ type Probe struct {
 	CriticalFailurePercent float64 `json:"critical_failure_percent,omitempty"`
 	Severity               string  `json:"severity"`
 	DisplayOrder           int     `json:"display_order"`
-	Primary                bool    `json:"primary,omitempty"`
 }
 
+// Traffic is always counted per monthly period starting on ResetDay.
 type TrafficCycle struct {
-	Enabled  bool   `json:"enabled"`
 	ResetDay int    `json:"reset_day"`
 	TimeZone string `json:"time_zone"`
 }
@@ -176,9 +171,6 @@ func (c *Config) Validate() error {
 	if c.Node.Role == "" {
 		c.Node.Role = "VPS"
 	}
-	if c.Node.Group == "" {
-		c.Node.Group = "default"
-	}
 	if c.Node.Region == "" {
 		c.Node.Region = "unspecified"
 	}
@@ -188,20 +180,12 @@ func (c *Config) Validate() error {
 	if c.Node.DisplayOrder == 0 {
 		c.Node.DisplayOrder = 100
 	}
-	if c.Node.Color == "" {
-		c.Node.Color = "green"
-	}
-	if c.Node.OfflineSeverity == "" {
-		c.Node.OfflineSeverity = "P1"
-	}
 	if c.Node.IPChangeSeverity == "" {
 		c.Node.IPChangeSeverity = "P2"
 	}
-	if !validText(c.Node.DisplayName, 80) ||
-		!validText(c.Node.Role, 80) || !validText(c.Node.Group, 80) || !validText(c.Node.Region, 80) ||
-		!colorPattern.MatchString(c.Node.Color) || c.Node.StaleSeconds < 60 || c.Node.StaleSeconds > 3600 ||
-		c.Node.DisplayOrder < 1 || c.Node.DisplayOrder > 10000 || !validSeverity(c.Node.OfflineSeverity) ||
-		!validSeverity(c.Node.IPChangeSeverity) {
+	if !validText(c.Node.DisplayName, 80) || !validText(c.Node.Role, 80) || !validText(c.Node.Region, 80) ||
+		c.Node.StaleSeconds < 60 || c.Node.StaleSeconds > 3600 ||
+		c.Node.DisplayOrder < 1 || c.Node.DisplayOrder > 10000 || !validSeverity(c.Node.IPChangeSeverity) {
 		return errors.New("node metadata is invalid")
 	}
 
@@ -328,6 +312,10 @@ func (c *Config) Validate() error {
 				(probe.Samples-1)*probe.SampleIntervalMS+probe.ConnectTimeoutMS > probe.TimeoutSeconds*1000 {
 				return fmt.Errorf("probe %q TCP connect timeout and sample schedule must fit inside the round timeout", probe.Name)
 			}
+			// TCP rounds only report latency and reachability; loss thresholds apply to ICMP.
+			if probe.WarningFailurePercent != 0 || probe.CriticalFailurePercent != 0 {
+				return fmt.Errorf("probe %q TCP probes do not use failure-rate thresholds", probe.Name)
+			}
 		}
 		if probe.WarningMS < 0 || probe.CriticalMS < 0 || probe.WarningMS > 120000 || probe.CriticalMS > 120000 ||
 			(probe.WarningMS > 0 && probe.CriticalMS > 0 && probe.WarningMS > probe.CriticalMS) {
@@ -337,7 +325,7 @@ func (c *Config) Validate() error {
 			probe.WarningFailurePercent > 100 || probe.CriticalFailurePercent > 100 ||
 			(probe.WarningFailurePercent > 0 && probe.CriticalFailurePercent > 0 &&
 				probe.WarningFailurePercent > probe.CriticalFailurePercent) {
-			return fmt.Errorf("probe %q failure-rate thresholds are invalid", probe.Name)
+			return fmt.Errorf("probe %q packet-loss thresholds are invalid", probe.Name)
 		}
 	}
 

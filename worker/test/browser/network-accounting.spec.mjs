@@ -34,18 +34,20 @@ test("hidden dashboard pauses polling and resumes without duplicate requests or 
  expect(requests).toBe(signedOut);
 });
 
-test("cycle totals reuse the traffic row and explain the selected interfaces and observed period",async({page},testInfo)=>{
+test("cycle totals reuse the traffic row without hover text and the facts list the interfaces",async({page},testInfo)=>{
  await page.route("**/api/v1/dashboard/latest",async route=>{
   const response=await route.fetch();const data=await response.json();const node=data.nodes[0];
-  Object.assign(node.metrics,{network_valid:true,network_interfaces:["eth0","ens192"],traffic_cycle:{reset_day:1,time_zone:"Asia/Shanghai",period_start:1785513600,period_end:1788192000,observed_since:1786000000,rx_bytes:1073741824,tx_bytes:2147483648,partial:true}});
+  Object.assign(node.metrics,{network_valid:true,network_interfaces:["eth0","ens192"],traffic_cycle:{rx_bytes:1073741824,tx_bytes:2147483648}});
   await route.fulfill({response,json:data});
  });
  await page.goto(`${origin}/dashboard/`,{waitUntil:"networkidle"});
  const card=page.locator(".node-card").first();
  await expect(card.locator(".node-network-row")).toHaveCount(2);
- await expect(card).toContainText("周期流量（估算）");
+ const traffic=card.locator(".node-network-row").nth(1);
+ await expect(traffic).toContainText("周期流量");await expect(traffic).toContainText("↑ 2.00 GB");await expect(traffic).toContainText("↓ 1.00 GB");
+ await expect(traffic).not.toHaveAttribute("title",/./);
  await card.click();
- const facts=page.locator("#detail-facts");await expect(facts).toContainText("eth0、ens192");await expect(facts).toContainText("监测覆盖不完整");
+ const facts=page.locator("#detail-facts");await expect(facts).toContainText("eth0、ens192");await expect(facts).not.toContainText("流量周期");
  expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)).toBe(false);
  const overflow=await facts.locator("dd").evaluateAll(values=>values.some(value=>value.scrollWidth>value.clientWidth+1));expect(overflow).toBe(false);
  await testInfo.attach("traffic-cycle-facts",{body:await facts.screenshot(),contentType:"image/png"});
@@ -53,16 +55,16 @@ test("cycle totals reuse the traffic row and explain the selected interfaces and
 
 test("unavailable interface measurements remain unknown instead of displaying zero traffic",async({page})=>{
  await page.route("**/api/v1/dashboard/latest",async route=>{
-  const response=await route.fetch();const data=await response.json();Object.assign(data.nodes[0].metrics,{network_valid:false,network_interfaces:[],network_rx_bytes:null,network_tx_bytes:null,network_rx_rate_bps:null,network_tx_rate_bps:null});await route.fulfill({response,json:data});
+  const response=await route.fetch();const data=await response.json();Object.assign(data.nodes[0].metrics,{network_valid:false,network_interfaces:[],network_rx_rate_bps:null,network_tx_rate_bps:null});await route.fulfill({response,json:data});
  });
  await page.goto(`${origin}/dashboard/`,{waitUntil:"networkidle"});const card=page.locator(".node-card").first();
  await expect(card.locator(".node-network-row").nth(1)).toContainText("↑ —");await card.click();await expect(page.locator("#detail-facts")).toContainText("无法识别，请配置网卡");
 });
 
-test("enabled accounting without a valid period never falls back to system totals",async({page})=>{
+test("a node without a reported cycle shows unknown traffic",async({page})=>{
  await page.route("**/api/v1/dashboard/latest",async route=>{
-  const response=await route.fetch();const data=await response.json();Object.assign(data.nodes[0].metrics,{network_valid:true,network_interfaces:["eth0"],traffic_cycle_enabled:true,traffic_cycle:null});await route.fulfill({response,json:data});
+  const response=await route.fetch();const data=await response.json();Object.assign(data.nodes[0].metrics,{network_valid:true,network_interfaces:["eth0"],traffic_cycle:null});await route.fulfill({response,json:data});
  });
  await page.goto(`${origin}/dashboard/`,{waitUntil:"networkidle"});const card=page.locator(".node-card").first();
- await expect(card).toContainText("周期流量（估算）");await expect(card.locator(".node-network-row").nth(1)).toContainText("↑ —");await card.click();await expect(page.locator("#detail-facts")).toContainText("统计暂不可用");
+ await expect(card.locator(".node-network-row").nth(1)).toContainText("周期流量");await expect(card.locator(".node-network-row").nth(1)).toContainText("↑ —");
 });

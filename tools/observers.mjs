@@ -39,12 +39,14 @@ export function promptServices(prompt, { line = console.log } = {}) {
   });
 }
 
+// Packet-loss thresholds only apply to ICMP; TCP probes report latency and reachability.
 function baseProbe(name, label, target, kind, order) {
   return {
     name: observerName(name), label: displayText(label, { label: "探针显示名" }), category: "external", kind,
     target: probeTarget(target), timeout_seconds: 4, samples: kind === "icmp" ? 5 : 3,
     sample_interval_ms: 250, warning_ms: 500, critical_ms: 1500,
-    warning_failure_percent: 1, critical_failure_percent: 60, severity: "P2", display_order: order,
+    ...(kind === "icmp" ? { warning_failure_percent: 1, critical_failure_percent: 60 } : {}),
+    severity: "P2", display_order: order,
   };
 }
 
@@ -112,7 +114,7 @@ function nextProbeName(prefix, entries, suffixes = [""]) {
 
 async function customProbe(prompt, probes, nodes, line) {
   const values = await promptFields([
-    ["kind", (_values, previous) => choiceValue(prompt, "探针类型：icmp 延迟/丢包；tcp 建连延迟/失败率", ["icmp", "tcp"], previous ?? "icmp", { line })],
+    ["kind", (_values, previous) => choiceValue(prompt, "探针类型：icmp 延迟/丢包；tcp 建连延迟/是否可达", ["icmp", "tcp"], previous ?? "icmp", { line })],
     ["target", (_values, previous) => targetValue(prompt, "目标主机名或 IP", line, previous)],
     ["port", (_values, previous) => integerValue(prompt, "TCP 端口", 1, 65535, previous ?? 443, { line }), (values) => values.kind === "tcp"],
     ["label", (values, previous) => displayValue(prompt, "面板显示名", previous ?? `${values.kind.toUpperCase()} ${probes.length + 1}`, { line })],

@@ -11,13 +11,9 @@ function catalog(overrides: Partial<NodeCatalogRow> = {}): NodeCatalogRow {
     public_id: "public-one",
     display_name: "示例节点",
     role_label: "VPS",
-    group_name: "default",
     region_label: "Example",
     stale_seconds: 180,
     display_order: 10,
-    color_key: "blue",
-    offline_severity: "P1",
-    ip_change_severity: "P2",
     enabled: 1,
     retired_at: null,
     ...overrides,
@@ -30,7 +26,6 @@ function icmpProbe(overrides: Partial<ProbeResult> = {}): ProbeResult {
     label: "北京电信",
     category: "china-network",
     kind: "icmp",
-    target: "example.invalid",
     warning_ms: 180,
     critical_ms: 250,
     warning_failure_percent: 5,
@@ -43,8 +38,6 @@ function icmpProbe(overrides: Partial<ProbeResult> = {}): ProbeResult {
     samples: 5,
     attempted_samples: 5,
     successful_samples: 5,
-    sample_failure_percent: 0,
-    packet_loss_percent: 0,
     checked_at: now - 20,
     ...overrides,
   };
@@ -59,12 +52,9 @@ function report(overrides: Partial<AgentReport> = {}): AgentReport {
       id: "edge-one",
       display_name: "示例节点",
       role: "VPS",
-      group: "default",
       region: "Example",
       stale_seconds: 180,
       display_order: 10,
-      color: "blue",
-      offline_severity: "P1",
       ip_change_severity: "P2",
     },
     generated_at: now - 20,
@@ -72,31 +62,19 @@ function report(overrides: Partial<AgentReport> = {}): AgentReport {
       hostname: "example-host",
       os: "Linux",
       kernel: "6.1",
-      arch: "x86_64",
       boot_id: "00000000-0000-0000-0000-000000000000",
       uptime_seconds: 1000,
       cpu_percent: 3.2,
-      load1: 0.1,
-      load5: 0.1,
-      load15: 0.1,
       memory_total_bytes: 1000,
       memory_available_bytes: 860,
-      swap_total_bytes: 0,
-      swap_used_bytes: 0,
       root_total_bytes: 1000,
-      root_free_bytes: 890,
       root_used_percent: 11.2,
-      root_inode_used_percent: 2,
       network_rx_bytes: 100,
       network_tx_bytes: 200,
-      network_rx_errors: 0,
-      network_tx_errors: 0,
-      network_rx_drops: 0,
-      network_tx_drops: 0,
     },
     services: [{ name: "nftables", label: "nftables", severity: "P1", state: "active" }],
     probes: [icmpProbe()],
-    agent: { queue_depth: 0, collect_errors: 0, send_errors: 0, started_at: now - 1000 },
+    agent: { started_at: now - 1000 },
     ...overrides,
   };
 }
@@ -105,7 +83,7 @@ function report(overrides: Partial<AgentReport> = {}): AgentReport {
 // the catalog rows the reports imply unless a test deliberately omits one.
 function probeCatalog(reports: AgentReport[]): ProbeCatalogRow[] {
   return reports.flatMap((value) =>
-    value.probes.map((probe, index) => ({
+    value.probes.map((probe) => ({
       node_id: value.node_id,
       probe_name: probe.name,
       public_id: probe.name,
@@ -119,7 +97,6 @@ function probeCatalog(reports: AgentReport[]): ProbeCatalogRow[] {
       critical_failure_percent: probe.critical_failure_percent,
       severity: probe.severity,
       display_order: probe.display_order,
-      is_primary: index === 0 ? 1 : 0,
       enabled: 1,
     })),
   );
@@ -169,14 +146,35 @@ describe("Telegram status formatting", () => {
   it("uses ICMP packet loss and highlights an unhealthy service", () => {
     const unhealthy = report({
       services: [{ name: "xray", label: "Xray", severity: "P2", state: "inactive" }],
-      probes: [icmpProbe({ packet_loss_percent: 20, sample_failure_percent: 40, duration_ms: 170 })],
+      probes: [icmpProbe({ successful_samples: 4, duration_ms: 170 })],
     });
     const message = formatTelegramStatusMessage([catalog()], probeCatalog([unhealthy]), [row(unhealthy)], now);
 
     expect(message).toContain("🟡 示例节点");
     expect(message).toContain("Xray 异常（inactive）");
     expect(message).toContain("北京电信 · 170 ms · 丢包 20%");
-    expect(message).not.toContain("40%");
+  });
+
+  it("shows TCP probes as latency or an unreachable target, never as a failure rate", () => {
+    const tcp = (overrides: Partial<ProbeResult>) => icmpProbe({
+      kind: "tcp", label: "Cloudflare", samples: 3, attempted_samples: 3, successful_samples: 3,
+      warning_failure_percent: 0, critical_failure_percent: 0, ...overrides,
+    });
+    const value = report({
+      probes: [
+        tcp({ name: "cf", duration_ms: 23.4, successful_samples: 2, display_order: 10 }),
+        tcp({ name: "google", label: "Google", success: false, successful_samples: 1, display_order: 20 }),
+        icmpProbe({ name: "ct", display_order: 30 }),
+        icmpProbe({ name: "cu", label: "北京联通", display_order: 40 }),
+        icmpProbe({ name: "cm", label: "北京移动", display_order: 50 }),
+      ],
+    });
+    const message = formatTelegramStatusMessage([catalog()], probeCatalog([value]), [row(value)], now);
+
+    expect(message).toContain("├ Cloudflare · 23 ms\n");
+    expect(message).toContain("├ Google · 连接失败");
+    expect(message).toContain("└ 北京移动 · 152 ms · 丢包 0%");
+    expect(message).not.toContain("建连失败");
   });
 
   it("hides a probe the catalog no longer exposes, such as a link to a retired node", () => {

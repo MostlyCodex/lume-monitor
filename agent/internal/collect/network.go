@@ -17,8 +17,8 @@ import (
 )
 
 type NetStats struct {
-	RX, TX, RXErrors, TXErrors, RXDrops, TXDrops uint64
-	Index                                        int
+	RX, TX uint64
+	Index  int
 }
 type NetworkSnapshot struct {
 	NetStats
@@ -53,7 +53,7 @@ func parseNetDev(raw string) (map[string]NetStats, error) {
 			}
 			values[i] = value
 		}
-		result[name] = NetStats{RX: values[0], TX: values[8], RXErrors: values[2], TXErrors: values[10], RXDrops: values[3], TXDrops: values[11]}
+		result[name] = NetStats{RX: values[0], TX: values[8]}
 	}
 	return result, scanner.Err()
 }
@@ -127,10 +127,6 @@ func selectNetwork(available map[string]NetStats, defaults, configured []string)
 		}
 		result.RX += item.RX
 		result.TX += item.TX
-		result.RXErrors += item.RXErrors
-		result.TXErrors += item.TXErrors
-		result.RXDrops += item.RXDrops
-		result.TXDrops += item.TXDrops
 		result.Counters[name] = model.InterfaceCounters{RX: item.RX, TX: item.TX, Index: item.Index}
 		scope[name] = item.Index
 	}

@@ -27,16 +27,6 @@ const COMMAND_MENU_VERSION = "7";
 const WEBHOOK_CONFIG_VERSION = "1";
 const TELEGRAM_OWNER_SETTING = "telegram_owner_user_id";
 
-export interface TelegramDiagnostics {
-  bot_ok: boolean;
-  username_matches: boolean;
-  webhook_configured: boolean;
-  webhook_url_matches: boolean;
-  pending_update_count: number;
-  last_error_date: number | null;
-  last_error_message: string;
-}
-
 export type TelegramWebhookResult = "replied" | "ignored" | "duplicate";
 
 async function telegramCall<T>(env: Env, method: string, payload: unknown): Promise<T> {
@@ -251,26 +241,4 @@ export async function ensureTelegramWebhook(env: Env, now: number): Promise<bool
   const expected = `${WEBHOOK_CONFIG_VERSION}|${telegramWebhookUrl(resolved)}`;
   if ((await getSetting(env, "telegram_webhook_config")) === expected) return true;
   return configureTelegramWebhook(env, now, resolved);
-}
-
-export async function telegramDiagnostics(env: Env): Promise<TelegramDiagnostics> {
-  const baseUrl = await resolveDashboardBaseUrl(env);
-  const me = await telegramCall<{ username?: string }>(env, "getMe", {});
-  const webhook = await telegramCall<{
-    url?: string;
-    pending_update_count?: number;
-    last_error_date?: number;
-    last_error_message?: string;
-  }>(env, "getWebhookInfo", {});
-  const expected = env.TELEGRAM_BOT_USERNAME.replace(/^@/, "").toLowerCase();
-  const actual = (me.username ?? "").toLowerCase();
-  return {
-    bot_ok: actual.length > 0,
-    username_matches: actual === expected,
-    webhook_configured: Boolean(webhook.url),
-    webhook_url_matches: webhook.url === telegramWebhookUrl(baseUrl),
-    pending_update_count: webhook.pending_update_count ?? 0,
-    last_error_date: webhook.last_error_date ?? null,
-    last_error_message: (webhook.last_error_message ?? "").slice(0, 240),
-  };
 }

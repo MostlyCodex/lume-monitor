@@ -1,5 +1,6 @@
 import type { NodeCatalogRow, ProbeCatalogRow } from "./catalog";
 import type { AgentReport, NodeId, ProbeResult } from "./types";
+import { packetLossPercent } from "./validation";
 
 export interface TelegramStatusNodeRow {
   node_id: NodeId;
@@ -50,13 +51,16 @@ function resourceLine(report: AgentReport): string {
   ].join(" · ");
 }
 
+// ICMP lines show latency and packet loss; TCP lines show latency or that the target is unreachable.
 function probeLine(probe: ProbeResult): string {
   const label = probe.label.replace(/\s*·\s*(ICMP|TCP(?:\s*\d+)?)\s*$/i, "").trim();
-  const failureLabel = probe.kind === "tcp" ? "建连失败" : "丢包";
   if (!probe.complete) return `${label} · 采样 ${probe.attempted_samples}/${probe.samples}`;
-  const failurePercent = probe.packet_loss_percent ?? probe.sample_failure_percent;
-  if (!probe.success) return `${label} · ${probe.kind === "tcp" ? "建连失败" : "不可达"} · ${failureLabel} ${Math.round(failurePercent)}%`;
-  return `${label} · ${Math.round(probe.duration_ms)} ms · ${failureLabel} ${Math.round(failurePercent)}%`;
+  const loss = packetLossPercent(probe);
+  if (!probe.success) {
+    return loss === null ? `${label} · 连接失败` : `${label} · 不可达 · 丢包 ${Math.round(loss)}%`;
+  }
+  const latency = `${label} · ${Math.round(probe.duration_ms)} ms`;
+  return loss === null ? latency : `${latency} · 丢包 ${Math.round(loss)}%`;
 }
 
 function updateTimestamp(now: number): string {
@@ -124,7 +128,6 @@ export function formatTelegramStatusMessage(
     if (services) block.push(`   服务  ${services}`);
     const probes = [...visibleProbes]
       .sort((left, right) => left.display_order - right.display_order)
-      .slice(0, 4)
       .map(probeLine);
     if (probes.length > 0) {
       block.push("   探测");

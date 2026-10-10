@@ -149,7 +149,6 @@ export function useDashboard(api: DashboardApi, notify: Notice) {
       annotations: history.annotations.filter(
         (row) => row.node_id === selectedId.value && row.timestamp >= since,
       ),
-      probe_summaries: [],
     };
   }
   function restoreHistory() {

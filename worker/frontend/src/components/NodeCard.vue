@@ -13,11 +13,8 @@ const props = defineProps<{ node: NodeSnapshot; history: HistorySnapshot | null;
 const emit = defineEmits<{ open: [id: string] }>();
 
 const severity = computed(() => nodeSeverity(props.node, props.history));
-const probes = computed(() =>
-  allProbes(props.node)
-    .filter((probe) => probe.kind === "icmp")
-    .slice(0, 4),
-);
+// 首页展示全部探测（ICMP 三网参考 + TCP 外部目标 / 节点互联），互联链路排在最后
+const probes = computed(() => allProbes(props.node));
 const traffic = computed(() => trafficSummary(props.node.metrics));
 
 const badgeVariant = computed(() => {
@@ -99,10 +96,7 @@ const badgeVariant = computed(() => {
                 <span>↓ {{ formatRate(node.metrics.network_rx_rate_bps) }}</span>
               </span>
             </div>
-            <div
-              class="node-network-row flex items-center justify-between gap-3"
-              :title="traffic.description"
-            >
+            <div class="node-network-row flex items-center justify-between gap-3">
               <span>{{ traffic.label }}</span>
               <span class="flex items-center gap-2 font-medium tabular-nums">
                 <span>↑ {{ traffic.tx }}</span>

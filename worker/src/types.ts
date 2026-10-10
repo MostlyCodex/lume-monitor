@@ -5,12 +5,9 @@ export interface NodeMetadata {
   id: NodeId;
   display_name: string;
   role: string;
-  group: string;
   region: string;
   stale_seconds: number;
   display_order: number;
-  color: string;
-  offline_severity: Severity;
   ip_change_severity: Severity;
 }
 
@@ -27,83 +24,49 @@ export interface ProbeResult {
   category: string;
   target_node_id?: NodeId;
   kind: "icmp" | "tcp";
-  target: string;
-  port?: number;
   warning_ms: number;
   critical_ms: number;
+  /** Packet-loss thresholds; always 0 for TCP probes. */
   warning_failure_percent: number;
   critical_failure_percent: number;
   severity: Severity;
   display_order: number;
-  primary?: boolean;
   success: boolean;
   complete: boolean;
   duration_ms: number;
-  average_duration_ms?: number;
-  p95_duration_ms?: number;
-  min_duration_ms?: number;
-  max_duration_ms?: number;
-  range_ms?: number;
-  jitter_ms?: number;
   samples: number;
   attempted_samples: number;
   successful_samples: number;
-  sample_failure_percent: number;
-  packet_loss_percent?: number;
-  remote_ip?: string;
-  error?: string;
   checked_at: number;
 }
 
 export interface TrafficCycle {
- reset_day: number;
- time_zone: "UTC" | "Asia/Shanghai";
- period_start: number;
- period_end: number;
- observed_since: number;
- rx_bytes: number;
- tx_bytes: number;
- partial: boolean;
+  rx_bytes: number;
+  tx_bytes: number;
 }
 
 export interface SystemMetrics {
- network_interfaces?: string[];
- network_valid?: boolean;
- network_scope?: string;
- traffic_cycle?: TrafficCycle;
- traffic_cycle_enabled?: boolean;
+  network_interfaces?: string[];
+  network_valid?: boolean;
+  network_scope?: string;
+  traffic_cycle?: TrafficCycle;
   hostname: string;
   os: string;
   kernel: string;
-  arch: string;
   boot_id: string;
   uptime_seconds: number;
   cpu_percent: number;
   cpu_count?: number;
-  load1: number;
-  load5: number;
-  load15: number;
   memory_total_bytes: number;
   memory_available_bytes: number;
-  swap_total_bytes: number;
-  swap_used_bytes: number;
   root_total_bytes: number;
-  root_free_bytes: number;
   root_used_percent: number;
-  root_inode_used_percent: number;
   network_rx_bytes: number;
   network_tx_bytes: number;
-  network_rx_errors: number;
-  network_tx_errors: number;
-  network_rx_drops: number;
-  network_tx_drops: number;
 }
 
 export interface AgentHealth {
- config_fingerprint?: string;
-  queue_depth: number;
-  collect_errors: number;
-  send_errors: number;
+  config_fingerprint?: string;
   started_at: number;
 }
 
@@ -136,8 +99,5 @@ export interface Env {
 
 export interface SourceIdentity {
   ip: string | null;
-  asn: number | null;
-  org: string | null;
   country: string | null;
-  colo: string | null;
 }

@@ -42,13 +42,8 @@ export async function testPermanentDeletion({ query, baseUrl }) {
       const key = column.name;
       if (Object.hasOwn(overrides, key)) return sql(overrides[key]);
       if (key === "node_id") return sql(id);
-      if (["severity", "offline_severity", "ip_change_severity"].includes(key))
-        return sql("P1");
-      if (key === "resolution") return sql("hour");
-      if (key === "state") return sql("resolved");
-      if (key === "kind")
-        return sql("icmp");
-      if (key === "unit") return sql("matches");
+      if (key === "severity") return sql("P1");
+      if (key === "kind") return sql("icmp");
       if (key === "report_json")
         return sql(JSON.stringify({ node: { id }, probes: [] }));
       if (key.endsWith("_json"))
@@ -95,32 +90,17 @@ export async function testPermanentDeletion({ query, baseUrl }) {
   ];
   for (const name of probeTables)
     statements.push(insert(name, { node_id: peer, probe_name: probe }));
-  const archive = JSON.stringify({
-    keep: 42,
-    probes: [
-      { name: probe, target_node_id: id },
-      { name: "kept-probe", target: "example.com" },
-    ],
-  });
+  // The peer's latest report also carries the link toward the deleted node.
+  const linkedPeer = JSON.parse(beforePeer);
+  linkedPeer.probes = [...linkedPeer.probes, { name: probe, target_node_id: id }];
   statements.push(
-    insert("snapshots", {
-      node_id: peer,
-      reported_at: marker,
-      report_json: archive,
-    }),
+    "UPDATE node_latest SET report_json=" + sql(JSON.stringify(linkedPeer)) + " WHERE node_id=" + sql(peer) + ";",
   );
   statements.push(
     insert("probe_rounds", {
       node_id: peer,
       round_at: marker,
       probes_json: JSON.stringify([[probe], ["kept-probe"]]),
-    }),
-  );
-  statements.push(
-    insert("business_routes", {
-      source_node_id: peer,
-      target_node_id: id,
-      probe_name: probe,
     }),
   );
   query(statements.join(" "));
@@ -171,15 +151,12 @@ export async function testPermanentDeletion({ query, baseUrl }) {
   assert.equal(inventory.nodes.find(node => node.node_id === peer).deletion_pending, false);
   // Simulate catalog refreshes from in-flight reports while SSH cleanup waits.
   query("UPDATE node_catalog SET enabled=1 WHERE node_id=" + sql(id) +
-    "; UPDATE probe_catalog SET enabled=1 WHERE target_node_id=" + sql(id) +
-    "; UPDATE business_routes SET enabled=1 WHERE target_node_id=" + sql(id));
+    "; UPDATE probe_catalog SET enabled=1 WHERE target_node_id=" + sql(id));
   const dashboard = await (await admin("/api/v1/dashboard/latest")).json();
   assert.ok(!dashboard.nodes.some(node => node.id === id));
-  assert.ok(dashboard.nodes.some(node => node.id === peer));
-  assert.ok(!dashboard.catalog.probes.some(entry => entry.target_node_id === id));
-  assert.ok(!dashboard.catalog.routes.some(entry => entry.target_node_id === id));
+  assert.ok(!dashboard.nodes.find(node => node.id === peer).probes.some(entry => entry.name === probe));
   const history = await (await admin("/api/v1/dashboard/history?hours=24")).json();
-  assert.ok(!history.routes.some(entry => entry.key === peer + "--" + probe));
+  assert.ok(!history.probes.some(entry => entry.node_id === peer && entry.probe_name === probe));
   // Removed lifecycle endpoints must stay unavailable, including for admins.
   for (const action of ["retire", "restore"]) {
     assert.equal((await admin(endpoint + "/" + action, "POST")).status, 404);
@@ -221,16 +198,6 @@ export async function testPermanentDeletion({ query, baseUrl }) {
         .join(","),
   )[0];
   assert.ok(Object.values(remainingLinks).every((count) => count === 0));
-  const raw = query(
-    "SELECT report_json FROM snapshots WHERE node_id=" +
-      sql(peer) +
-      " AND reported_at=" +
-      marker,
-  )[0];
-  assert.deepEqual(JSON.parse(raw.report_json), {
-    keep: 42,
-    probes: [{ name: "kept-probe", target: "example.com" }],
-  });
   const packed = query(
     "SELECT probes_json FROM probe_rounds WHERE node_id=" +
       sql(peer) +
@@ -240,24 +207,14 @@ export async function testPermanentDeletion({ query, baseUrl }) {
   assert.deepEqual(JSON.parse(packed.probes_json), [["kept-probe"]]);
   assert.equal(
     query(
-      "SELECT COUNT(*) AS n FROM business_routes WHERE source_node_id=" +
-        sql(id) +
-        " OR target_node_id=" +
-        sql(id),
-    )[0].n,
-    0,
-  );
-  assert.equal(
-    query(
       "SELECT COUNT(*) AS n FROM metric_samples WHERE node_id=" + sql(peer),
     )[0].n > 0,
     true,
   );
-  assert.equal(
-    query("SELECT report_json FROM node_latest WHERE node_id=" + sql(peer))[0]
-      .report_json,
-    beforePeer,
-    "unrelated current metrics remain untouched",
+  assert.deepEqual(
+    JSON.parse(query("SELECT report_json FROM node_latest WHERE node_id=" + sql(peer))[0].report_json),
+    JSON.parse(beforePeer),
+    "only the link toward the deleted node leaves the peer's latest report",
   );
   assert.equal(
     (await admin(endpoint, "DELETE")).status,
