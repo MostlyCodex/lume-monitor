@@ -14,13 +14,6 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ refresh: []; theme: []; logout: [] }>();
-
-function mapHealthTone(tone: string): "healthy" | "degraded" | "critical" | "stale" {
-  if (tone === "good" || tone === "healthy") return "healthy";
-  if (tone === "warn" || tone === "warning" || tone === "degraded") return "degraded";
-  if (tone === "bad" || tone === "critical" || tone === "offline") return "critical";
-  return "stale";
-}
 </script>
 
 <template>
@@ -35,7 +28,7 @@ function mapHealthTone(tone: string): "healthy" | "degraded" | "critical" | "sta
 
       <!-- 集群健康概览 Badge -->
       <div id="top-health" class="hidden sm:flex items-center">
-        <Badge :variant="mapHealthTone(health.tone)" class="px-2.5 py-1">
+        <Badge :variant="health.tone" class="px-2.5 py-1">
           <span>{{ health.title }}</span>
           <span id="fleet-health-copy" class="font-normal text-muted-foreground">{{
             health.detail

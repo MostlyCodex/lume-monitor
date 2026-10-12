@@ -52,14 +52,13 @@ test("the active deployment is selected by timestamp and split traffic is reject
 const sample = () => ({
   health: { ok: true, version: "1.1.0", database_schema: DATABASE_SCHEMA },
   dashboard: {
-    app_version: "1.1.0",
-    nodes: [{ id: "public-a", online: true, reported_at: 102 }],
+    nodes: [{ id: "public-a", online: true, received_at: 103 }],
   },
   inventory: {
     nodes: [
       {
         node_id: "node-a",
-        enabled: true,
+        deletion_pending: false,
         generated_at: 102,
         last_report_at: 103,
       },
@@ -93,7 +92,7 @@ test("rollback verification requires fresh generated reports and matching dashbo
       value.dashboard.nodes = [];
     },
     (value) => {
-      value.dashboard.nodes[0].reported_at = 99;
+      value.dashboard.nodes[0].received_at = 99;
     },
     (value) => {
       value.dashboard.nodes[0].data_error = true;
@@ -102,7 +101,7 @@ test("rollback verification requires fresh generated reports and matching dashbo
       value.inventory.nodes[0].generated_at = 99;
     },
     (value) => {
-      value.inventory.nodes[0].enabled = false;
+      value.inventory.nodes[0].deletion_pending = true;
     },
     (value) => {
       value.inventory.nodes[0].last_report_at = 99;

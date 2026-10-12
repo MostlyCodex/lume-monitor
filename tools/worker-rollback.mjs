@@ -45,7 +45,6 @@ export async function waitForLiveReports({
         health.ok &&
         health.database_schema === DATABASE_SCHEMA &&
         health.version === version &&
-        dashboard.app_version === version &&
         Array.isArray(dashboard.nodes) &&
         Array.isArray(inventory.nodes)
       ) {
@@ -58,7 +57,7 @@ export async function waitForLiveReports({
               (node) => node.id === target.public_id,
             );
             return (
-              !report?.enabled ||
+              !report ||
               report.deletion_pending ||
               !(report.last_report_at > since) ||
               !(
@@ -66,7 +65,7 @@ export async function waitForLiveReports({
               ) ||
               !card?.online ||
               card.data_error ||
-              !(card.reported_at >= report.generated_at)
+              !(card.received_at >= report.last_report_at)
             );
           })
           .map((node) => node.node_id);

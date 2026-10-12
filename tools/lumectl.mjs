@@ -32,8 +32,7 @@ const wranglerConfigPath = join(workerDir, "wrangler.jsonc");
 const wranglerBin = join(workerDir, "node_modules", "wrangler", "bin", "wrangler.js");
 const releaseRepository = process.env.LUME_RELEASE_REPOSITORY || "MostlyCodex/lume-monitor";
 const maxDownloadBytes = 64 * 1024 * 1024;
-// Isolate the stable Agent distribution from binaries cached before the version reset.
-const cacheDir = join(privateDir, "cache", "agents-v1");
+const cacheDir = join(privateDir, "cache", "agents");
 
 class DownloadUnavailableError extends Error {}
 

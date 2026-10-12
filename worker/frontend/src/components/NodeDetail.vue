@@ -36,12 +36,7 @@ const ranges: { hours: HistoryHours; label: string }[] = [
 
 const severity = computed(() => nodeSeverity(props.node, props.fleetHistory));
 
-const badgeVariant = computed(() => {
-  if (severity.value === "healthy") return "healthy";
-  if (severity.value === "warning") return "degraded";
-  if (severity.value === "critical" || severity.value === "offline") return "critical";
-  return "stale";
-});
+const badgeVariant = computed(() => (severity.value === "offline" ? "critical" : severity.value));
 
 const rateSeries = computed<ChartSeries[]>(() => {
   void props.theme;

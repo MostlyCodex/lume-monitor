@@ -8,7 +8,7 @@ defineProps<{ services: ServiceStatus[] }>();
 function serviceVariant(state: string) {
   if (state === "active") return "healthy";
   if (state === "failed") return "critical";
-  return "degraded";
+  return "warning";
 }
 </script>
 

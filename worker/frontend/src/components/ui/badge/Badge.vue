@@ -2,43 +2,20 @@
 import { computed, type HTMLAttributes } from "vue";
 import { cn } from "../../../lib/utils";
 
-export type BadgeVariant =
-  | "default"
-  | "secondary"
-  | "destructive"
-  | "outline"
-  | "healthy"
-  | "degraded"
-  | "critical"
-  | "stale";
+export type BadgeVariant = "outline" | "healthy" | "warning" | "critical";
 
-const props = withDefaults(
-  defineProps<{ variant?: BadgeVariant; class?: HTMLAttributes["class"] }>(),
-  { variant: "default" },
-);
+const props = defineProps<{ variant: BadgeVariant; class?: HTMLAttributes["class"] }>();
 
-// 对应 shadcn v4 badge.tsx；状态类变体统一为描边胶囊 + 状态色圆点
-const badgeVariants = {
-  default: "bg-primary text-primary-foreground",
-  secondary: "bg-secondary text-secondary-foreground",
-  destructive: "bg-destructive text-white",
-  outline: "border-border text-foreground",
-  healthy: "border-border text-foreground",
-  degraded: "border-border text-foreground",
-  critical: "border-border text-foreground",
-  stale: "border-border text-muted-foreground",
-};
+// 对应 shadcn v4 badge.tsx 的描边样式；状态类变体额外带状态色圆点
 const dots: Partial<Record<BadgeVariant, string>> = {
   healthy: "bg-status-ok",
-  degraded: "bg-status-warn",
+  warning: "bg-status-warn",
   critical: "bg-status-bad",
-  stale: "bg-muted-foreground",
 };
 
 const classes = computed(() =>
   cn(
-    "inline-flex w-fit shrink-0 items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-full border border-transparent px-2 py-0.5 text-xs font-medium",
-    badgeVariants[props.variant],
+    "inline-flex w-fit shrink-0 items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-full border border-border px-2 py-0.5 text-xs font-medium text-foreground",
     props.class,
   ),
 );

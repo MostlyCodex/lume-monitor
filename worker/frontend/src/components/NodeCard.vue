@@ -17,12 +17,7 @@ const severity = computed(() => nodeSeverity(props.node, props.history));
 const probes = computed(() => allProbes(props.node));
 const traffic = computed(() => trafficSummary(props.node.metrics));
 
-const badgeVariant = computed(() => {
-  if (severity.value === "healthy") return "healthy";
-  if (severity.value === "warning") return "degraded";
-  if (severity.value === "critical" || severity.value === "offline") return "critical";
-  return "stale";
-});
+const badgeVariant = computed(() => (severity.value === "offline" ? "critical" : severity.value));
 </script>
 
 <template>
