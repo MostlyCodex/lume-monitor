@@ -43,7 +43,6 @@ if the file has since been deleted.
 - Dashboard sessions use HttpOnly, Secure cookies and one-time login tokens.
 - Telegram Webhook requests require Telegram's secret-token header.
 - The Agent systemd unit drops capabilities and applies filesystem, namespace, memory, CPU, and task limits.
-- ICMP probes use Linux unprivileged datagram ping sockets. The Agent does not request root or `CAP_NET_RAW`; an unavailable ping socket is reported as an explicit probe error.
 - TCP probes use ordinary outbound sockets, close immediately after the handshake and send no application data.
 
 ## Deployment responsibility

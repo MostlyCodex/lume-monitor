@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from "vue";
 import type { ChartSeries, HistoryHours, HistorySnapshot, NodeSnapshot, Theme } from "../types";
-import { nodeSeverity, severityLabel } from "../domain/probes";
-import { formatTime, formatUptime } from "../domain/format";
+import { formatTime } from "../domain/format";
 import { cssColor } from "../charts/theme";
 import ServiceList from "./ServiceList.vue";
 import NetworkQuality from "./NetworkQuality.vue";
 import NodeFacts from "./NodeFacts.vue";
 import NodeEvents from "./NodeEvents.vue";
+import NodeStatus from "./NodeStatus.vue";
 import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
 
 const HistoryChart = defineAsyncComponent(() => import("./HistoryChart.vue"));
@@ -17,7 +16,6 @@ const HistoryChart = defineAsyncComponent(() => import("./HistoryChart.vue"));
 const props = defineProps<{
   node: NodeSnapshot;
   history: HistorySnapshot | null;
-  fleetHistory: HistorySnapshot | null;
   hours: HistoryHours;
   theme: Theme;
   loading: boolean;
@@ -33,10 +31,6 @@ const ranges: { hours: HistoryHours; label: string }[] = [
   { hours: 720, label: "30D" },
   { hours: 2160, label: "90D" },
 ];
-
-const severity = computed(() => nodeSeverity(props.node, props.fleetHistory));
-
-const badgeVariant = computed(() => (severity.value === "offline" ? "critical" : severity.value));
 
 const rateSeries = computed<ChartSeries[]>(() => {
   void props.theme;
@@ -109,13 +103,11 @@ const rateSeries = computed<ChartSeries[]>(() => {
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
-          <Badge :variant="badgeVariant" class="node-status" :data-severity="severity">
-            {{ severityLabel(severity) }}
-          </Badge>
+          <NodeStatus
+            :online="node.online && !node.data_error"
+            :uptime-seconds="node.metrics.uptime_seconds"
+          />
           <ServiceList :services="node.services ?? []" />
-          <Badge variant="outline" class="tabular-nums">
-            运行 {{ formatUptime(node.metrics.uptime_seconds) }}
-          </Badge>
         </div>
       </div>
     </Card>

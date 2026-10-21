@@ -19,6 +19,7 @@ module.exports = {
       colors: {
         status: {
           ok: "hsl(var(--status-ok))",
+          info: "hsl(var(--status-info))",
           warn: "hsl(var(--status-warn))",
           bad: "hsl(var(--status-bad))",
         },

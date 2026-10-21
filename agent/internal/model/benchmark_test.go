@@ -9,9 +9,8 @@ func representativeReport() Report {
 	probes := make([]ProbeResult, 4)
 	for index := range probes {
 		probes[index] = ProbeResult{
-			Name: "beijing_carrier_icmp_" + string(rune('1'+index)), Label: "Beijing carrier", Category: "carrier-reference",
-			Kind: "icmp", WarningMS: 200, CriticalMS: 350,
-			WarningFailurePercent: 5, CriticalFailurePercent: 30, Severity: "P2",
+			Name: "carrier_tcp_" + string(rune('1'+index)), Label: "Carrier", Category: "carrier-reference",
+			Kind: "tcp", WarningMS: 200, CriticalMS: 350, Severity: "P2",
 			DisplayOrder: (index + 1) * 10, Success: true, Complete: true, DurationMS: 151.2,
 			Samples: 5, AttemptedSamples: 5, SuccessfulSamples: 5, CheckedAt: 1787472000,
 		}

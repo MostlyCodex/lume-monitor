@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	probing "github.com/prometheus-community/pro-bing"
 
 	"github.com/MostlyCodex/lume-monitor/agent/internal/config"
 	"github.com/MostlyCodex/lume-monitor/agent/internal/model"
@@ -18,7 +17,6 @@ func resultMetadata(cfg config.Probe) model.ProbeResult {
 	return model.ProbeResult{
 		Name: cfg.Name, Label: cfg.Label, Category: cfg.Category, TargetNodeID: cfg.TargetNodeID,
 		Kind: cfg.Kind, WarningMS: cfg.WarningMS, CriticalMS: cfg.CriticalMS,
-		WarningFailurePercent: cfg.WarningFailurePercent, CriticalFailurePercent: cfg.CriticalFailurePercent,
 		Severity: cfg.Severity, DisplayOrder: cfg.DisplayOrder,
 	}
 }
@@ -92,33 +90,6 @@ func runTCP(parent context.Context, cfg config.Probe) model.ProbeResult {
 	return finishResult(result, durations, attempted, cfg.Samples)
 }
 
-func runICMP(parent context.Context, cfg config.Probe) model.ProbeResult {
-	result := resultMetadata(cfg)
-	result.CheckedAt = time.Now().Unix()
-	pinger, err := probing.NewPinger(cfg.Target)
-	if err != nil {
-		return finishResult(result, nil, 0, cfg.Samples)
-	}
-	// UDP ping sockets keep the Agent unprivileged. Never switch this to raw
-	// ICMP without an explicit security review of the service capabilities.
-	pinger.SetPrivileged(false)
-	pinger.Count = cfg.Samples
-	pinger.Interval = time.Duration(cfg.SampleIntervalMS) * time.Millisecond
-	pinger.Timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
-	pinger.ResolveTimeout = time.Duration(cfg.TimeoutSeconds) * time.Second
-	pinger.RecordRtts = true
-
-	round, cancel := context.WithTimeout(parent, pinger.Timeout+time.Second)
-	defer cancel()
-	_ = pinger.RunWithContext(round)
-	stats := pinger.Statistics()
-	durations := make([]float64, 0, len(stats.Rtts))
-	for _, duration := range stats.Rtts {
-		durations = append(durations, float64(duration.Microseconds())/1000)
-	}
-	return finishResult(result, durations, stats.PacketsSent, cfg.Samples)
-}
-
 func Run(parent context.Context, probes []config.Probe) []model.ProbeResult {
 	results := make([]model.ProbeResult, len(probes))
 	semaphore := make(chan struct{}, 2)
@@ -129,11 +100,7 @@ func Run(parent context.Context, probes []config.Probe) []model.ProbeResult {
 			defer wait.Done()
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
-			if cfg.Kind == "tcp" {
-				results[index] = runTCP(parent, cfg)
-			} else {
-				results[index] = runICMP(parent, cfg)
-			}
+			results[index] = runTCP(parent, cfg)
 		}()
 	}
 	wait.Wait()

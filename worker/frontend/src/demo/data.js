@@ -13,33 +13,29 @@ const nodeDefinitions = [
 function probeDefinitions(node) {
   if (node.id === "egress-lv") return [{ name: "public-connectivity", label: "外网连通性", category: "external", base: node.bases[0], order: 1 }];
   const probes = [
-    { name: "beijing-ct", label: "北京电信", category: "carrier", base: node.bases[0], order: 1 },
-    { name: "beijing-cu", label: "北京联通", category: "carrier", base: node.bases[1], order: 2 },
-    { name: "beijing-cm", label: "北京移动", category: "carrier", base: node.bases[2], order: 3 },
+    // 与 Worker 一致：三网只显示运营商，节点互联只显示目标节点名称
+    { name: "carrier-ct", label: "电信", category: "carrier-reference", base: node.bases[0], order: 1 },
+    { name: "carrier-cu", label: "联通", category: "carrier-reference", base: node.bases[1], order: 2 },
+    { name: "carrier-cm", label: "移动", category: "carrier-reference", base: node.bases[2], order: 3 },
   ];
-  if (node.bases[3]) probes.push({ name: "node-link", label: `${node.label} → Egress-Las-Vegas`, category: "node-link", base: node.bases[3], order: 4 });
-  if (node.id === "transit-la") probes.push({ name: "peer-tcp-443", label: "Egress-Las-Vegas · TCP 443", category: "node-link", kind: "tcp", base: 12, order: 5 });
+  if (node.bases[3]) probes.push({ name: "node-link", label: "Egress-Las-Vegas", category: "node-link", base: node.bases[3], order: 4 });
+  if (node.id === "transit-la") probes.push({ name: "peer-tcp-443", label: "Egress-Las-Vegas", category: "node-link", kind: "tcp", base: 12, order: 5 });
   return probes;
 }
 
 function currentProbe(node, probe, index) {
-  const elevated = node.id === "hybrid-sg" && probe.name === "beijing-cm";
-  const icmp = probe.kind !== "tcp";
+  const elevated = node.id === "hybrid-sg" && probe.name === "carrier-cm";
   return {
     name: probe.name,
     label: probe.label,
     category: probe.category,
-    kind: /** @type {"icmp" | "tcp"} */ (icmp ? "icmp" : "tcp"),
+    kind: /** @type {"tcp"} */ ("tcp"),
     order: probe.order,
-    warning_ms: probe.base * 1.35,
-    critical_ms: probe.base * 1.7,
-    warning_failure_percent: icmp ? 1 : null,
-    critical_failure_percent: icmp ? 5 : null,
     success: true,
     complete: true,
     duration_ms: Math.round((elevated ? probe.base * 1.42 : probe.base + Math.sin(index + 0.8) * 3) * 10) / 10,
-    samples: icmp ? 20 : 3,
-    packet_loss_percent: icmp ? (elevated ? 5 : 0) : null,
+    samples: 5,
+    packet_loss_percent: elevated ? 5 : 0,
   };
 }
 
@@ -115,7 +111,7 @@ function historyData(hours, selectedNode) {
         probes.push({
           node_id: node.id, probe_name: probe.name, timestamp,
           latency_ms: missing ? null : Math.max(1, probe.base + Math.sin(cycle + probe.order) * Math.max(1.5, probe.base * 0.04) + burst),
-          packet_loss_percent: probe.kind === "tcp" ? null : missing ? 100 : loss,
+          packet_loss_percent: missing ? 100 : loss,
           success_percent: missing ? 0 : 100,
           rounds: 1,
         });

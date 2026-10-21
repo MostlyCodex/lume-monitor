@@ -39,27 +39,25 @@ export function promptServices(prompt, { line = console.log } = {}) {
   });
 }
 
-// Packet-loss thresholds only apply to ICMP; TCP probes report latency and reachability.
-function baseProbe(name, label, target, kind, order) {
+const maxPublicSites = 2;
+
+// Every probe is a TCP handshake round. 900 ms stays under Linux's 1 s SYN
+// retransmit, so a lost handshake counts as loss rather than a late success;
+// five samples per round keep the loss resolution at 20%.
+function tcpProbe(name, label, target, port, order) {
   return {
-    name: observerName(name), label: displayText(label, { label: "探针显示名" }), category: "external", kind,
-    target: probeTarget(target), timeout_seconds: 4, samples: kind === "icmp" ? 5 : 3,
-    sample_interval_ms: 250, warning_ms: 500, critical_ms: 1500,
-    ...(kind === "icmp" ? { warning_failure_percent: 1, critical_failure_percent: 60 } : {}),
+    name: observerName(name), label: displayText(label, { label: "探针显示名" }), category: "external", kind: "tcp",
+    target: probeTarget(target), port, timeout_seconds: 4, connect_timeout_ms: 900, samples: 5, sample_interval_ms: 250,
     severity: "P2", display_order: order,
   };
 }
 
-export function createCarrierProbes({ targets, region = "", prefix = "carrier" }) {
+// Carrier references are labelled by carrier only; which city a target sits in is not tracked.
+export function createCarrierProbes({ targets, port = 80, prefix = "carrier" }) {
   return [["ct", "电信"], ["cu", "联通"], ["cm", "移动"]].map(([key, label], index) => ({
-    ...baseProbe(`${prefix}_${key}`, `${region}${label} · ICMP`, targets[key], "icmp", (index + 1) * 10),
+    ...tcpProbe(`${prefix}_${key}`, `${label} · TCP ${port}`, targets[key], port, (index + 1) * 10),
     category: "carrier-reference",
   }));
-}
-
-export function externalProbes(config) {
-  return structuredClone((config.probes || []).filter((probe) =>
-    ["icmp", "tcp"].includes(probe.kind) && !probe.target_node_id && probe.category !== "node-link"));
 }
 
 export function selectedIndices(value, count, { emptyMeansAll = false } = {}) {
@@ -84,26 +82,9 @@ export function mergeObserverEntries(current, additions, { label = "探针", lim
 function describeProbe(probe) {
   const kind = probe.kind.toUpperCase();
   const label = probe.label || probe.name;
-  const title = label.toUpperCase().endsWith(` · ${kind}`) ? label : `${label} · ${kind}`;
+  const title = label.toUpperCase().includes(` · ${kind}`) ? label : `${label} · ${kind}`;
   const target = probe.kind === "tcp" && isIP(probe.target) === 6 ? `[${probe.target}]` : probe.target;
   return `${title} → ${target}${probe.kind === "tcp" ? `:${probe.port}` : ""}`;
-}
-
-async function reuseProbes(prompt, sources, existing, line) {
-  sources.forEach((source, index) => line(`  ${index + 1}. ${source.label} (${source.id}) · ${source.probes.length} 个外部探针`));
-  const choice = await integerValue(prompt, "选择要复用的节点编号；0 返回监测方式", 0, sources.length, 1, { line });
-  if (choice === 0) return null;
-  const source = sources[choice - 1];
-  source.probes.forEach((probe, index) => line(`  ${index + 1}. ${describeProbe(probe)}`));
-  return inputValue(prompt, "复用哪些探针", {
-    hint: `1–${source.probes.length}，英文逗号分隔；回车全部；0 返回监测方式；总数最多 ${maxProbes}`, line,
-    parse: (value) => {
-      if (value === "0") return null;
-      const selected = selectedIndices(value, source.probes.length, { emptyMeansAll: true }).map((index) => source.probes[index]);
-      mergeObserverEntries(existing, selected);
-      return structuredClone(selected);
-    },
-  });
 }
 
 function nextProbeName(prefix, entries, suffixes = [""]) {
@@ -112,55 +93,75 @@ function nextProbeName(prefix, entries, suffixes = [""]) {
   return name;
 }
 
-async function customProbe(prompt, probes, nodes, line) {
+const isCarrier = (probe) => probe.category === "carrier-reference";
+const isPublicSite = (probe) => !probe.target_node_id && probe.category !== "node-link" && !isCarrier(probe);
+
+async function nodeLinkProbe(prompt, probes, nodes, line) {
   const values = await promptFields([
-    ["kind", (_values, previous) => choiceValue(prompt, "探针类型：icmp 延迟/丢包；tcp 建连延迟/是否可达", ["icmp", "tcp"], previous ?? "icmp", { line })],
-    ["target", (_values, previous) => targetValue(prompt, "目标主机名或 IP", line, previous)],
-    ["port", (_values, previous) => integerValue(prompt, "TCP 端口", 1, 65535, previous ?? 443, { line }), (values) => values.kind === "tcp"],
-    ["label", (values, previous) => displayValue(prompt, "面板显示名", previous ?? `${values.kind.toUpperCase()} ${probes.length + 1}`, { line })],
     ["peer", (_values, previous) => {
       nodes.forEach((id, index) => line(`  ${index + 1}. ${id}`));
-      return integerValue(prompt, "关联目标节点编号（0 表示外部目标）", 0, nodes.length, previous ?? 0, { line });
-    }, () => nodes.length > 0],
+      return integerValue(prompt, "目标节点编号", 1, nodes.length, previous ?? 1, { line });
+    }],
+    ["target", (_values, previous) => targetValue(prompt, "目标节点的 IP 或主机名", line, previous)],
+    ["port", (_values, previous) => integerValue(prompt, "目标节点上可连的 TCP 端口（如中转入口、Xray 或 SSH）", 1, 65535, previous ?? 22, { line })],
   ], { line });
-  const probe = baseProbe(nextProbeName(values.kind, probes), values.label, values.target, values.kind, (probes.length + 1) * 10);
-  if (values.kind === "tcp") Object.assign(probe, { port: values.port, connect_timeout_ms: 1000 });
-  if (values.peer) Object.assign(probe, { target_node_id: nodes[values.peer - 1], category: "node-link" });
-  return probe;
+  const id = nodes[values.peer - 1];
+  // The panel names a link after its target node, so the stored label only matters in lumectl.
+  return {
+    ...tcpProbe(nextProbeName("link", probes), `${id} · TCP ${values.port}`, values.target, values.port, (probes.length + 1) * 10),
+    category: "node-link",
+    target_node_id: id,
+  };
 }
 
-export async function promptNetworkProbes(prompt, { sources = [], nodes = [], existing = [], line = console.log } = {}) {
+async function publicSiteProbe(prompt, probes, line) {
+  const values = await promptFields([
+    ["target", (_values, previous) => targetValue(prompt, "公网网址的主机名或 IP（如 www.google.com）", line, previous)],
+    ["port", (_values, previous) => integerValue(prompt, "TCP 端口", 1, 65535, previous ?? 443, { line })],
+    ["label", (values, previous) => displayValue(prompt, "面板显示名", previous ?? values.target, { line })],
+  ], { line });
+  return tcpProbe(nextProbeName("site", probes), values.label, values.target, values.port, (probes.length + 1) * 10);
+}
+
+/**
+ * Three kinds of TCP probes only: one carrier set (telecom, unicom, mobile),
+ * links to other nodes, and at most two public sites.
+ */
+export async function promptNetworkProbes(prompt, { nodes = [], existing = [], line = console.log } = {}) {
   while (true) {
-    line(`\n网络质量监测 · 已配置 ${existing.length} 个探针，最多 ${maxProbes} 个。`);
-    line("  1. 三网 ICMP（电信 / 联通 / 移动）\n  2. 复用已有节点的外部探针\n  3. 自定义 ICMP / TCP\n  0. 结束，本次不添加");
-    const choice = await choiceValue(prompt, "选择监测方式", ["0", "1", "2", "3"], sources.length ? "2" : "1", { line });
+    const sites = existing.filter(isPublicSite).length;
+    line(`\n网络质量监测（TCP 建连延迟与握手丢失率）· 已配置 ${existing.length} 个探针，最多 ${maxProbes} 个。`);
+    line(`  1. 三网（电信 / 联通 / 移动）\n  2. 到其他节点\n  3. 到公网网址（已有 ${sites}/${maxPublicSites} 个）\n  0. 结束，本次不添加`);
+    const choice = await choiceValue(prompt, "选择监测方式", ["0", "1", "2", "3"], existing.some(isCarrier) ? "0" : "1", { line });
     if (choice === "0") return [];
-    if (choice === "2" && !sources.length) { line("没有可复用的外部探针，请选择其他方式。"); continue; }
+    if (choice === "1" && existing.some(isCarrier)) { line("已有三网探针；如需更换目标，请先删除原有三网探针或重新配置。"); continue; }
     if (choice === "1" && existing.length + 3 > maxProbes) { line(`三网需要 3 个探针名额，当前只剩 ${maxProbes - existing.length} 个。`); continue; }
-    if (choice === "3" && existing.length >= maxProbes) { line(`已达到 ${maxProbes} 个上限，请先删除探针。`); continue; }
+    if (choice === "2" && !nodes.length) { line("没有其他节点可选，请先添加节点。"); continue; }
+    if (choice === "3" && sites >= maxPublicSites) { line(`公网网址最多 ${maxPublicSites} 个，请先删除不需要的。`); continue; }
+    if (choice !== "1" && existing.length >= maxProbes) { line(`已达到 ${maxProbes} 个上限，请先删除探针。`); continue; }
     const probes = [];
     try {
-      if (choice === "2") {
-        const reused = await reuseProbes(prompt, sources, existing, line);
-        if (reused === null) continue;
-        line(`已选择 ${reused.length} 个探针，配置完成。`);
-        return reused;
-      }
       if (choice === "1") {
-        line("填写三个运营商的参考目标；地区和显示名仅用于展示。");
+        line("填写三个运营商的参考目标；面板上只按运营商显示。");
         const values = await promptFields([
-          ["region", (_values, previous) => displayValue(prompt, "目标地区（如北京）", previous ?? "", { max: 66, optional: true, line })],
           ...[["ct", "电信"], ["cu", "联通"], ["cm", "移动"]].map(([key, label]) =>
             [key, (_values, previous) => targetValue(prompt, `${label}参考目标的 IP 或主机名`, line, previous)]),
+          ["port", (_values, previous) => integerValue(prompt, "三个目标共用的 TCP 端口", 1, 65535, previous ?? 80, { line })],
         ], { line });
-        const result = createCarrierProbes({ region: values.region, targets: values, prefix: nextProbeName("carrier", existing, ["_ct", "_cu", "_cm"]) });
+        const result = createCarrierProbes({ targets: values, port: values.port, prefix: nextProbeName("carrier", existing, ["_ct", "_cu", "_cm"]) });
         line("三网探针配置完成，共 3 个。");
         return result;
       }
+      const create = choice === "2"
+        ? () => nodeLinkProbe(prompt, [...existing, ...probes], nodes, line)
+        : () => publicSiteProbe(prompt, [...existing, ...probes], line);
+      const room = () => choice === "2"
+        ? existing.length + probes.length < maxProbes
+        : existing.length + probes.length < maxProbes && sites + probes.length < maxPublicSites;
       do {
-        probes.push(await customProbe(prompt, [...existing, ...probes], nodes, line));
+        probes.push(await create());
         line(`已添加：${describeProbe(probes.at(-1))}`);
-      } while (existing.length + probes.length < maxProbes && await prompt.yes(`已添加 ${probes.length} 个，继续添加第 ${probes.length + 1} 个探针`, false));
+      } while (room() && await prompt.yes(`已添加 ${probes.length} 个，继续添加`, false));
       return probes;
     } catch (error) {
       if (error instanceof PromptClosed || !(error instanceof PromptCancelled)) throw error;

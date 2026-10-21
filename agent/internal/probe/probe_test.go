@@ -11,25 +11,25 @@ import (
 )
 
 func TestFinishResultUsesMedianLatency(t *testing.T) {
-	result := finishResult(model.ProbeResult{Kind: "icmp"}, []float64{10, 20, 30, 40, 100}, 5, 5)
+	result := finishResult(model.ProbeResult{Kind: "tcp"}, []float64{10, 20, 30, 40, 100}, 5, 5)
 	if result.DurationMS != 30 || !result.Success || !result.Complete {
 		t.Fatalf("unexpected odd-count result: %+v", result)
 	}
-	result = finishResult(model.ProbeResult{Kind: "icmp"}, []float64{40, 10, 30, 20}, 5, 5)
+	result = finishResult(model.ProbeResult{Kind: "tcp"}, []float64{40, 10, 30, 20}, 5, 5)
 	if result.DurationMS != 25 {
 		t.Fatalf("unexpected even-count median: %+v", result)
 	}
 }
 
 func TestFinishResultCountsSamplesForLossAndSuccess(t *testing.T) {
-	result := finishResult(model.ProbeResult{Kind: "icmp"}, []float64{10, 12, 11, 13}, 5, 5)
+	result := finishResult(model.ProbeResult{Kind: "tcp"}, []float64{10, 12, 11, 13}, 5, 5)
 	if result.Samples != 5 || result.AttemptedSamples != 5 || result.SuccessfulSamples != 4 || !result.Success {
 		t.Fatalf("unexpected sample counts: %+v", result)
 	}
 	if result = finishResult(model.ProbeResult{Kind: "tcp"}, []float64{2}, 3, 3); result.Success {
 		t.Fatalf("a TCP round with one of three connections must fail: %+v", result)
 	}
-	if result = finishResult(model.ProbeResult{Kind: "icmp"}, []float64{2, 3, 4}, 2, 5); result.Complete || result.Success {
+	if result = finishResult(model.ProbeResult{Kind: "tcp"}, []float64{2, 3, 4}, 2, 5); result.Complete || result.Success {
 		t.Fatalf("an interrupted round must be incomplete and failed: %+v", result)
 	}
 }

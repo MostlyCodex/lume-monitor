@@ -4,18 +4,14 @@ import type {
   MetricKind,
   NodeSnapshot,
   Probe,
-  ProbeHistoryRow,
   ServiceStatus,
-  Severity,
+  Tone,
 } from "../types";
 import { clamp } from "./format";
 
-const ENERGY_SLOTS = 18;
+// 24 cells of one hour each over the last 24 hours.
+const ENERGY_SLOTS = 24;
 const ENERGY_WINDOW_HOURS = 24;
-const ENERGY_LOSS_WARNING_PERCENT = 2;
-const ENERGY_LOSS_CRITICAL_PERCENT = 10;
-const ENERGY_LOSS_BURST_PERCENT = 60;
-const severityRank: Record<string, number> = { healthy: 0, warning: 1, critical: 2, offline: 3 };
 export const PROBE_COLOR_VARIABLES = {
   telecom: "--probe-telecom",
   unicom: "--probe-unicom",
@@ -30,7 +26,7 @@ const PROBE_COLOR_TONES = Object.keys(
 export function displayProbeLabel(value: string | { label?: string }) {
   const label = typeof value === "string" ? value : value?.label;
   return String(label || "网络目标")
-    .replace(/\s*·\s*ICMP\s*$/i, "")
+    .replace(/\s*·\s*TCP(?:\s*\d+)?\s*$/i, "")
     .trim();
 }
 
@@ -59,143 +55,35 @@ export function serviceDisplayLabel(entry: ServiceStatus) {
   );
 }
 
-// A failed service is critical, any other inactive state needs attention.
-function serviceSeverity(node: NodeSnapshot): Severity {
-  const services = Array.isArray(node.services) ? node.services : [];
-  if (services.some((service) => service.state === "failed")) return "critical";
-  return services.some((service) => service.state !== "active") ? "warning" : "healthy";
-}
-
-export function median(values: number[]) {
-  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
-  if (!sorted.length) return null;
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-}
-
 export function historicalRows(nodeId: string, probeName: string, history: HistorySnapshot | null) {
   return (history?.probes || [])
     .filter((row) => row.node_id === nodeId && row.probe_name === probeName)
     .sort((left, right) => Number(left.timestamp) - Number(right.timestamp));
 }
 
-export function probeThresholds(probe: Probe, rows: ProbeHistoryRow[] = []) {
-  const baseline = median(
-    rows
-      .filter((row) => row.latency_ms != null)
-      .map((row) => Number(row.latency_ms))
-      .filter(Number.isFinite),
-  );
-  const warningMs =
-    Number(probe?.warning_ms) > 0
-      ? Number(probe.warning_ms)
-      : baseline
-        ? baseline * 1.35
-        : Number.POSITIVE_INFINITY;
-  const criticalMs =
-    Number(probe?.critical_ms) > 0
-      ? Number(probe.critical_ms)
-      : baseline
-        ? baseline * 1.7
-        : Number.POSITIVE_INFINITY;
-  const warningLoss =
-    Number(probe?.warning_failure_percent) > 0 ? Number(probe.warning_failure_percent) : 1;
-  const criticalLoss =
-    Number(probe?.critical_failure_percent) > 0 ? Number(probe.critical_failure_percent) : 5;
-  return { warningMs, criticalMs, warningLoss, criticalLoss };
+// One fixed scale per metric, shared by the cells and the values above them.
+export function latencyTone(ms: number | null | undefined): Tone {
+  const value = Number(ms);
+  if (ms == null || !Number.isFinite(value)) return "red";
+  if (value < 80) return "green";
+  if (value < 160) return "blue";
+  if (value < 240) return "yellow";
+  return "red";
 }
 
-export function probeMetricSeverity(
-  metric: MetricKind,
-  value: unknown,
-  probe: Probe,
-  rows: ProbeHistoryRow[] = [],
-  success = true,
-  complete = true,
-): Severity {
-  if (!success || complete === false) return "critical";
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return "healthy";
-  const thresholds = probeThresholds(probe, rows);
-  const warning = metric === "latency" ? thresholds.warningMs : thresholds.warningLoss;
-  const critical = metric === "latency" ? thresholds.criticalMs : thresholds.criticalLoss;
-  if (numeric >= critical) return "critical";
-  if (numeric >= warning) return "warning";
-  return "healthy";
+export function lossTone(percent: number | null | undefined): Tone {
+  const value = Number(percent);
+  if (percent == null || !Number.isFinite(value)) return "red";
+  // Under 1% stays green: one lost sample in a cell of 240-400 reads 0.25-0.42%.
+  if (value < 1) return "green";
+  if (value < 5) return "blue";
+  if (value < 20) return "yellow";
+  return "red";
 }
 
-export function energyLossSeverity(lossPercent: unknown, worstFiveMinuteLossPercent = 0): Severity {
-  const loss = Number(lossPercent);
-  const worstFiveMinuteLoss = Number(worstFiveMinuteLossPercent);
-  if (!Number.isFinite(loss)) return "healthy";
-  if (
-    (Number.isFinite(worstFiveMinuteLoss) && worstFiveMinuteLoss >= ENERGY_LOSS_BURST_PERCENT) ||
-    loss > ENERGY_LOSS_CRITICAL_PERCENT
-  )
-    return "critical";
-  if (loss > ENERGY_LOSS_WARNING_PERCENT) return "warning";
-  return "healthy";
-}
-
-export function measurementSeverity(
-  {
-    latency,
-    loss,
-    success = true,
-    complete = true,
-  }: { latency: unknown; loss: unknown; success?: boolean; complete?: boolean },
-  probe: Probe,
-  rows: ProbeHistoryRow[] = [],
-): Severity {
-  if (!success || complete === false) return "critical";
-  return [
-    probeMetricSeverity("latency", latency, probe, rows),
-    probeMetricSeverity("loss", loss, probe, rows),
-  ].reduce<Severity>(
-    (worst, current) => (severityRank[current] > severityRank[worst] ? current : worst),
-    "healthy",
-  );
-}
-
-export function currentProbeSeverity(
-  probe: Probe,
-  nodeId: string,
-  history: HistorySnapshot | null,
-): Severity {
-  const rows = historicalRows(nodeId, probe.name, history);
-  return measurementSeverity(
-    {
-      latency: probe.duration_ms,
-      loss: probe.packet_loss_percent,
-      success: probe.success,
-      complete: probe.complete,
-    },
-    probe,
-    rows,
-  );
-}
-
-export function nodeSeverity(node: NodeSnapshot, history: HistorySnapshot | null): Severity {
-  if (!node?.online || node.data_error) return "offline";
-  const service = serviceSeverity(node);
-  const probeSeverities = allProbes(node).map((probe) =>
-    currentProbeSeverity(probe, node.id, history),
-  );
-  return [service, ...probeSeverities].reduce<Severity>(
-    (worst, current) =>
-      (severityRank[current] || 0) > (severityRank[worst] || 0) ? current : worst,
-    "healthy",
-  );
-}
-
-export function severityLabel(severity: string) {
-  if (severity === "offline") return "上报中断";
-  if (severity === "critical") return "异常";
-  if (severity === "warning") return "需关注";
-  return "正常";
-}
-
-// Historical cells weight actual attempts; their thresholds are independent of live probe status.
+// Each cell covers one hour of the last 24. Latency is the mean of the cell's
+// successful samples, and a cell where nothing answered is red; loss weights
+// every attempted sample in the cell.
 export function aggregateMetricEnergy(
   nodeId: string,
   probe: Probe,
@@ -207,16 +95,16 @@ export function aggregateMetricEnergy(
   const end = Number(history?.server_time || now);
   const start = end - ENERGY_WINDOW_HOURS * 3600;
   const slotSeconds = (end - start) / ENERGY_SLOTS;
-  const thresholdsRows = rows.filter((row) => Number(row.timestamp) >= start);
+  const windowRows = rows.filter((row) => Number(row.timestamp) >= start);
   const buckets: EnergyBucket[] = [];
   for (let index = 0; index < ENERGY_SLOTS; index += 1) {
     const slotStart = start + index * slotSeconds;
     const slotEnd = slotStart + slotSeconds;
-    const members = thresholdsRows.filter(
+    const members = windowRows.filter(
       (row) => Number(row.timestamp) >= slotStart && Number(row.timestamp) < slotEnd,
     );
     if (!members.length) {
-      buckets.push({ empty: true, start: slotStart, end: slotEnd, severity: "empty" });
+      buckets.push({ empty: true, start: slotStart, end: slotEnd, tone: "empty" });
       continue;
     }
     if (metric === "loss") {
@@ -225,21 +113,19 @@ export function aggregateMetricEnergy(
         (total, row) => {
           const attempted = Number(row.attempted_samples);
           const successful = Number(row.successful_samples);
-          const measurement = row.packet_loss_percent;
-          const rawLoss = measurement == null ? NaN : Number(measurement);
+          const rawLoss = row.packet_loss_percent == null ? NaN : Number(row.packet_loss_percent);
           if (Number.isFinite(attempted) && attempted > 0 && Number.isFinite(successful)) {
             total.attempted += attempted;
             total.successful += clamp(successful, 0, attempted);
           } else if (Number.isFinite(rawLoss)) {
+            // Rolled-up rows carry a percentage instead of sample counts.
             const estimatedAttempts = Math.max(1, Number(row.rounds) || 1) * configuredSamples;
             total.attempted += estimatedAttempts;
             total.successful += estimatedAttempts * (1 - clamp(rawLoss, 0, 100) / 100);
           }
-          if (Number.isFinite(rawLoss))
-            total.worstFiveMinuteLoss = Math.max(total.worstFiveMinuteLoss, rawLoss);
           return total;
         },
-        { attempted: 0, successful: 0, worstFiveMinuteLoss: 0 },
+        { attempted: 0, successful: 0 },
       );
       const loss = totals.attempted
         ? (100 * (totals.attempted - totals.successful)) / totals.attempted
@@ -251,8 +137,7 @@ export function aggregateMetricEnergy(
         value: loss,
         attempted: totals.attempted,
         successful: totals.successful,
-        severeFiveMinuteLoss: totals.worstFiveMinuteLoss >= ENERGY_LOSS_BURST_PERCENT,
-        severity: energyLossSeverity(loss, totals.worstFiveMinuteLoss),
+        tone: loss === null ? "empty" : lossTone(loss),
       });
       continue;
     }
@@ -260,35 +145,19 @@ export function aggregateMetricEnergy(
       .filter((row) => row.latency_ms != null)
       .map((row) => Number(row.latency_ms))
       .filter(Number.isFinite);
-    const latency = latencyValues.length
-      ? latencyValues.reduce((sum, value) => sum + value, 0) / latencyValues.length
+    const value = latencyValues.length
+      ? latencyValues.reduce((sum, sample) => sum + sample, 0) / latencyValues.length
       : null;
-    const value = latency;
-    let severity = probeMetricSeverity("latency", value, probe, thresholdsRows, value !== null);
-    let criticalSamples = 0;
-    let warningSamples = 0;
-    for (const row of members) {
-      const sample = row.latency_ms;
-      const rowSeverity = probeMetricSeverity(
-        "latency",
-        sample,
-        probe,
-        thresholdsRows,
-        sample !== null &&
-          Number.isFinite(Number(sample)) &&
-          Number(row.success_percent ?? 100) > 0,
-      );
-      if (rowSeverity === "critical") criticalSamples += 1;
-      else if (rowSeverity === "warning") warningSamples += 1;
-    }
-    const criticalRatio = criticalSamples / members.length;
-    const warningRatio = warningSamples / members.length;
-    if (severity !== "critical" && criticalRatio >= 0.25) severity = "critical";
-    else if (severity === "healthy" && (criticalSamples > 0 || warningRatio >= 0.25))
-      severity = "warning";
-    buckets.push({ empty: false, start: slotStart, end: slotEnd, value, severity });
+    buckets.push({ empty: false, start: slotStart, end: slotEnd, value, tone: latencyTone(value) });
   }
   return buckets;
+}
+
+/** Loss over every attempted sample in the cells, the same weighting each cell uses. */
+export function windowLoss(buckets: EnergyBucket[]): number | null {
+  const attempted = buckets.reduce((sum, bucket) => sum + (bucket.attempted ?? 0), 0);
+  const successful = buckets.reduce((sum, bucket) => sum + (bucket.successful ?? 0), 0);
+  return attempted > 0 ? (100 * (attempted - successful)) / attempted : null;
 }
 
 export function probeColorTone(probe: Probe) {

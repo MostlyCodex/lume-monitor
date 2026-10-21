@@ -23,12 +23,10 @@ export interface ProbeResult {
   label: string;
   category: string;
   target_node_id?: NodeId;
-  kind: "icmp" | "tcp";
+  /** Every probe is a TCP handshake round; ICMP was retired. */
+  kind: "tcp";
   warning_ms: number;
   critical_ms: number;
-  /** Packet-loss thresholds; always 0 for TCP probes. */
-  warning_failure_percent: number;
-  critical_failure_percent: number;
   severity: Severity;
   display_order: number;
   success: boolean;

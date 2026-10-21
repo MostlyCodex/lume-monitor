@@ -29,8 +29,9 @@
     --input: 0 0% 89.8%;
     --ring: 0 0% 63.9%;
 
-    /* 状态色：只用于正常 / 注意 / 异常，饱和度低于 Tailwind 默认色 */
+    /* 状态色：绿 / 蓝 / 黄 / 红四档，饱和度低于 Tailwind 默认色 */
     --status-ok: 152 55% 36%;
+    --status-info: 214 72% 47%;
     --status-warn: 35 85% 44%;
     --status-bad: 0 70% 50%;
 
@@ -66,6 +67,7 @@
     --ring: 0 0% 45.1%;
 
     --status-ok: 152 45% 48%;
+    --status-info: 214 85% 64%;
     --status-warn: 40 80% 56%;
     --status-bad: 0 72% 64%;
 

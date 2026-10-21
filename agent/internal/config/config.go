@@ -52,8 +52,6 @@ type Probe struct {
 	SampleIntervalMS       int     `json:"sample_interval_ms,omitempty"`
 	WarningMS              float64 `json:"warning_ms,omitempty"`
 	CriticalMS             float64 `json:"critical_ms,omitempty"`
-	WarningFailurePercent  float64 `json:"warning_failure_percent,omitempty"`
-	CriticalFailurePercent float64 `json:"critical_failure_percent,omitempty"`
 	Severity               string  `json:"severity"`
 	DisplayOrder           int     `json:"display_order"`
 }
@@ -262,28 +260,21 @@ func (c *Config) Validate() error {
 		if probe.Category == "node-link" && probe.TargetNodeID == "" {
 			return fmt.Errorf("probe %q requires target_node_id for node-link category", probe.Name)
 		}
-		if probe.Kind != "icmp" && probe.Kind != "tcp" {
-			return fmt.Errorf("probe %q kind must be icmp or tcp", probe.Name)
+		// Every probe is a TCP handshake round; ICMP was retired.
+		if probe.Kind != "tcp" {
+			return fmt.Errorf("probe %q kind must be tcp", probe.Name)
 		}
 		if !validProbeHost(probe.Target) {
 			return fmt.Errorf("probe %q target must be a hostname or IP address without a port", probe.Name)
 		}
 		if probe.TimeoutSeconds == 0 {
-			if probe.Kind == "tcp" {
-				probe.TimeoutSeconds = 3
-			} else {
-				probe.TimeoutSeconds = 4
-			}
+			probe.TimeoutSeconds = 3
 		}
 		if probe.TimeoutSeconds < 1 || probe.TimeoutSeconds > 15 {
 			return fmt.Errorf("probe %q timeout must be between 1 and 15 seconds", probe.Name)
 		}
 		if probe.Samples == 0 {
-			if probe.Kind == "tcp" {
-				probe.Samples = 3
-			} else {
-				probe.Samples = 5
-			}
+			probe.Samples = 3
 		}
 		if probe.Samples < 1 || probe.Samples > 10 {
 			return fmt.Errorf("probe %q samples must be between 1 and 10", probe.Name)
@@ -294,38 +285,19 @@ func (c *Config) Validate() error {
 		if probe.SampleIntervalMS < 100 || probe.SampleIntervalMS > 5000 {
 			return fmt.Errorf("probe %q sample interval must be between 100 and 5000ms", probe.Name)
 		}
-		if probe.Kind == "icmp" {
-			if probe.Port != 0 || probe.ConnectTimeoutMS != 0 {
-				return fmt.Errorf("probe %q ICMP probes must not configure a port or connect timeout", probe.Name)
-			}
-			if (probe.Samples-1)*probe.SampleIntervalMS >= probe.TimeoutSeconds*1000 {
-				return fmt.Errorf("probe %q sample schedule does not fit inside the round timeout", probe.Name)
-			}
-		} else {
-			if probe.Port < 1 || probe.Port > 65535 {
-				return fmt.Errorf("probe %q TCP port must be between 1 and 65535", probe.Name)
-			}
-			if probe.ConnectTimeoutMS == 0 {
-				probe.ConnectTimeoutMS = 1000
-			}
-			if probe.ConnectTimeoutMS < 100 || probe.ConnectTimeoutMS > 5000 ||
-				(probe.Samples-1)*probe.SampleIntervalMS+probe.ConnectTimeoutMS > probe.TimeoutSeconds*1000 {
-				return fmt.Errorf("probe %q TCP connect timeout and sample schedule must fit inside the round timeout", probe.Name)
-			}
-			// TCP rounds only report latency and reachability; loss thresholds apply to ICMP.
-			if probe.WarningFailurePercent != 0 || probe.CriticalFailurePercent != 0 {
-				return fmt.Errorf("probe %q TCP probes do not use failure-rate thresholds", probe.Name)
-			}
+		if probe.Port < 1 || probe.Port > 65535 {
+			return fmt.Errorf("probe %q TCP port must be between 1 and 65535", probe.Name)
+		}
+		if probe.ConnectTimeoutMS == 0 {
+			probe.ConnectTimeoutMS = 1000
+		}
+		if probe.ConnectTimeoutMS < 100 || probe.ConnectTimeoutMS > 5000 ||
+			(probe.Samples-1)*probe.SampleIntervalMS+probe.ConnectTimeoutMS > probe.TimeoutSeconds*1000 {
+			return fmt.Errorf("probe %q TCP connect timeout and sample schedule must fit inside the round timeout", probe.Name)
 		}
 		if probe.WarningMS < 0 || probe.CriticalMS < 0 || probe.WarningMS > 120000 || probe.CriticalMS > 120000 ||
 			(probe.WarningMS > 0 && probe.CriticalMS > 0 && probe.WarningMS > probe.CriticalMS) {
 			return fmt.Errorf("probe %q latency thresholds are invalid", probe.Name)
-		}
-		if probe.WarningFailurePercent < 0 || probe.CriticalFailurePercent < 0 ||
-			probe.WarningFailurePercent > 100 || probe.CriticalFailurePercent > 100 ||
-			(probe.WarningFailurePercent > 0 && probe.CriticalFailurePercent > 0 &&
-				probe.WarningFailurePercent > probe.CriticalFailurePercent) {
-			return fmt.Errorf("probe %q packet-loss thresholds are invalid", probe.Name)
 		}
 	}
 

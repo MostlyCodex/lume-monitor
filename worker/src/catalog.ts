@@ -27,12 +27,10 @@ export interface ProbeCatalogRow {
   public_id: string;
   display_name: string;
   category: string;
-  kind: "icmp" | "tcp";
+  kind: "tcp";
   target_node_id: NodeId | null;
   warning_ms: number | null;
   critical_ms: number | null;
-  warning_failure_percent: number | null;
-  critical_failure_percent: number | null;
   severity: Severity;
   display_order: number;
   enabled: number;
@@ -60,7 +58,7 @@ export async function loadDashboardCatalog(env: Env): Promise<DashboardCatalog> 
     ).all<ServiceCatalogRow>(),
     env.DB.prepare(
       "SELECT node_id, probe_name, public_id, display_name, category, kind, target_node_id, warning_ms, critical_ms, " +
-        "warning_failure_percent, critical_failure_percent, severity, display_order, enabled " +
+        "severity, display_order, enabled " +
         "FROM probe_catalog WHERE enabled = 1 ORDER BY node_id, display_order, display_name",
     ).all<ProbeCatalogRow>(),
   ]);

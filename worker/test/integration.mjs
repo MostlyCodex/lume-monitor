@@ -54,15 +54,13 @@ function report(id = "alpha-vps") {
     probes: alpha
       ? [
           {
-            name: "peer_icmp",
+            name: "peer_tcp",
             label: "Alpha → Beta",
             category: "node-link",
             target_node_id: "beta-vps",
-            kind: "icmp",
+            kind: "tcp",
             warning_ms: 30,
             critical_ms: 50,
-            warning_failure_percent: 20,
-            critical_failure_percent: 60,
             severity: "P1",
             display_order: 10,
             success: true,
@@ -74,14 +72,12 @@ function report(id = "alpha-vps") {
             checked_at: now,
           },
           {
-            name: "external_icmp",
-            label: "External ICMP",
+            name: "external_tcp",
+            label: "External TCP",
             category: "external",
-            kind: "icmp",
+            kind: "tcp",
             warning_ms: 100,
             critical_ms: 200,
-            warning_failure_percent: 30,
-            critical_failure_percent: 60,
             severity: "P2",
             display_order: 30,
             success: true,
@@ -238,10 +234,19 @@ assert(alphaLatest.metrics.memory_total_bytes === 1_000_000_000, "memory capacit
 assert(alphaLatest.metrics.disk_total_bytes === 10_000_000_000, "root filesystem capacity is missing");
 assert(alphaLatest.metrics.network_rx_rate_bps === 100, `network RX rate was not derived correctly: ${alphaLatest.metrics.network_rx_rate_bps}`);
 assert(alphaLatest.metrics.network_tx_rate_bps === 200, `network TX rate was not derived correctly: ${alphaLatest.metrics.network_tx_rate_bps}`);
-assert(alphaLatest.probes.find((probe) => probe.name === "external_icmp")?.packet_loss_percent === 20, "ICMP packet loss was not exposed");
+assert(alphaLatest.probes.find((probe) => probe.name === "external_tcp")?.packet_loss_percent === 20, "handshake loss was not exposed");
 const tcpLatest = alphaLatest.probes.find((probe) => probe.name === "peer_tcp_443");
-assert(tcpLatest?.kind === "tcp" && tcpLatest.success === true && tcpLatest.packet_loss_percent === null, "TCP probes must only report latency and reachability");
-assert(tcpLatest.warning_failure_percent === null && !("sample_failure_percent" in tcpLatest), "TCP failure rates are still exposed");
+assert(
+  tcpLatest?.kind === "tcp" && tcpLatest.success === true && Math.abs(tcpLatest.packet_loss_percent - 100 / 3) < 0.001,
+  `TCP handshake loss was not exposed: ${tcpLatest?.packet_loss_percent}`,
+);
+assert(
+  ["warning_ms", "critical_ms", "warning_failure_percent", "critical_failure_percent", "sample_failure_percent"].every(
+    (field) => !(field in tcpLatest),
+  ),
+  "probes expose thresholds the dashboard no longer uses",
+);
+assert(tcpLatest.label === "Beta VPS", `a node link must be named after its target node: ${tcpLatest.label}`);
 assert(
   JSON.stringify(Object.keys(alphaLatest).sort()) ===
     JSON.stringify(["country", "id", "label", "metrics", "online", "order", "probes", "received_at", "region", "role", "services", "system"]),
@@ -258,20 +263,20 @@ assert(
   `history exposes undisplayed data: ${Object.keys(historyBody)}`,
 );
 assert(historyBody.metrics.every((row) => Object.keys(row).length === 4), "metric history carries undisplayed series");
-const alphaHistory = historyBody.probes.find((probe) => probe.node_id === "alpha-vps" && probe.probe_name === "peer_icmp");
+const alphaHistory = historyBody.probes.find((probe) => probe.node_id === "alpha-vps" && probe.probe_name === "peer_tcp");
 assert(alphaHistory?.latency_ms === 11.5, `repeated probe sample was not deduplicated: ${alphaHistory?.latency_ms}`);
-const icmpHistoryRows = historyBody.probes.filter(
-  (probe) => probe.node_id === "alpha-vps" && probe.probe_name === "external_icmp",
+const externalHistoryRows = historyBody.probes.filter(
+  (probe) => probe.node_id === "alpha-vps" && probe.probe_name === "external_tcp",
 );
 assert(
-  icmpHistoryRows.length >= 1 && icmpHistoryRows.every((probe) => probe.packet_loss_percent === 20),
-  "ICMP history semantics are incorrect",
+  externalHistoryRows.length >= 1 && externalHistoryRows.every((probe) => probe.packet_loss_percent === 20),
+  "handshake loss history semantics are incorrect",
 );
-const icmpAttemptedSamples = icmpHistoryRows.reduce((sum, probe) => sum + Number(probe.attempted_samples ?? 0), 0);
-const icmpSuccessfulSamples = icmpHistoryRows.reduce((sum, probe) => sum + Number(probe.successful_samples ?? 0), 0);
+const externalAttemptedSamples = externalHistoryRows.reduce((sum, probe) => sum + Number(probe.attempted_samples ?? 0), 0);
+const externalSuccessfulSamples = externalHistoryRows.reduce((sum, probe) => sum + Number(probe.successful_samples ?? 0), 0);
 assert(
-  icmpAttemptedSamples === 20 && icmpSuccessfulSamples === 16,
-  `fleet history did not preserve exact sample counts for weighted loss: ${JSON.stringify(icmpHistoryRows)}`,
+  externalAttemptedSamples === 20 && externalSuccessfulSamples === 16,
+  `fleet history did not preserve exact sample counts for weighted loss: ${JSON.stringify(externalHistoryRows)}`,
 );
 
 const detail = await fetch(`${base}/api/v1/dashboard/history?hours=24&node=alpha-vps`, { headers: adminHeaders });
@@ -281,7 +286,10 @@ assert(detailBody.metrics.every((row) => row.node_id === "alpha-vps"), "node det
 const detailTimes = [...new Set(detailBody.metrics.map((row) => row.timestamp))];
 assert(detailTimes.length >= 2 && detailTimes.every((time) => time % 60 === 0), "node detail history should use 1-minute buckets");
 const tcpHistory = detailBody.probes.filter((probe) => probe.probe_name === "peer_tcp_443");
-assert(tcpHistory.length >= 1 && tcpHistory.every((probe) => probe.packet_loss_percent === null), "TCP history must not carry loss");
+assert(
+  tcpHistory.length >= 1 && tcpHistory.every((probe) => probe.packet_loss_percent === 33.333),
+  `TCP history must carry handshake loss: ${JSON.stringify(tcpHistory)}`,
+);
 
 for (const hours of [720, 2160]) {
   const ranged = await fetch(`${base}/api/v1/dashboard/history?hours=${hours}`, { headers: adminHeaders });

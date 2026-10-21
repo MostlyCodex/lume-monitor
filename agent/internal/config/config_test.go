@@ -15,7 +15,7 @@ func TestLoadPreservesConfigurationAndRejectsUnknownFields(t *testing.T) {
 		t.Skip("Load requires Unix file permissions")
 	}
 	original := baseConfig()
-	original.Probes = []Probe{{Name: "reference", Kind: "icmp", Target: "192.0.2.1"}}
+	original.Probes = []Probe{{Name: "reference", Kind: "tcp", Target: "192.0.2.1", Port: 80}}
 	body, _ := json.Marshal(original)
 	var values map[string]any
 	if err := json.Unmarshal(body, &values); err != nil {
@@ -58,12 +58,12 @@ func baseConfig() Config {
 func TestValidateAppliesGenericSafeDefaults(t *testing.T) {
 	cfg := baseConfig()
 	cfg.Services = []Service{{Name: "example.service"}}
-	cfg.Probes = []Probe{{Name: "peer_icmp", Kind: "icmp", Target: "peer.example"}}
+	cfg.Probes = []Probe{{Name: "peer_tcp", Kind: "tcp", Target: "peer.example", Port: 443}}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if cfg.ReportIntervalSeconds != 60 || cfg.ProbeIntervalSeconds != 60 || cfg.Probes[0].TimeoutSeconds != 4 ||
-		cfg.Probes[0].Samples != 5 || cfg.Probes[0].SampleIntervalMS != 250 {
+	if cfg.ReportIntervalSeconds != 60 || cfg.ProbeIntervalSeconds != 60 || cfg.Probes[0].TimeoutSeconds != 3 ||
+		cfg.Probes[0].Samples != 3 || cfg.Probes[0].SampleIntervalMS != 250 {
 		t.Fatalf("safe defaults not applied: %+v", cfg)
 	}
 	if cfg.Node.DisplayName != "future-vps-01" || cfg.Node.Role != "VPS" || cfg.Node.IPChangeSeverity != "P2" {
@@ -72,7 +72,7 @@ func TestValidateAppliesGenericSafeDefaults(t *testing.T) {
 	if cfg.Services[0].Label != "example.service" || cfg.Services[0].Severity != "P1" {
 		t.Fatalf("service defaults not applied: %+v", cfg.Services[0])
 	}
-	if cfg.Probes[0].Label != "peer_icmp" || cfg.Probes[0].Category != "custom" || cfg.Probes[0].Severity != "P2" {
+	if cfg.Probes[0].Label != "peer_tcp" || cfg.Probes[0].Category != "custom" || cfg.Probes[0].Severity != "P2" {
 		t.Fatalf("probe defaults not applied: %+v", cfg.Probes[0])
 	}
 }
@@ -106,7 +106,7 @@ func TestValidateRejectsServiceArgumentInjection(t *testing.T) {
 func TestValidateRejectsInvalidProbeThresholds(t *testing.T) {
 	cfg := baseConfig()
 	cfg.Probes = []Probe{{
-		Name: "peer_icmp", Kind: "icmp", Target: "peer.example", WarningMS: 50, CriticalMS: 20,
+		Name: "peer_tcp", Kind: "tcp", Target: "peer.example", Port: 443, WarningMS: 50, CriticalMS: 20,
 	}}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected inverted latency thresholds to be rejected")
@@ -116,15 +116,15 @@ func TestValidateRejectsInvalidProbeThresholds(t *testing.T) {
 func TestValidateRequiresTargetNodeForNodeLink(t *testing.T) {
 	cfg := baseConfig()
 	cfg.Probes = []Probe{{
-		Name: "peer_icmp", Category: "node-link", Kind: "icmp", Target: "peer.example",
+		Name: "peer_tcp", Category: "node-link", Kind: "tcp", Target: "peer.example", Port: 443,
 	}}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected node-link without target_node_id to be rejected")
 	}
 }
 
-func TestValidateRejectsNonICMPProbeKinds(t *testing.T) {
-	for _, kind := range []string{"tls", "http", "exec"} {
+func TestValidateRejectsNonTCPProbeKinds(t *testing.T) {
+	for _, kind := range []string{"icmp", "tls", "http", "exec"} {
 		cfg := baseConfig()
 		cfg.Probes = []Probe{{Name: "unsupported_probe", Kind: kind, Target: "peer.example"}}
 		if err := cfg.Validate(); err == nil {
@@ -150,7 +150,6 @@ func TestValidateRejectsUnsafeTCPProbe(t *testing.T) {
 		{Name: "peer_tcp", Kind: "tcp", Target: "peer.example", Port: 0},
 		{Name: "peer_tcp", Kind: "tcp", Target: "peer.example:443", Port: 443},
 		{Name: "peer_tcp", Kind: "tcp", Target: "peer.example", Port: 443, TimeoutSeconds: 1, Samples: 3, SampleIntervalMS: 250, ConnectTimeoutMS: 1000},
-		{Name: "peer_tcp", Kind: "tcp", Target: "peer.example", Port: 443, WarningFailurePercent: 1},
 	} {
 		cfg := baseConfig()
 		cfg.Probes = []Probe{probe}
@@ -160,12 +159,12 @@ func TestValidateRejectsUnsafeTCPProbe(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsICMPPortAndUnsafeHost(t *testing.T) {
+func TestValidateRejectsUnsafeProbeHost(t *testing.T) {
 	for _, target := range []string{"peer.example:443", "--help", "peer example"} {
 		cfg := baseConfig()
-		cfg.Probes = []Probe{{Name: "peer_icmp", Kind: "icmp", Target: target}}
+		cfg.Probes = []Probe{{Name: "peer_tcp", Kind: "tcp", Target: target, Port: 443}}
 		if err := cfg.Validate(); err == nil {
-			t.Fatalf("expected unsafe ICMP target %q to be rejected", target)
+			t.Fatalf("expected unsafe probe target %q to be rejected", target)
 		}
 	}
 }
@@ -173,8 +172,8 @@ func TestValidateRejectsICMPPortAndUnsafeHost(t *testing.T) {
 func TestValidateRejectsImpossibleSampleSchedule(t *testing.T) {
 	cfg := baseConfig()
 	cfg.Probes = []Probe{{
-		Name: "peer_icmp", Kind: "icmp", Target: "peer.example", TimeoutSeconds: 1,
-		Samples: 5, SampleIntervalMS: 250,
+		Name: "peer_tcp", Kind: "tcp", Target: "peer.example", Port: 443, TimeoutSeconds: 1,
+		Samples: 5, SampleIntervalMS: 250, ConnectTimeoutMS: 900,
 	}}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected samples that cannot start before the round timeout to be rejected")
@@ -231,7 +230,7 @@ func TestFingerprintAcknowledgesTheExactLoadedFile(t *testing.T) {
 
 func TestDecodeFingerprintAndUnknownFields(t *testing.T) {
 	original := baseConfig()
-	original.Probes = []Probe{{Name: "reference", Kind: "icmp", Target: "192.0.2.1"}}
+	original.Probes = []Probe{{Name: "reference", Kind: "tcp", Target: "192.0.2.1", Port: 80}}
 	raw, _ := json.Marshal(original)
 	var document map[string]any
 	if err := json.Unmarshal(raw, &document); err != nil {

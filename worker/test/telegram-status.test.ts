@@ -20,16 +20,14 @@ function catalog(overrides: Partial<NodeCatalogRow> = {}): NodeCatalogRow {
   };
 }
 
-function icmpProbe(overrides: Partial<ProbeResult> = {}): ProbeResult {
+function carrierProbe(overrides: Partial<ProbeResult> = {}): ProbeResult {
   return {
     name: "beijing-telecom",
     label: "北京电信",
     category: "china-network",
-    kind: "icmp",
+    kind: "tcp",
     warning_ms: 180,
     critical_ms: 250,
-    warning_failure_percent: 5,
-    critical_failure_percent: 20,
     severity: "P2",
     display_order: 10,
     success: true,
@@ -73,7 +71,7 @@ function report(overrides: Partial<AgentReport> = {}): AgentReport {
       network_tx_bytes: 200,
     },
     services: [{ name: "nftables", label: "nftables", severity: "P1", state: "active" }],
-    probes: [icmpProbe()],
+    probes: [carrierProbe()],
     agent: { started_at: now - 1000 },
     ...overrides,
   };
@@ -93,8 +91,6 @@ function probeCatalog(reports: AgentReport[]): ProbeCatalogRow[] {
       target_node_id: probe.target_node_id ?? null,
       warning_ms: probe.warning_ms,
       critical_ms: probe.critical_ms,
-      warning_failure_percent: probe.warning_failure_percent,
-      critical_failure_percent: probe.critical_failure_percent,
       severity: probe.severity,
       display_order: probe.display_order,
       enabled: 1,
@@ -143,10 +139,10 @@ describe("Telegram status formatting", () => {
     expect(message).not.toContain("未配置");
   });
 
-  it("uses ICMP packet loss and highlights an unhealthy service", () => {
+  it("uses handshake loss and highlights an unhealthy service", () => {
     const unhealthy = report({
       services: [{ name: "xray", label: "Xray", severity: "P2", state: "inactive" }],
-      probes: [icmpProbe({ successful_samples: 4, duration_ms: 170 })],
+      probes: [carrierProbe({ successful_samples: 4, duration_ms: 170 })],
     });
     const message = formatTelegramStatusMessage([catalog()], probeCatalog([unhealthy]), [row(unhealthy)], now);
 
@@ -155,33 +151,33 @@ describe("Telegram status formatting", () => {
     expect(message).toContain("北京电信 · 170 ms · 丢包 20%");
   });
 
-  it("shows TCP probes as latency or an unreachable target, never as a failure rate", () => {
-    const tcp = (overrides: Partial<ProbeResult>) => icmpProbe({
+  it("shows unreachable targets and fractional handshake loss", () => {
+    const tcp = (overrides: Partial<ProbeResult>) => carrierProbe({
       kind: "tcp", label: "Cloudflare", samples: 3, attempted_samples: 3, successful_samples: 3,
-      warning_failure_percent: 0, critical_failure_percent: 0, ...overrides,
+      ...overrides,
     });
     const value = report({
       probes: [
         tcp({ name: "cf", duration_ms: 23.4, successful_samples: 2, display_order: 10 }),
         tcp({ name: "google", label: "Google", success: false, successful_samples: 1, display_order: 20 }),
-        icmpProbe({ name: "ct", display_order: 30 }),
-        icmpProbe({ name: "cu", label: "北京联通", display_order: 40 }),
-        icmpProbe({ name: "cm", label: "北京移动", display_order: 50 }),
+        carrierProbe({ name: "ct", display_order: 30 }),
+        carrierProbe({ name: "cu", label: "北京联通", display_order: 40 }),
+        carrierProbe({ name: "cm", label: "北京移动", display_order: 50 }),
       ],
     });
     const message = formatTelegramStatusMessage([catalog()], probeCatalog([value]), [row(value)], now);
 
-    expect(message).toContain("├ Cloudflare · 23 ms\n");
-    expect(message).toContain("├ Google · 连接失败");
+    expect(message).toContain("├ Cloudflare · 23 ms · 丢包 33%\n");
+    expect(message).toContain("├ Google · 不可达 · 丢包 67%");
     expect(message).toContain("└ 北京移动 · 152 ms · 丢包 0%");
-    expect(message).not.toContain("建连失败");
+    expect(message).not.toContain("连接失败");
   });
 
   it("hides a probe the catalog no longer exposes, such as a link to a retired node", () => {
     const linked = report({
       probes: [
-        icmpProbe(),
-        icmpProbe({
+        carrierProbe(),
+        carrierProbe({
           name: "retired-peer",
           label: "已下线节点",
           category: "node-link",

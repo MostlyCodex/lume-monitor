@@ -18,18 +18,18 @@ export function normalizeAccounting(config = {}) {
 }
 
 const nodeFields = ["id", "display_name", "role", "region", "stale_seconds", "display_order", "ip_change_severity"];
-const probeFields = {
- icmp: ["name", "label", "category", "target_node_id", "kind", "target", "timeout_seconds", "samples", "sample_interval_ms",
-  "warning_ms", "critical_ms", "warning_failure_percent", "critical_failure_percent", "severity", "display_order"],
- tcp: ["name", "label", "category", "target_node_id", "kind", "target", "port", "timeout_seconds", "connect_timeout_ms",
-  "samples", "sample_interval_ms", "warning_ms", "critical_ms", "severity", "display_order"],
-};
+// Every probe is a TCP handshake round; ICMP was retired.
+const probeFields = ["name", "label", "category", "target_node_id", "kind", "target", "port", "timeout_seconds", "connect_timeout_ms",
+ "samples", "sample_interval_ms", "warning_ms", "critical_ms", "severity", "display_order"];
 const pick = (value, fields) => Object.fromEntries(fields.filter(key => Object.hasOwn(value ?? {}, key)).map(key => [key, value[key]]));
 
 export function serializeAgentConfig(config) {
  // Rebuild node and probe entries at the deployment boundary so saved
  // configurations use exactly the current Agent schema.
- const probes = Array.isArray(config.probes) ? config.probes.map(probe => pick(probe, probeFields[probe?.kind] ?? Object.keys(probe ?? {}))) : config.probes;
+ const probes = Array.isArray(config.probes) ? config.probes.map(probe => {
+  if (probe?.kind !== "tcp") throw new Error(`探针 ${probe?.name ?? "?"} 不是 TCP 探针；ICMP 已停用，请在“配置节点”里删除后改用 TCP 探针`);
+  return pick(probe, probeFields);
+ }) : config.probes;
  const staged = {...config,node:pick(config.node,nodeFields),probes,...normalizeAccounting(config)};
  return `${JSON.stringify(staged, null, 2)}\n`;
 }

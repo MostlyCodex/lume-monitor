@@ -99,7 +99,7 @@ async function testFreshDatabase(root) {
     "INSERT INTO metric_samples VALUES (1,'expired-fixture',1,NULL,NULL); " +
       "INSERT INTO probe_rounds VALUES (1,'expired-fixture',1,'[]'); " +
       `INSERT INTO metric_samples VALUES (${twoDaysAgo},'alpha-vps',${twoDaysAgo},100,200); ` +
-      `INSERT INTO probe_rounds VALUES (${twoDaysAgo},'alpha-vps',${twoDaysAgo},'[["peer_icmp",${twoDaysAgo},1,11.5,5,5]]');`,
+      `INSERT INTO probe_rounds VALUES (${twoDaysAgo},'alpha-vps',${twoDaysAgo},'[["peer_tcp",${twoDaysAgo},1,11.5,5,5]]');`,
     "--yes",
   ], true);
 

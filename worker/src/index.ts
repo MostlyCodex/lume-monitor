@@ -182,13 +182,12 @@ function catalogStatements(env: Env, report: AgentReport, now: number): D1Prepar
       env.DB.prepare(
         "INSERT INTO probe_catalog(" +
           "node_id, probe_name, public_id, display_name, category, kind, target_node_id, warning_ms, critical_ms, " +
-          "warning_failure_percent, critical_failure_percent, severity, display_order, enabled, updated_at" +
-          ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?) " +
+          "severity, display_order, enabled, updated_at" +
+          ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?) " +
           "ON CONFLICT(node_id, probe_name) DO UPDATE SET " +
           "display_name=excluded.display_name, category=excluded.category, kind=excluded.kind, " +
           "target_node_id=excluded.target_node_id, warning_ms=excluded.warning_ms, critical_ms=excluded.critical_ms, " +
-          "warning_failure_percent=excluded.warning_failure_percent, " +
-          "critical_failure_percent=excluded.critical_failure_percent, severity=excluded.severity, " +
+          "severity=excluded.severity, " +
           "display_order=excluded.display_order, enabled=1, updated_at=excluded.updated_at " +
           "WHERE probe_catalog.display_name IS NOT excluded.display_name " +
           "OR probe_catalog.category IS NOT excluded.category " +
@@ -196,8 +195,6 @@ function catalogStatements(env: Env, report: AgentReport, now: number): D1Prepar
           "OR probe_catalog.target_node_id IS NOT excluded.target_node_id " +
           "OR probe_catalog.warning_ms IS NOT excluded.warning_ms " +
           "OR probe_catalog.critical_ms IS NOT excluded.critical_ms " +
-          "OR probe_catalog.warning_failure_percent IS NOT excluded.warning_failure_percent " +
-          "OR probe_catalog.critical_failure_percent IS NOT excluded.critical_failure_percent " +
           "OR probe_catalog.severity IS NOT excluded.severity " +
           "OR probe_catalog.display_order IS NOT excluded.display_order " +
           "OR probe_catalog.enabled IS NOT 1",
@@ -211,8 +208,6 @@ function catalogStatements(env: Env, report: AgentReport, now: number): D1Prepar
         probe.target_node_id ?? null,
         probe.warning_ms || null,
         probe.critical_ms || null,
-        probe.warning_failure_percent,
-        probe.critical_failure_percent,
         probe.severity,
         probe.display_order,
         now,

@@ -12,6 +12,7 @@ import {
   probeSamplesRangeSourceSql,
 } from "./observability";
 import type { AgentReport, Env, NodeId, Severity } from "./types";
+import { probeDisplayName } from "./probe-labels";
 import { packetLossPercent } from "./validation";
 
 interface LatestRow {
@@ -96,6 +97,7 @@ function nodeSnapshot(
   row: LatestRow | undefined,
   catalog: DashboardCatalog,
   probesByKey: Map<string, ProbeCatalogRow>,
+  nodeNames: ReadonlyMap<NodeId, string>,
   now: number,
 ): Record<string, unknown> {
   let report: AgentReport | null = null;
@@ -154,22 +156,18 @@ function nodeSnapshot(
       .flatMap((probe) => {
         const probeMeta = probesByKey.get(`${meta.node_id}:${probe.name}`);
         if (!probeMeta) return [];
-        const icmp = probeMeta.kind === "icmp";
+        // Colors use fixed dashboard scales, so per-probe thresholds are not exposed.
         return [{
           name: probeMeta.public_id,
-          label: probeMeta.display_name,
+          label: probeDisplayName(probeMeta, nodeNames),
           category: probeMeta.category,
           kind: probeMeta.kind,
           order: probeMeta.display_order,
-          warning_ms: probeMeta.warning_ms,
-          critical_ms: probeMeta.critical_ms,
-          warning_failure_percent: icmp ? probeMeta.warning_failure_percent : null,
-          critical_failure_percent: icmp ? probeMeta.critical_failure_percent : null,
           success: probe.success,
           complete: probe.complete,
           duration_ms: Math.max(0, Math.round(probe.duration_ms * 10) / 10),
           samples: probe.samples,
-          packet_loss_percent: icmp ? safePercent(packetLossPercent(probe) ?? 100) : null,
+          packet_loss_percent: safePercent(packetLossPercent(probe)),
         }];
       })
       .sort((left, right) => left.order - right.order),
@@ -185,12 +183,15 @@ export async function latestDashboardData(env: Env, now: number): Promise<Record
     ).all<LatestRow>(),
   ]);
   const probesByKey = probeMap(catalog);
+  const nodeNames = new Map(catalog.nodes.map((node) => [node.node_id, node.display_name]));
   const reports = new Map(nodeRows.results.map((row) => [row.node_id, row]));
   return {
     schema_version: 2,
     server_time: now,
     catalog: publicCatalog(catalog),
-    nodes: catalog.nodes.map((meta) => nodeSnapshot(meta, reports.get(meta.node_id), catalog, probesByKey, now)),
+    nodes: catalog.nodes.map((meta) =>
+      nodeSnapshot(meta, reports.get(meta.node_id), catalog, probesByKey, nodeNames, now),
+    ),
   };
 }
 
@@ -294,7 +295,7 @@ export async function dashboardHistoryData(
         ...trend,
         node_id: publicNodeId(row.node_id),
         probe_name: meta.public_id,
-        packet_loss_percent: meta.kind === "icmp" ? lossPercent : null,
+        packet_loss_percent: lossPercent,
       }];
     }),
     annotations: events.results

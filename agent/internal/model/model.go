@@ -51,9 +51,8 @@ type ServiceStatus struct {
 	State    string `json:"state"`
 }
 
-// ProbeResult is one probe round. ICMP packet loss is derived from the
-// attempted and successful sample counts; TCP rounds report latency and
-// whether the target was reachable.
+// ProbeResult is one TCP probe round. Loss is derived from the attempted and
+// successful handshake counts.
 type ProbeResult struct {
 	Name                   string  `json:"name"`
 	Label                  string  `json:"label"`
@@ -62,8 +61,6 @@ type ProbeResult struct {
 	Kind                   string  `json:"kind"`
 	WarningMS              float64 `json:"warning_ms,omitempty"`
 	CriticalMS             float64 `json:"critical_ms,omitempty"`
-	WarningFailurePercent  float64 `json:"warning_failure_percent,omitempty"`
-	CriticalFailurePercent float64 `json:"critical_failure_percent,omitempty"`
 	Severity               string  `json:"severity"`
 	DisplayOrder           int     `json:"display_order"`
 	Success                bool    `json:"success"`

@@ -1,5 +1,7 @@
 /** Public dashboard contracts. Credentials and Agent configuration never enter this model. */
 export type Severity = "healthy" | "warning" | "critical" | "offline";
+/** Fixed color scale for probe latency and loss: green, blue, yellow, red. */
+export type Tone = "green" | "blue" | "yellow" | "red";
 export type HistoryHours = 6 | 24 | 168 | 720 | 2160;
 export type MetricKind = "latency" | "loss";
 export type View = "loading" | "auth" | "dashboard";
@@ -34,17 +36,13 @@ export interface ServiceStatus {
   label?: string;
   state: string;
 }
-/** ICMP probes report packet loss; TCP probes only latency and whether the round succeeded. */
+/** Every probe is a TCP handshake round; loss counts handshakes that missed the connect timeout. */
 export interface Probe {
   name: string;
   label?: string;
-  kind: "icmp" | "tcp";
+  kind: "tcp";
   category?: string;
   order?: number;
-  warning_ms?: number | null;
-  critical_ms?: number | null;
-  warning_failure_percent?: number | null;
-  critical_failure_percent?: number | null;
   success?: boolean;
   complete?: boolean;
   duration_ms?: number | null;
@@ -107,11 +105,10 @@ export interface EnergyBucket {
   empty: boolean;
   start: number;
   end: number;
-  severity: Severity | "empty";
+  tone: Tone | "empty";
   value?: number | null;
   attempted?: number;
   successful?: number;
-  severeFiveMinuteLoss?: boolean;
 }
 export interface ChartPoint {
   x: number;

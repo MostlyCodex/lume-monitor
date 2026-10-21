@@ -44,7 +44,7 @@ describe("frontend data boundaries", () => {
     expect(trafficSummary({ network_valid: true, traffic_cycle: { rx_bytes: 1024, tx_bytes: 0 } }).rx).not.toBe("—");
   });
   it("does not count null latency or loss as a successful zero measurement", () => {
-    const probe: Probe = { name: "carrier", kind: "icmp", samples: 5 };
+    const probe: Probe = { name: "carrier", kind: "tcp", samples: 5 };
     const history: HistorySnapshot = {
       schema_version: 2,
       server_time: 100000,

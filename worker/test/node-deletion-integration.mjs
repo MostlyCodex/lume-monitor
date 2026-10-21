@@ -43,7 +43,7 @@ export async function testPermanentDeletion({ query, baseUrl }) {
       if (Object.hasOwn(overrides, key)) return sql(overrides[key]);
       if (key === "node_id") return sql(id);
       if (key === "severity") return sql("P1");
-      if (key === "kind") return sql("icmp");
+      if (key === "kind") return sql("tcp");
       if (key === "report_json")
         return sql(JSON.stringify({ node: { id }, probes: [] }));
       if (key.endsWith("_json"))

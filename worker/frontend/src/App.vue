@@ -7,7 +7,6 @@ import { usePreferences } from "./composables/usePreferences";
 import { useTheme } from "./composables/useTheme";
 import { useToast } from "./composables/useToast";
 import { displayNodes } from "./domain/nodes";
-import { overview } from "./domain/overview";
 import LoadingView from "./components/LoadingView.vue";
 import AuthView from "./components/AuthView.vue";
 import DashboardHeader from "./components/DashboardHeader.vue";
@@ -43,7 +42,6 @@ watch(
 
 const nodes = computed(() => displayNodes(latest.value, layout.value));
 const selected = computed(() => nodes.value.find((node) => node.id === selectedId.value));
-const health = computed(() => overview(nodes.value, fleetHistory.value));
 
 function reorder(order: string[]) {
   if (!save({ order })) notify("排序已调整，但浏览器存储不可用，刷新后将恢复默认顺序。", true);
@@ -58,7 +56,6 @@ function reorder(order: string[]) {
 
     <div v-else id="dashboard-view" class="flex min-h-screen flex-col">
       <DashboardHeader
-        :health="health"
         :refreshed-at="latest?.server_time"
         :refreshing="refreshing"
         :demo="DEMO_MODE"
@@ -101,7 +98,6 @@ function reorder(order: string[]) {
           v-if="selected"
           :node="selected"
           :history="detailHistory"
-          :fleet-history="fleetHistory"
           :hours="hours"
           :theme="theme"
           :loading="detailLoading"

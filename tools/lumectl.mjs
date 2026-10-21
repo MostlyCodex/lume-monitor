@@ -15,7 +15,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath } from "node:url";
 import { applyPending, keyProof, parseJsonc, validateImportedConfig, verifyKeyInventory, workerOrigin } from "./management.mjs";
-import { editObserverEntries, externalProbes, parseServices, printObserverSummary, promptNetworkProbes, promptNodeDisplay, promptServices } from "./observers.mjs";
+import { editObserverEntries, parseServices, printObserverSummary, promptNetworkProbes, promptNodeDisplay, promptServices } from "./observers.mjs";
 import { InputError, PromptCancelled, PromptClosed, choiceValue, displayValue, inputValue, makePrompter, suspendTerminalInput } from "./prompts.mjs";
 
 import { configFingerprint, configurationStatus, matchesAppliedReport, networkInventoryCommand, normalizeAccounting, parseNetworkInventory, printAccountingSummary, promptAccounting, serializeAgentConfig } from "./network-accounting.mjs";
@@ -1000,29 +1000,9 @@ function probeTargetNodes(state, excludeNodeId) {
   return Object.keys(state?.nodes || {}).filter((id) => id !== excludeNodeId && validateNodeId(id) && !state.pendingDeletes?.[id]);
 }
 
-async function availableProbeSources(state, excludeNodeId = "") {
-  const sources = [];
-  for (const id of Object.keys(state?.nodes || {})) {
-    if (id === excludeNodeId || !validateNodeId(id) || state.pendingDeletes?.[id]) continue;
-    const path = join(privateDir, "nodes", id, "config.json");
-    try {
-      const info = await lstat(path);
-      if (!info.isFile() || info.isSymbolicLink()) throw new Error("not a regular configuration file");
-      const config = JSON.parse(await readFile(path, "utf8"));
-      if (config.node?.id !== id) throw new Error("node mismatch");
-      const probes = externalProbes(config);
-      if (probes.length) sources.push({ id, label: config.node.display_name || id, probes });
-    } catch {
-      line(`! 无法读取 ${id} 的本地探针配置，已从复用列表中跳过。`);
-    }
-  }
-  return sources;
-}
-
 async function promptOptionalObservers(prompt, { state, excludeNodeId = "" } = {}) {
   state ||= await loadState(false);
-  const sources = await availableProbeSources(state, excludeNodeId);
-  const probes = await promptNetworkProbes(prompt, { sources, nodes: probeTargetNodes(state, excludeNodeId), line });
+  const probes = await promptNetworkProbes(prompt, { nodes: probeTargetNodes(state, excludeNodeId), line });
   return { probes };
 }
 
@@ -1181,9 +1161,9 @@ async function configureNodeObservers(prompt, id) {
   await promptNodeDisplay(prompt, config.node, { line });
   if (await prompt.yes("修改 systemd 服务列表（新列表替换原列表，留空清空）", false)) config.services = await promptServices(prompt, { line });
   config.probes = await editObserverEntries(prompt, {
-    label: "网络探针（三网 / ICMP / TCP）", entries: config.probes, limit: 32, line,
+    label: "网络探针（三网 / 节点 / 公网网址）", entries: config.probes, limit: 32, line,
     fallback: config.probes.length ? "1" : "2",
-    create: async ({ existing }) => promptNetworkProbes(prompt, { sources: await availableProbeSources(state, id), nodes: probeTargetNodes(state, id), existing, line }),
+    create: async ({ existing }) => promptNetworkProbes(prompt, { nodes: probeTargetNodes(state, id), existing, line }),
   });
   if (await prompt.yes("修改流量统计网卡与周期", !Object.hasOwn(config,"network_interfaces"))) {
     Object.assign(config,await promptAccounting(prompt,config,{discover:()=>readNetworkInventory(state.nodes[id].sshTarget),line}));

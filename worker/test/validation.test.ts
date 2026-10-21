@@ -36,10 +36,10 @@ function validReport(): Record<string, unknown> {
     services: [{ name: "example.service", label: "Example", severity: "P1", state: "active" }],
     probes: [
       {
-        name: "external_icmp",
-        label: "External ICMP",
+        name: "external_tcp",
+        label: "External TCP",
         category: "external",
-        kind: "icmp",
+        kind: "tcp",
         warning_ms: 500,
         critical_ms: 1000,
         severity: "P2",
@@ -79,36 +79,13 @@ describe("report validation", () => {
     expect(() => validateReport(report)).toThrow("system.cpu_count");
   });
 
-  it("keeps ICMP packet-loss thresholds and sample counts", () => {
+  it("keeps TCP sample counts and drops retired loss thresholds", () => {
     const report = validReport();
     Object.assign(firstProbe(report), { successful_samples: 4, warning_failure_percent: 10, critical_failure_percent: 40 });
-    expect(validateReport(report).probes[0]).toMatchObject({
-      kind: "icmp",
-      attempted_samples: 5,
-      successful_samples: 4,
-      warning_failure_percent: 10,
-      critical_failure_percent: 40,
-    });
-  });
-
-  it("keeps TCP rounds to latency and reachability", () => {
-    const report = validReport();
-    Object.assign(firstProbe(report), {
-      name: "peer_tcp_443",
-      kind: "tcp",
-      samples: 3,
-      attempted_samples: 3,
-      successful_samples: 2,
-      warning_failure_percent: 1,
-      critical_failure_percent: 60,
-    });
-    expect(validateReport(report).probes[0]).toMatchObject({
-      kind: "tcp",
-      success: true,
-      successful_samples: 2,
-      warning_failure_percent: 0,
-      critical_failure_percent: 0,
-    });
+    const probe = validateReport(report).probes[0];
+    expect(probe).toMatchObject({ kind: "tcp", attempted_samples: 5, successful_samples: 4, success: true });
+    expect(probe).not.toHaveProperty("warning_failure_percent");
+    expect(probe).not.toHaveProperty("critical_failure_percent");
   });
 
   it("stores only the displayed values and drops anything else a report carries", () => {
@@ -123,11 +100,11 @@ describe("report validation", () => {
     expect(JSON.stringify(current)).not.toMatch(/group|color|arch|load1|swap|errors|target"|jitter|sample_failure|queue_depth|counters/);
   });
 
-  it("rejects dormant or ambiguous probe kinds", () => {
-    for (const kind of ["tls", "http", "exec"]) {
+  it("rejects ICMP and other probe kinds", () => {
+    for (const kind of ["icmp", "tls", "http", "exec"]) {
       const report = validReport();
       firstProbe(report).kind = kind;
-      expect(() => validateReport(report)).toThrow(/kind must be icmp or tcp/);
+      expect(() => validateReport(report)).toThrow(/kind must be tcp/);
     }
   });
 

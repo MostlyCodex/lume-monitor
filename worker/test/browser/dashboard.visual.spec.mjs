@@ -64,7 +64,8 @@ for (const online of [true, false]) {
     });
     await openDashboard(page);
     await page.locator(".node-card").first().click();
-    await expect(page.locator("#detail-hero .node-status")).toHaveText(online ? "正常" : "上报中断");
+    // 节点只有“在线 + 运行时长”和置灰的“下线”两种状态
+    await expect(page.locator("#detail-hero .node-status")).toHaveText(online ? /^\s*在线\s+\d/ : "下线");
     await expect(page.locator(".detail-service")).toHaveCount(1);
     await expect(page.locator(".detail-service")).toHaveClass(/\bis-neutral\b/);
     await expect(page.locator(".detail-service")).toHaveText("服务监测：暂无上报");
@@ -83,17 +84,29 @@ async function expectNoHorizontalOverflow(page) {
 }
 
 // 卡片是一个整体：没有内嵌面板、国旗、页脚；四个区块以分割线隔开；
-// ICMP 探测点两条 18 格的 24 小时格栅（延迟、丢包率），TCP 只有延迟一条；格子尺寸固定、不随视口缩放。
+// 每个探测点两条 24 格（每格 1 小时）的格栅（延迟、丢包率），两列等分卡片宽度；格高固定，格宽随列宽等分。
 async function expectCompactNodeCards(page) {
   const firstCard = page.locator(".node-card").first();
   await expect(firstCard.locator(".node-network-row")).toHaveCount(2);
-  // 全部探测都上首页：三网 ICMP + 节点互联 ICMP + 节点互联 TCP
+  // 全部探测都上首页：三网 + 两条节点互联
   await expect(firstCard.locator(".probe-row")).toHaveCount(5);
-  await expect(firstCard.locator(".probe-row").last()).toContainText("Egress-Las-Vegas · TCP 443");
-  await expect(firstCard.locator(".probe-row").last().locator('[data-metric="loss"]')).toHaveCount(0);
-  await expect(firstCard.locator('.probe-row [data-metric="latency"] .energy-cell')).toHaveCount(5 * 18);
-  await expect(firstCard.locator('.probe-row [data-metric="loss"] .energy-cell')).toHaveCount(4 * 18);
-  // TCP 行的延迟格栅与上方 ICMP 行对齐
+  // 节点互联只显示目标节点名称；名称在延迟格栅左上角，卡片顶部有“延迟 / 丢包”列标题
+  await expect(firstCard.locator(".probe-row").last().locator(".probe-name")).toHaveText("Egress-Las-Vegas");
+  await expect(firstCard.locator(".probe-columns")).toHaveText(/延迟\s*丢包/);
+  await expect(firstCard.locator(".node-status")).toHaveText(/^\s*在线\s+\d/);
+  await expect(firstCard.locator(".probe-row").last().locator('[data-metric="loss"]')).toHaveCount(1);
+  await expect(firstCard.locator('.probe-row [data-metric="latency"] .energy-cell')).toHaveCount(5 * 24);
+  await expect(firstCard.locator('.probe-row [data-metric="loss"] .energy-cell')).toHaveCount(5 * 24);
+  // 两列格栅等宽，且合起来铺满网络质量区，不留大块空白
+  const grids = await firstCard.locator(".probe-row").first().evaluate((row) => {
+    const [latency, loss] = [...row.querySelectorAll("[data-metric]")].map((grid) => grid.getBoundingClientRect());
+    const area = row.getBoundingClientRect();
+    return { latencyWidth: latency.width, lossWidth: loss.width, start: latency.left - area.left, end: area.right - loss.right };
+  });
+  expect(Math.abs(grids.latencyWidth - grids.lossWidth)).toBeLessThanOrEqual(1);
+  expect(grids.start).toBeLessThanOrEqual(1);
+  expect(grids.end).toBeLessThanOrEqual(1);
+  // 所有行的延迟格栅左对齐
   const latencyLeft = await firstCard
     .locator('.probe-row [data-metric="latency"]')
     .evaluateAll((grids) => [...new Set(grids.map((grid) => Math.round(grid.getBoundingClientRect().left)))]);
@@ -121,7 +134,8 @@ async function expectCompactNodeCards(page) {
         }).length,
         graphics: card.querySelectorAll("svg, img").length,
         footerText: /前更新|线路中转机/.test(card.textContent),
-        cellSizes: [...new Set(cells.map((cell) => `${cell.width}x${cell.height}`))],
+        cellHeights: [...new Set(cells.map((cell) => cell.height))],
+        cellWidths: cells.map((cell) => cell.width),
         dividers: [...card.querySelectorAll("section")].filter(
           (section) => parseFloat(getComputedStyle(section).borderTopWidth) > 0,
         ).length,
@@ -138,7 +152,11 @@ async function expectCompactNodeCards(page) {
     expect(card.nestedPanels).toBe(0);
     expect(card.graphics).toBe(0);
     expect(card.footerText).toBe(false);
-    if (card.cellSizes.length) expect(card.cellSizes).toEqual(["4x14"]);
+    if (card.cellWidths.length) {
+      expect(card.cellHeights).toEqual([14]);
+      expect(Math.min(...card.cellWidths)).toBeGreaterThanOrEqual(2);
+      expect(Math.max(...card.cellWidths) - Math.min(...card.cellWidths)).toBeLessThanOrEqual(1);
+    }
     expect(card.probeText).not.toMatch(/目标|24H/);
   }
 }
@@ -214,9 +232,9 @@ test("node detail renders charts, color keys and mobile controls", async ({ page
   await expect(page.locator("#loss-plot svg")).toBeVisible();
   await expect(page.locator("#traffic-plot svg")).toBeVisible();
   await expect(page.locator(".detail-probe-card")).toHaveCount(5);
-  // 延迟图画全部 5 条线路，丢包率图只画 4 条 ICMP 线路
+  // 延迟图和丢包率图都画全部 5 条线路（TCP 的丢包是超时未完成的握手）
   await expect(page.locator("#latency-plot .line-layer path[stroke]")).toHaveCount(5);
-  await expect(page.locator("#loss-plot .line-layer path[stroke]")).toHaveCount(4);
+  await expect(page.locator("#loss-plot .line-layer path[stroke]")).toHaveCount(5);
   await expect(page.locator("#node-detail")).not.toContainText(/建连失败|可达性/);
   await expect(page.locator("#counter-section")).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
@@ -291,7 +309,7 @@ test("probe chips show their state immediately and drive both latency and loss c
   await expect(chip).toHaveAttribute("aria-pressed", "false");
   await expect.poll(() => chip.evaluate((element) => Number(getComputedStyle(element).opacity))).toBeLessThan(0.7);
   await expect(page.locator("#latency-plot .line-layer path[stroke]")).toHaveCount(4);
-  await expect(page.locator("#loss-plot .line-layer path[stroke]")).toHaveCount(3);
+  await expect(page.locator("#loss-plot .line-layer path[stroke]")).toHaveCount(4);
   // 探测点按钮没有外框
   expect(
     await page.locator(".detail-probe-card").evaluateAll((elements) =>
@@ -307,18 +325,18 @@ test("probe chips show their state immediately and drive both latency and loss c
   await expect(page.locator("#loss-plot svg")).toBeVisible();
 });
 
-test("nodes with only TCP probes show latency without a packet-loss card", async ({ page }) => {
+test("a node with a single probe still shows both grids and the loss chart", async ({ page }) => {
   await page.route("**/api/v1/dashboard/latest*", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
-    data.nodes[0].probes = data.nodes[0].probes.filter((probe) => probe.kind === "tcp");
+    data.nodes[0].probes = data.nodes[0].probes.slice(-1);
     await route.fulfill({ response, json: data });
   });
   await openDashboard(page);
   const card = page.locator(".node-card").first();
   await expect(card.locator(".probe-row")).toHaveCount(1);
-  await expect(card.locator('.probe-row [data-metric="loss"]')).toHaveCount(0);
+  await expect(card.locator('.probe-row [data-metric="loss"]')).toHaveCount(1);
   await card.click();
   await expect(page.locator("#latency-plot svg")).toBeVisible();
-  await expect(page.locator("#detail-loss")).toHaveCount(0);
+  await expect(page.locator("#detail-loss")).toHaveCount(1);
 });

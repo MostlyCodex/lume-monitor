@@ -22,8 +22,6 @@ const props = defineProps<{
 
 const selected = ref(new Set<string>());
 const probes = computed(() => allProbes(props.node));
-// 只有 ICMP 探测有丢包率；没有 ICMP 探测的节点不显示丢包率卡片
-const icmpProbes = computed(() => probes.value.filter((probe) => probe.kind === "icmp"));
 
 watch(
   () => props.node.id,
@@ -60,7 +58,7 @@ function seriesFor(list: Probe[], value: "latency_ms" | "packet_loss_percent"): 
 }
 
 const latencySeries = computed(() => seriesFor(probes.value, "latency_ms"));
-const lossSeries = computed(() => seriesFor(icmpProbes.value, "packet_loss_percent"));
+const lossSeries = computed(() => seriesFor(probes.value, "packet_loss_percent"));
 
 function emptyText(list: Probe[], series: ChartSeries[], name: string) {
   return list.length && !series.length ? "未选择要显示的线路" : `暂无${name}历史`;
@@ -137,7 +135,7 @@ function toggleProbe(name: string) {
     </CardContent>
   </Card>
 
-  <Card v-if="icmpProbes.length" id="detail-loss">
+  <Card v-if="probes.length" id="detail-loss">
     <CardHeader>
       <CardTitle>丢包率</CardTitle>
     </CardHeader>
@@ -145,7 +143,7 @@ function toggleProbe(name: string) {
       <HistoryChart
         id="loss-plot"
         empty-id="loss-empty"
-        :empty-text="emptyText(icmpProbes, lossSeries, '丢包率')"
+        :empty-text="emptyText(probes, lossSeries, '丢包率')"
         :series="lossSeries"
         kind="loss"
         :hours="hours"

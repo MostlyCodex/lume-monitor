@@ -157,21 +157,11 @@ function probes(value: unknown): ProbeResult[] {
     if (names.has(name)) throw new Error("probe names must be unique");
     names.add(name);
     const kind = stringValue(v.kind, `probes[${index}].kind`, 16);
-    if (kind !== "icmp" && kind !== "tcp") throw new Error("probe kind must be icmp or tcp");
+    if (kind !== "tcp") throw new Error("probe kind must be tcp");
     if (typeof v.success !== "boolean") throw new Error(`probes[${index}].success must be boolean`);
     const warning = optionalNumber(v.warning_ms, `probes[${index}].warning_ms`, 0, 120000);
     const critical = optionalNumber(v.critical_ms, `probes[${index}].critical_ms`, 0, 120000);
     if (warning > 0 && critical > 0 && warning > critical) throw new Error("probe latency thresholds are invalid");
-    // Packet-loss thresholds only exist for ICMP; TCP rounds report latency and reachability.
-    const warningLoss = kind === "icmp"
-      ? optionalNumber(v.warning_failure_percent, `probes[${index}].warning_failure_percent`, 0, 100)
-      : 0;
-    const criticalLoss = kind === "icmp"
-      ? optionalNumber(v.critical_failure_percent, `probes[${index}].critical_failure_percent`, 0, 100)
-      : 0;
-    if (warningLoss > 0 && criticalLoss > 0 && warningLoss > criticalLoss) {
-      throw new Error("probe packet-loss thresholds are invalid");
-    }
     const sampleCount = integerValue(v.samples, `probes[${index}].samples`, 1, 10);
     const attemptedSamples = integerValue(v.attempted_samples, `probes[${index}].attempted_samples`, 0, sampleCount);
     const successfulSamples = integerValue(
@@ -192,8 +182,6 @@ function probes(value: unknown): ProbeResult[] {
       kind,
       warning_ms: warning,
       critical_ms: critical,
-      warning_failure_percent: warningLoss,
-      critical_failure_percent: criticalLoss,
       severity: severityValue(v.severity, `probes[${index}].severity`),
       display_order: integerValue(v.display_order, `probes[${index}].display_order`, 1, 10000),
       success: v.success,
@@ -214,9 +202,8 @@ function probes(value: unknown): ProbeResult[] {
   });
 }
 
-/** ICMP packet loss of one round, derived from its sample counts. */
-export function packetLossPercent(probe: ProbeResult): number | null {
-  if (probe.kind !== "icmp") return null;
+/** Loss of one round: handshakes that missed the connect timeout, out of those attempted. */
+export function packetLossPercent(probe: ProbeResult): number {
   return probe.attempted_samples > 0
     ? (100 * (probe.attempted_samples - probe.successful_samples)) / probe.attempted_samples
     : 100;

@@ -1,23 +1,20 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { HistorySnapshot, NodeSnapshot } from "../types";
-import { allProbes, nodeSeverity, severityLabel } from "../domain/probes";
-import { formatRate, formatUptime } from "../domain/format";
+import { allProbes } from "../domain/probes";
+import { formatRate } from "../domain/format";
 import { trafficSummary } from "../domain/traffic";
 import ResourceGauge from "./ResourceGauge.vue";
 import ProbeRow from "./ProbeRow.vue";
+import NodeStatus from "./NodeStatus.vue";
 import { Card } from "./ui/card";
-import { Badge } from "./ui/badge";
 
 const props = defineProps<{ node: NodeSnapshot; history: HistorySnapshot | null; now: number }>();
 const emit = defineEmits<{ open: [id: string] }>();
 
-const severity = computed(() => nodeSeverity(props.node, props.history));
-// 首页展示全部探测（ICMP 三网参考 + TCP 外部目标 / 节点互联），互联链路排在最后
+// 首页展示全部探测（三网参考、公网网址、节点互联），互联链路排在最后
 const probes = computed(() => allProbes(props.node));
 const traffic = computed(() => trafficSummary(props.node.metrics));
-
-const badgeVariant = computed(() => (severity.value === "offline" ? "critical" : severity.value));
 </script>
 
 <template>
@@ -37,23 +34,15 @@ const badgeVariant = computed(() => (severity.value === "offline" ? "critical" :
     >
       <!-- 卡片头部 -->
       <section>
-        <!-- 左侧名称；右侧状态徽章与运行时长（较小字号） -->
+        <!-- 左侧名称；右侧在线状态与运行时长 -->
         <div class="flex items-center justify-between gap-3">
           <span class="node-title min-w-0 truncate text-base font-semibold leading-none">
             {{ node.label }}
           </span>
-          <div class="flex shrink-0 flex-col items-end gap-1.5">
-            <Badge :variant="badgeVariant">
-              {{ node.data_error ? "等待上报" : severityLabel(severity) }}
-            </Badge>
-            <span class="text-xs tabular-nums text-muted-foreground">
-              {{
-                node.data_error
-                  ? "等待首次上报"
-                  : `运行 ${formatUptime(node.metrics.uptime_seconds)}`
-              }}
-            </span>
-          </div>
+          <NodeStatus
+            :online="node.online && !node.data_error"
+            :uptime-seconds="node.metrics.uptime_seconds"
+          />
         </div>
       </section>
 
@@ -104,6 +93,14 @@ const badgeVariant = computed(() => (severity.value === "offline" ? "critical" :
         <!-- 网络质量 -->
         <section v-if="probes.length">
           <div class="flex flex-col gap-2.5">
+            <!-- 列标题：靠右，位于各列数值正上方 -->
+            <div
+              class="probe-columns grid grid-cols-2 gap-x-4 text-[10px] leading-none text-muted-foreground"
+              aria-hidden="true"
+            >
+              <span class="text-right">延迟</span>
+              <span class="text-right">丢包</span>
+            </div>
             <ProbeRow
               v-for="probe in probes"
               :key="probe.name"

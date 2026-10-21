@@ -50,15 +50,15 @@ describe("observability statistics", () => {
     });
   });
 
-  it("derives ICMP packet loss from sample counts and never reports loss for TCP", () => {
+  it("derives handshake loss from sample counts", () => {
     const base = {
       name: "peer", label: "Peer", category: "external", warning_ms: 0, critical_ms: 0,
-      warning_failure_percent: 0, critical_failure_percent: 0, severity: "P2" as const, display_order: 10,
+      severity: "P2" as const, display_order: 10,
       success: true, complete: true, duration_ms: 12, samples: 5, checked_at: 1,
     };
-    expect(packetLossPercent({ ...base, kind: "icmp", attempted_samples: 5, successful_samples: 4 })).toBe(20);
-    expect(packetLossPercent({ ...base, kind: "icmp", attempted_samples: 0, successful_samples: 0 })).toBe(100);
-    expect(packetLossPercent({ ...base, kind: "tcp", attempted_samples: 3, successful_samples: 2 })).toBeNull();
+    expect(packetLossPercent({ ...base, kind: "tcp", attempted_samples: 5, successful_samples: 4 })).toBe(20);
+    expect(packetLossPercent({ ...base, kind: "tcp", attempted_samples: 0, successful_samples: 0 })).toBe(100);
+    expect(packetLossPercent({ ...base, kind: "tcp", attempted_samples: 3, successful_samples: 2 })).toBeCloseTo(33.333, 3);
   });
 });
 

@@ -42,11 +42,11 @@ test("failure-only histories keep the loss chart and selection works with duplic
   });
   await page.goto(`${origin}/dashboard/`, { waitUntil: "networkidle" });
   await page.locator(".node-card").first().click();
-  // 没有任何成功的延迟样本时延迟图显示空状态，丢包率图照常绘制 4 条 ICMP 线路
+  // 没有任何成功的延迟样本时延迟图显示空状态，丢包率图照常绘制全部 5 条线路
   await expect(page.locator("#latency-empty")).toHaveText("暂无延迟历史");
   await expect(page.locator("#loss-plot svg")).toBeVisible();
   const tooltip = await pointAtChart(page, testInfo);
-  await expect(tooltip.locator(".plot-tooltip-row")).toHaveCount(4);
+  await expect(tooltip.locator(".plot-tooltip-row")).toHaveCount(5);
   await expect(tooltip).toContainText("100%");
   await expect(tooltip).toContainText(label);
   await expect(tooltip.locator("img")).toHaveCount(0);

@@ -2,12 +2,9 @@
 import AppIcon from "./AppIcon.vue";
 import BrandLockup from "./BrandLockup.vue";
 import { formatTime } from "../domain/format";
-import type { Overview } from "../domain/overview";
-import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 
 const props = defineProps<{
-  health: Overview;
   refreshedAt?: number;
   refreshing: boolean;
   demo: boolean;
@@ -25,16 +22,6 @@ const emit = defineEmits<{ refresh: []; theme: []; logout: [] }>();
         brand="Lume"
         :tagline="demo ? '公开演示 · 虚构数据' : 'SECURE OBSERVABILITY'"
       />
-
-      <!-- 集群健康概览 Badge -->
-      <div id="top-health" class="hidden sm:flex items-center">
-        <Badge :variant="health.tone" class="px-2.5 py-1">
-          <span>{{ health.title }}</span>
-          <span id="fleet-health-copy" class="font-normal text-muted-foreground">{{
-            health.detail
-          }}</span>
-        </Badge>
-      </div>
 
       <!-- 右侧控制区 -->
       <div class="flex items-center gap-2 sm:gap-3">

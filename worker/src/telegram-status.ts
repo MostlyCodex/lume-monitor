@@ -1,5 +1,6 @@
 import type { NodeCatalogRow, ProbeCatalogRow } from "./catalog";
 import type { AgentReport, NodeId, ProbeResult } from "./types";
+import { probeDisplayName } from "./probe-labels";
 import { packetLossPercent } from "./validation";
 
 export interface TelegramStatusNodeRow {
@@ -51,16 +52,13 @@ function resourceLine(report: AgentReport): string {
   ].join(" · ");
 }
 
-// ICMP lines show latency and packet loss; TCP lines show latency or that the target is unreachable.
-function probeLine(probe: ProbeResult): string {
-  const label = probe.label.replace(/\s*·\s*(ICMP|TCP(?:\s*\d+)?)\s*$/i, "").trim();
+// Every line shows latency and loss; for TCP, loss counts handshakes that missed the connect timeout.
+function probeLine(probe: ProbeResult, name: string): string {
+  const label = name.replace(/\s*·\s*TCP(?:\s*\d+)?\s*$/i, "").trim();
   if (!probe.complete) return `${label} · 采样 ${probe.attempted_samples}/${probe.samples}`;
-  const loss = packetLossPercent(probe);
-  if (!probe.success) {
-    return loss === null ? `${label} · 连接失败` : `${label} · 不可达 · 丢包 ${Math.round(loss)}%`;
-  }
-  const latency = `${label} · ${Math.round(probe.duration_ms)} ms`;
-  return loss === null ? latency : `${latency} · 丢包 ${Math.round(loss)}%`;
+  const loss = Math.round(packetLossPercent(probe));
+  if (!probe.success) return `${label} · 不可达 · 丢包 ${loss}%`;
+  return `${label} · ${Math.round(probe.duration_ms)} ms · 丢包 ${loss}%`;
 }
 
 function updateTimestamp(now: number): string {
@@ -86,9 +84,10 @@ export function formatTelegramStatusMessage(
   // Only probes the catalog still exposes are shown, so a link toward a
   // node pending deletion disappears from /status even while the peer keeps
   // reporting it.
-  const visibleProbeKeys = new Set(
-    catalogProbes.map((probe) => `${probe.node_id}:${probe.probe_name}`),
+  const visibleProbes = new Map(
+    catalogProbes.map((probe) => [`${probe.node_id}:${probe.probe_name}`, probe]),
   );
+  const nodeNames = new Map(catalogNodes.map((node) => [node.node_id, node.display_name]));
   const parsed = new Map<NodeId, AgentReport>();
   let onlineCount = 0;
 
@@ -116,19 +115,22 @@ export function formatTelegramStatusMessage(
       continue;
     }
 
-    const visibleProbes = report.probes.filter((probe) =>
-      visibleProbeKeys.has(`${meta.node_id}:${probe.name}`),
+    const shownProbes = report.probes.filter((probe) =>
+      visibleProbes.has(`${meta.node_id}:${probe.name}`),
     );
     const block = [
-      `${nodeStatusIcon(node, meta, report, visibleProbes, now)} ${meta.display_name}`,
+      `${nodeStatusIcon(node, meta, report, shownProbes, now)} ${meta.display_name}`,
       `   更新  ${compactAge(node.received_at, now)}`,
       `   资源  ${resourceLine(report)}`,
     ];
     const services = serviceLine(report);
     if (services) block.push(`   服务  ${services}`);
-    const probes = [...visibleProbes]
+    const probes = [...shownProbes]
       .sort((left, right) => left.display_order - right.display_order)
-      .map(probeLine);
+      .map((probe) => {
+        const catalogProbe = visibleProbes.get(`${meta.node_id}:${probe.name}`);
+        return probeLine(probe, catalogProbe ? probeDisplayName(catalogProbe, nodeNames) : probe.label);
+      });
     if (probes.length > 0) {
       block.push("   探测");
       probes.forEach((probe, index) => block.push(`   ${index === probes.length - 1 ? "└" : "├"} ${probe}`));

@@ -2,7 +2,7 @@
 import { computed, type HTMLAttributes } from "vue";
 import { cn } from "../../../lib/utils";
 
-export type BadgeVariant = "outline" | "healthy" | "warning" | "critical";
+export type BadgeVariant = "outline" | "healthy" | "warning" | "critical" | "offline";
 
 const props = defineProps<{ variant: BadgeVariant; class?: HTMLAttributes["class"] }>();
 
@@ -11,11 +11,13 @@ const dots: Partial<Record<BadgeVariant, string>> = {
   healthy: "bg-status-ok",
   warning: "bg-status-warn",
   critical: "bg-status-bad",
+  offline: "bg-muted-foreground/50",
 };
 
 const classes = computed(() =>
   cn(
     "inline-flex w-fit shrink-0 items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-full border border-border px-2 py-0.5 text-xs font-medium text-foreground",
+    props.variant === "offline" && "text-muted-foreground",
     props.class,
   ),
 );
