@@ -11,7 +11,6 @@ function report(generatedAt: number, bootId: string, rx: number, tx: number): Ag
     node: {
       id: "test-vps",
       display_name: "Test VPS",
-      role: "VPS",
       region: "test",
       stale_seconds: 180,
       display_order: 100,

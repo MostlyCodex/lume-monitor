@@ -4,7 +4,6 @@ export interface NodeCatalogRow {
   node_id: NodeId;
   public_id: string;
   display_name: string;
-  role_label: string;
   region_label: string;
   stale_seconds: number;
   display_order: number;
@@ -46,7 +45,7 @@ export interface DashboardCatalog {
 export async function loadDashboardCatalog(env: Env): Promise<DashboardCatalog> {
   const [nodes, known, services, probes] = await Promise.all([
     env.DB.prepare(
-      "SELECT node_id, public_id, display_name, role_label, region_label, stale_seconds, display_order, enabled, retired_at " +
+      "SELECT node_id, public_id, display_name, region_label, stale_seconds, display_order, enabled, retired_at " +
         "FROM node_catalog WHERE enabled = 1 AND retired_at IS NULL ORDER BY display_order, display_name",
     ).all<NodeCatalogRow>(),
     env.DB.prepare(
@@ -85,7 +84,6 @@ export function publicNodeCatalogEntry(node: NodeCatalogRow): Record<string, unk
   return {
     id: node.public_id,
     label: node.display_name,
-    role: node.role_label,
     region: node.region_label,
     order: node.display_order,
   };

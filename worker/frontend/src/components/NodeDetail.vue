@@ -89,7 +89,6 @@ const rateSeries = computed<ChartSeries[]>(() => {
     <Card id="detail-hero" class="gap-0 px-4 sm:gap-0 sm:px-6">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
         <div class="flex min-w-0 flex-col gap-1.5">
-          <span class="text-sm text-muted-foreground">{{ node.role || "VPS 节点" }}</span>
           <h1 class="truncate text-xl font-semibold leading-none tracking-tight sm:text-2xl">
             {{ node.label }}
           </h1>

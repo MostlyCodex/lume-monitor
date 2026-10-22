@@ -74,7 +74,7 @@ test("deployment normalizes saved node metadata without changing monitoring sett
  const config={node:{id:"alpha",display_name:"Alpha",role:"VPS",group:"default",region:"Test",stale_seconds:180,display_order:10,color:"blue",offline_severity:"P1",ip_change_severity:"P2",obsolete_badge:"OLD"},secret:"fixture-secret",services:[{name:"nginx.service"}],
   probes:[{name:"web",kind:"tcp",target:"example.com",port:443,warning_failure_percent:1,critical_failure_percent:60,primary:true}],network_interfaces:["eth0"]};
  const normalized=JSON.parse(serializeAgentConfig(config));
- assert.deepEqual(normalized.node,{id:"alpha",display_name:"Alpha",role:"VPS",region:"Test",stale_seconds:180,display_order:10,ip_change_severity:"P2"});
+ assert.deepEqual(normalized.node,{id:"alpha",display_name:"Alpha",region:"Test",stale_seconds:180,display_order:10,ip_change_severity:"P2"});
  assert.deepEqual(normalized.services,config.services);
  // Probes keep only the current Agent fields; retired loss thresholds are dropped.
  assert.deepEqual(normalized.probes,[{name:"web",kind:"tcp",target:"example.com",port:443}]);

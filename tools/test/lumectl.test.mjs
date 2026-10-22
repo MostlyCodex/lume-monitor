@@ -60,7 +60,6 @@ test("generated Agent config is pure-host monitoring by default", () => {
   const config = createAgentConfig({
     id: "tokyo-edge",
     displayName: "Tokyo Edge",
-    role: "线路中转",
     region: "JP / Tokyo",
     displayOrder: 10,
     endpoint: "https://monitor.example.workers.dev/",
@@ -112,7 +111,6 @@ test("node specifications fill safe defaults and reject unusable input", () => {
   const spec = normalizeNodeSpec({ id: "HK-01", ssh: "hk-01", services: ["nftables.service"] });
   assert.equal(spec.id, "hk-01");
   assert.equal(spec.displayName, "hk-01");
-  assert.equal(spec.role, "VPS");
   assert.equal(spec.services, "nftables.service");
   assert.throws(() => normalizeNodeSpec({ id: "Bad Id" }), /节点 ID 无效/);
   assert.throws(() => normalizeNodeSpec({ id: "hk-01", ssh: "-oProxyCommand=bad" }), /SSH 目标格式无效/);

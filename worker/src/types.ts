@@ -4,7 +4,6 @@ export type Severity = "P1" | "P2" | "INFO";
 export interface NodeMetadata {
   id: NodeId;
   display_name: string;
-  role: string;
   region: string;
   stale_seconds: number;
   display_order: number;

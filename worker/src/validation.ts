@@ -70,7 +70,6 @@ function nodeMetadata(value: unknown, expectedId: string): NodeMetadata {
   return {
     id,
     display_name: stringValue(v.display_name, "node.display_name", 80),
-    role: stringValue(v.role, "node.role", 80),
     region: stringValue(v.region, "node.region", 80),
     stale_seconds: integerValue(v.stale_seconds, "node.stale_seconds", 60, 3600),
     display_order: integerValue(v.display_order, "node.display_order", 1, 10000),

@@ -12,7 +12,6 @@ function validReport(): Record<string, unknown> {
     node: {
       id: "future-vps-01",
       display_name: "Future VPS 01",
-      role: "VPS",
       region: "Region 1",
       stale_seconds: 180,
       display_order: 100,
@@ -64,6 +63,12 @@ function firstProbe(report: Record<string, unknown>): Record<string, unknown> {
 describe("report validation", () => {
   it("accepts a bounded valid report", () => {
     expect(validateReport(validReport()).node_id).toBe("future-vps-01");
+  });
+
+  it("ignores the retired node role sent by older Agents", () => {
+    const report = validReport();
+    (report.node as Record<string, unknown>).role = "VPS";
+    expect(validateReport(report).node).not.toHaveProperty("role");
   });
 
   it("accepts CPU capacity without requiring it", () => {

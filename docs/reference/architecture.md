@@ -57,7 +57,7 @@ Two pieces of state are deliberately **not** owned by the report path:
 
 D1 contains no seeded node topology. Catalog tables are data-driven:
 
-- `node_catalog`: identity, display order, role, region, staleness window and the persistent deletion lock (`retired_at`);
+- `node_catalog`: identity, display order, region, staleness window and the persistent deletion lock (`retired_at`);
 - `service_catalog`: zero or more services per node;
 - `probe_catalog`: zero or more TCP probes per node.
 

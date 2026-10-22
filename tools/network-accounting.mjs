@@ -17,7 +17,7 @@ export function normalizeAccounting(config = {}) {
  return {network_interfaces:[...names],traffic_cycle:{reset_day:day,time_zone:zone}};
 }
 
-const nodeFields = ["id", "display_name", "role", "region", "stale_seconds", "display_order", "ip_change_severity"];
+const nodeFields = ["id", "display_name", "region", "stale_seconds", "display_order", "ip_change_severity"];
 // Every probe is a TCP handshake round; ICMP was retired.
 const probeFields = ["name", "label", "category", "target_node_id", "kind", "target", "port", "timeout_seconds", "connect_timeout_ms",
  "samples", "sample_interval_ms", "warning_ms", "critical_ms", "severity", "display_order"];

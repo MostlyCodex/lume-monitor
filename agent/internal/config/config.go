@@ -25,7 +25,6 @@ var interfaceNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,15}$`)
 type Node struct {
 	ID               string `json:"id"`
 	DisplayName      string `json:"display_name"`
-	Role             string `json:"role"`
 	Region           string `json:"region"`
 	StaleSeconds     int    `json:"stale_seconds"`
 	DisplayOrder     int    `json:"display_order"`
@@ -39,21 +38,21 @@ type Service struct {
 }
 
 type Probe struct {
-	Name                   string  `json:"name"`
-	Label                  string  `json:"label"`
-	Category               string  `json:"category"`
-	TargetNodeID           string  `json:"target_node_id,omitempty"`
-	Kind                   string  `json:"kind"`
-	Target                 string  `json:"target"`
-	Port                   int     `json:"port,omitempty"`
-	TimeoutSeconds         int     `json:"timeout_seconds"`
-	ConnectTimeoutMS       int     `json:"connect_timeout_ms,omitempty"`
-	Samples                int     `json:"samples,omitempty"`
-	SampleIntervalMS       int     `json:"sample_interval_ms,omitempty"`
-	WarningMS              float64 `json:"warning_ms,omitempty"`
-	CriticalMS             float64 `json:"critical_ms,omitempty"`
-	Severity               string  `json:"severity"`
-	DisplayOrder           int     `json:"display_order"`
+	Name             string  `json:"name"`
+	Label            string  `json:"label"`
+	Category         string  `json:"category"`
+	TargetNodeID     string  `json:"target_node_id,omitempty"`
+	Kind             string  `json:"kind"`
+	Target           string  `json:"target"`
+	Port             int     `json:"port,omitempty"`
+	TimeoutSeconds   int     `json:"timeout_seconds"`
+	ConnectTimeoutMS int     `json:"connect_timeout_ms,omitempty"`
+	Samples          int     `json:"samples,omitempty"`
+	SampleIntervalMS int     `json:"sample_interval_ms,omitempty"`
+	WarningMS        float64 `json:"warning_ms,omitempty"`
+	CriticalMS       float64 `json:"critical_ms,omitempty"`
+	Severity         string  `json:"severity"`
+	DisplayOrder     int     `json:"display_order"`
 }
 
 // Traffic is always counted per monthly period starting on ResetDay.
@@ -166,9 +165,6 @@ func (c *Config) Validate() error {
 	if c.Node.DisplayName == "" {
 		c.Node.DisplayName = c.Node.ID
 	}
-	if c.Node.Role == "" {
-		c.Node.Role = "VPS"
-	}
 	if c.Node.Region == "" {
 		c.Node.Region = "unspecified"
 	}
@@ -181,7 +177,7 @@ func (c *Config) Validate() error {
 	if c.Node.IPChangeSeverity == "" {
 		c.Node.IPChangeSeverity = "P2"
 	}
-	if !validText(c.Node.DisplayName, 80) || !validText(c.Node.Role, 80) || !validText(c.Node.Region, 80) ||
+	if !validText(c.Node.DisplayName, 80) || !validText(c.Node.Region, 80) ||
 		c.Node.StaleSeconds < 60 || c.Node.StaleSeconds > 3600 ||
 		c.Node.DisplayOrder < 1 || c.Node.DisplayOrder > 10000 || !validSeverity(c.Node.IPChangeSeverity) {
 		return errors.New("node metadata is invalid")

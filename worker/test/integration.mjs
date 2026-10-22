@@ -16,7 +16,6 @@ function nodeMetadata(id, name, order) {
   return {
     id,
     display_name: name,
-    role: "VPS",
     region: "Test Region",
     stale_seconds: 180,
     display_order: order,
@@ -249,7 +248,7 @@ assert(
 assert(tcpLatest.label === "Beta VPS", `a node link must be named after its target node: ${tcpLatest.label}`);
 assert(
   JSON.stringify(Object.keys(alphaLatest).sort()) ===
-    JSON.stringify(["country", "id", "label", "metrics", "online", "order", "probes", "received_at", "region", "role", "services", "system"]),
+    JSON.stringify(["country", "id", "label", "metrics", "online", "order", "probes", "received_at", "region", "services", "system"]),
   `latest node exposes undisplayed fields: ${Object.keys(alphaLatest)}`,
 );
 assert(betaLatest.services.length === 0 && betaLatest.probes.length === 0, "host-only node gained unwanted optional checks");

@@ -10,7 +10,6 @@ function catalog(overrides: Partial<NodeCatalogRow> = {}): NodeCatalogRow {
     node_id: "edge-one",
     public_id: "public-one",
     display_name: "示例节点",
-    role_label: "VPS",
     region_label: "Example",
     stale_seconds: 180,
     display_order: 10,
@@ -49,7 +48,6 @@ function report(overrides: Partial<AgentReport> = {}): AgentReport {
     node: {
       id: "edge-one",
       display_name: "示例节点",
-      role: "VPS",
       region: "Example",
       stale_seconds: 180,
       display_order: 10,

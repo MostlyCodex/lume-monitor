@@ -9,7 +9,6 @@ export type Theme = "dark" | "light";
 export interface CatalogNode {
   id: string;
   label: string;
-  role?: string;
   region?: string;
   order?: number;
 }

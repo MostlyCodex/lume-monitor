@@ -3,7 +3,6 @@ package model
 type NodeMetadata struct {
 	ID               string `json:"id"`
 	DisplayName      string `json:"display_name"`
-	Role             string `json:"role"`
 	Region           string `json:"region"`
 	StaleSeconds     int    `json:"stale_seconds"`
 	DisplayOrder     int    `json:"display_order"`
@@ -54,22 +53,22 @@ type ServiceStatus struct {
 // ProbeResult is one TCP probe round. Loss is derived from the attempted and
 // successful handshake counts.
 type ProbeResult struct {
-	Name                   string  `json:"name"`
-	Label                  string  `json:"label"`
-	Category               string  `json:"category"`
-	TargetNodeID           string  `json:"target_node_id,omitempty"`
-	Kind                   string  `json:"kind"`
-	WarningMS              float64 `json:"warning_ms,omitempty"`
-	CriticalMS             float64 `json:"critical_ms,omitempty"`
-	Severity               string  `json:"severity"`
-	DisplayOrder           int     `json:"display_order"`
-	Success                bool    `json:"success"`
-	Complete               bool    `json:"complete"`
-	DurationMS             float64 `json:"duration_ms"`
-	Samples                int     `json:"samples"`
-	AttemptedSamples       int     `json:"attempted_samples"`
-	SuccessfulSamples      int     `json:"successful_samples"`
-	CheckedAt              int64   `json:"checked_at"`
+	Name              string  `json:"name"`
+	Label             string  `json:"label"`
+	Category          string  `json:"category"`
+	TargetNodeID      string  `json:"target_node_id,omitempty"`
+	Kind              string  `json:"kind"`
+	WarningMS         float64 `json:"warning_ms,omitempty"`
+	CriticalMS        float64 `json:"critical_ms,omitempty"`
+	Severity          string  `json:"severity"`
+	DisplayOrder      int     `json:"display_order"`
+	Success           bool    `json:"success"`
+	Complete          bool    `json:"complete"`
+	DurationMS        float64 `json:"duration_ms"`
+	Samples           int     `json:"samples"`
+	AttemptedSamples  int     `json:"attempted_samples"`
+	SuccessfulSamples int     `json:"successful_samples"`
+	CheckedAt         int64   `json:"checked_at"`
 }
 
 type AgentHealth struct {

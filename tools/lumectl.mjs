@@ -180,7 +180,6 @@ export function createWranglerConfig({ workerName, databaseName, databaseId, das
 export function createAgentConfig({
   id,
   displayName,
-  role,
   region,
   displayOrder,
   endpoint,
@@ -192,14 +191,13 @@ export function createAgentConfig({
 }) {
   if (!validateNodeId(id)) fail("节点 ID 必须匹配 [a-z0-9][a-z0-9_-]{0,31}");
   if (typeof secret !== "string" || secret.length < 32) fail("节点密钥无效");
-  for (const [label, value] of [["显示名", displayName || id], ["用途", role || "VPS"], ["地区", region || "unspecified"]]) {
+  for (const [label, value] of [["显示名", displayName || id], ["地区", region || "unspecified"]]) {
     if (typeof value !== "string" || value.length < 1 || value.length > 80 || /[\r\n\t]/.test(value)) fail(`${label} 必须是 1–80 个普通字符`);
   }
   return {
     node: {
       id,
       display_name: displayName || id,
-      role: role || "VPS",
       region: region || "unspecified",
       stale_seconds: 180,
       display_order: displayOrder || 100,
@@ -377,12 +375,11 @@ async function readNodeConfiguration(prompt, id, defaultTarget = "", rebuildOrig
   const source = await choiceValue(prompt, `${id} 配置来源：1 SSH 读取 / 2 本地配置文件${rebuildOrigin ? " / 3 重新配置" : ""}`, rebuildOrigin ? ["1", "2", "3"] : ["1", "2"], "1", { line });
   if (source === "3" && rebuildOrigin) {
     const displayName = await displayValue(prompt, "节点显示名", id, { line });
-    const role = await displayValue(prompt, "用途", "VPS", { line });
     const region = await displayValue(prompt, "地区", "unspecified", { line });
     const services = await promptServices(prompt, { line });
     const observers = await promptOptionalObservers(prompt, { excludeNodeId: id });
     const target = await promptSshTarget(prompt, "SSH 目标", defaultTarget || id);
-    return { target, config: createAgentConfig({ id, displayName, role, region, endpoint: rebuildOrigin, secret: randomSecret(), services, probes: observers.probes }) };
+    return { target, config: createAgentConfig({ id, displayName, region, endpoint: rebuildOrigin, secret: randomSecret(), services, probes: observers.probes }) };
   }
   if (source === "2") {
     const config = await inputValue(prompt, "配置文件路径（内容不会打印）", {
@@ -1022,7 +1019,6 @@ export function normalizeNodeSpec(spec) {
   return {
     id,
     displayName: String(spec.name ?? spec.display_name ?? id),
-    role: String(spec.role ?? "VPS"),
     region: String(spec.region ?? "unspecified"),
     services,
     ssh,
@@ -1053,7 +1049,6 @@ async function createNodeRecords(state, specs) {
     const config = createAgentConfig({
       id: entry.spec.id,
       displayName: entry.spec.displayName,
-      role: entry.spec.role,
       region: entry.spec.region,
       displayOrder: entry.displayOrder,
       endpoint: state.workerUrl,
@@ -1100,7 +1095,6 @@ async function addNode(prompt, options) {
     specs = [normalizeNodeSpec({
       id: flagId,
       name: options.get("name"),
-      role: options.get("role"),
       region: options.get("region"),
       services: options.get("services"),
       ssh: options.get("ssh"),
@@ -1116,7 +1110,6 @@ async function addNode(prompt, options) {
       },
     });
     const displayName = await displayValue(prompt, "面板显示名", id, { line });
-    const role = await displayValue(prompt, "用途（如网站、备份、中转）", "VPS", { line });
     const region = await displayValue(prompt, "国家 / 城市", "unspecified", { line });
     const services = await promptServices(prompt, { line });
     const optionalObservers = await promptOptionalObservers(prompt, { state, excludeNodeId: id });
@@ -1129,7 +1122,6 @@ async function addNode(prompt, options) {
     specs = [normalizeNodeSpec({
       id,
       name: displayName,
-      role,
       region,
       services: services.map((service) => service.name),
       ssh: target,
@@ -1629,7 +1621,7 @@ function usage() {
   node tools/lumectl.mjs status
   node tools/lumectl.mjs worker deploy
   node tools/lumectl.mjs worker rollback <VERSION_ID> [--yes]
-  node tools/lumectl.mjs node add [--id ID --name 名称 --role 用途 --region 地区 --services a,b --ssh 别名]
+  node tools/lumectl.mjs node add [--id ID --name 名称 --region 地区 --services a,b --ssh 别名]
   node tools/lumectl.mjs node add --from-file nodes.json
   node tools/lumectl.mjs node configure <NODE_ID>
   node tools/lumectl.mjs node apply [NODE_ID] [--pending]
@@ -1639,7 +1631,7 @@ function usage() {
   node tools/lumectl.mjs node sync-keys
 
 不带 --id 或 --from-file 时 node add 仍是交互式的。批量清单为 JSON 数组，每项至少包含 id：
-  [{"id":"hk-01","name":"HK 01","role":"中转","region":"HK","ssh":"hk-01"}]
+  [{"id":"hk-01","name":"HK 01","region":"HK","ssh":"hk-01"}]
 
 快捷入口（worker 目录）：npm run doctor / npm run setup / npm run node:add /
 npm run node:install / npm run node:delete / npm run node:revoke

@@ -204,7 +204,7 @@ test("new-node wizard collects probes, previews them and installs from the same 
   new vm.Script(["promptSshTarget","addNode"].map(procedure).join("\n")).runInContext(context);
   const prompt=scriptedPrompt([
     ["text","Bad ID",/节点 ID/],["text","alpha",/节点 ID/],["text","beta",/节点 ID/],
-    ["text","Beta"],["text","VPS"],["text","Test"],
+    ["text","Beta"],["text","Test"],
     ["text","nginx service",/systemd/],["text","",/systemd/],
     ["text","1"],...carrierAnswers,
     ["text","user@host:22",/SSH/],["text","ssh-beta",/SSH/],["text","1",/统计方式/],["text","1",/重置日/],["text","1",/时区/],["yes",true,/以上配置/],
@@ -305,33 +305,33 @@ test("node configuration saves selected interfaces and the traffic cycle without
  assert.deepEqual(config.services,[{name:"nginx.service"}]);assert.deepEqual(config.probes,carriers);assert.equal(config.secret,"beta-secret");assert.equal(h.state.nodes.beta.pendingApply,true);prompt.done();
 });
 
-test("node configuration can rename the panel display, role and region without touching secrets or probes", async () => {
+test("node configuration can rename the panel display and region without touching secrets or probes", async () => {
   const h = configurationHarness({ configured: true });
   const prompt = scriptedPrompt([
     ["yes", true, /显示名/],
     ["text", "x".repeat(81), /面板显示名/], ["text", "香港 01", /面板显示名/],
-    ["text", "", /用途/], ["text", "香港", /国家/],
+    ["text", "香港", /国家/],
     ["yes", false, /systemd/], ["text", "1", /网络探针/], ["yes", false, /流量/],
     ["yes", true, /保存/], ["yes", false, /部署/],
   ]);
   await h.run(prompt);
   const config = JSON.parse(h.files.get(h.configPath));
   assert.deepEqual(
-    { name: config.node.display_name, role: config.node.role, region: config.node.region },
-    { name: "香港 01", role: "VPS", region: "香港" },
+    { name: config.node.display_name, region: config.node.region },
+    { name: "香港 01", region: "香港" },
   );
   assert.equal(config.secret, "beta-secret");
   assert.deepEqual(config.probes, carriers);
   assert.ok(h.lines.some((line) => line.includes("输入无效")));
-  assert.ok(h.lines.some((line) => line.includes("面板显示：香港 01 · VPS · 香港")));
+  assert.ok(h.lines.some((line) => line.includes("面板显示：香港 01 · 香港")));
   assert.equal(h.state.nodes.beta.pendingApply, true);
   prompt.done();
 });
 
 test("declining the display prompt leaves the node display untouched", async () => {
-  const node = { id: "beta", display_name: "Beta", role: "中转", region: "东京" };
+  const node = { id: "beta", display_name: "Beta", region: "东京" };
   const prompt = scriptedPrompt([["yes", false, /显示名/]]);
   assert.equal(await promptNodeDisplay(prompt, node, { line: () => {} }), false);
-  assert.deepEqual(node, { id: "beta", display_name: "Beta", role: "中转", region: "东京" });
+  assert.deepEqual(node, { id: "beta", display_name: "Beta", region: "东京" });
   prompt.done();
 });

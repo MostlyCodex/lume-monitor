@@ -22,7 +22,7 @@ const filtered = computed(() => {
   return props.nodes.filter(
     (node) =>
       !query ||
-      [node.label, node.role, node.region, node.country].some((value) =>
+      [node.label, node.region, node.country].some((value) =>
         value?.toLocaleLowerCase("zh-CN").includes(query),
       ),
   );

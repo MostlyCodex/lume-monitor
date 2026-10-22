@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-export const DATABASE_SCHEMA = "lume-2";
+export const DATABASE_SCHEMA = "lume-3";
 const schemaFile = new URL("../worker/database/schema.sql", import.meta.url);
 const normalize = (sql) => sql.replace(/\s+/g, " ").trim().replace(/;$/, "");
 

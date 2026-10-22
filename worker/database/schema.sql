@@ -5,7 +5,6 @@ CREATE TABLE node_catalog (
   node_id TEXT PRIMARY KEY,
   public_id TEXT NOT NULL UNIQUE,
   display_name TEXT NOT NULL,
-  role_label TEXT NOT NULL,
   region_label TEXT NOT NULL,
   stale_seconds INTEGER NOT NULL,
   display_order INTEGER NOT NULL,
@@ -133,4 +132,4 @@ CREATE TABLE observability_events (
 
 CREATE INDEX idx_observability_events_time ON observability_events(occurred_at DESC);
 
-INSERT INTO settings(key, value, updated_at) VALUES ('database_schema', 'lume-2', 0);
+INSERT INTO settings(key, value, updated_at) VALUES ('database_schema', 'lume-3', 0);

@@ -66,7 +66,7 @@ func TestValidateAppliesGenericSafeDefaults(t *testing.T) {
 		cfg.Probes[0].Samples != 3 || cfg.Probes[0].SampleIntervalMS != 250 {
 		t.Fatalf("safe defaults not applied: %+v", cfg)
 	}
-	if cfg.Node.DisplayName != "future-vps-01" || cfg.Node.Role != "VPS" || cfg.Node.IPChangeSeverity != "P2" {
+	if cfg.Node.DisplayName != "future-vps-01" || cfg.Node.IPChangeSeverity != "P2" {
 		t.Fatalf("node defaults not applied: %+v", cfg.Node)
 	}
 	if cfg.Services[0].Label != "example.service" || cfg.Services[0].Severity != "P1" {

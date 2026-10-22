@@ -2,12 +2,12 @@
 // The shapes match the dashboard API exactly: only fields the page displays.
 export function createDemoData(previewNow = Math.floor(Date.now() / 1000)) {
 const nodeDefinitions = [
-  { id: "transit-la", label: "Transit-Los-Angeles", role: "线路中转机", region: "Los Angeles", country: "US", service: ["nftables", "nftables"], bases: [151, 158, 181, 8], resources: [18.4, 34.2, 28.5] },
-  { id: "transit-eb", label: "Transit-Edge-Bridge", role: "线路中转机", region: "Los Angeles", country: "US", service: ["nftables", "nftables"], bases: [155, 164, 188, 9], resources: [11.6, 27.8, 41.3] },
-  { id: "egress-lv", label: "Egress-Las-Vegas", role: "住宅出口落地机", region: "Las Vegas", country: "US", service: ["xray", "Xray"], bases: [42], resources: [22.7, 43.6, 67.4] },
-  { id: "hybrid-la", label: "Hybrid-LAX-Tri", role: "线路 + 落地机", region: "Los Angeles", country: "US", service: ["xray", "Xray"], bases: [149, 157, 179], resources: [9.8, 31.4, 23.6] },
-  { id: "transit-tokyo", label: "Transit-Tokyo", role: "线路中转机", region: "Tokyo", country: "JP", service: ["nftables", "nftables"], bases: [63, 69, 78, 7], resources: [14.1, 76.8, 35.2] },
-  { id: "hybrid-sg", label: "Hybrid-Singapore", role: "线路 + 落地机", region: "Singapore", country: "SG", service: ["xray", "Xray"], bases: [72, 78, 91], resources: [31.5, 52.7, 87.2] },
+  { id: "transit-la", label: "Transit-Los-Angeles", region: "Los Angeles", country: "US", service: ["nftables", "nftables"], bases: [151, 158, 181, 8], resources: [18.4, 34.2, 28.5] },
+  { id: "transit-eb", label: "Transit-Edge-Bridge", region: "Los Angeles", country: "US", service: ["nftables", "nftables"], bases: [155, 164, 188, 9], resources: [11.6, 27.8, 41.3] },
+  { id: "egress-lv", label: "Egress-Las-Vegas", region: "Las Vegas", country: "US", service: ["xray", "Xray"], bases: [42], resources: [22.7, 43.6, 67.4] },
+  { id: "hybrid-la", label: "Hybrid-LAX-Tri", region: "Los Angeles", country: "US", service: ["xray", "Xray"], bases: [149, 157, 179], resources: [9.8, 31.4, 23.6] },
+  { id: "transit-tokyo", label: "Transit-Tokyo", region: "Tokyo", country: "JP", service: ["nftables", "nftables"], bases: [63, 69, 78, 7], resources: [14.1, 76.8, 35.2] },
+  { id: "hybrid-sg", label: "Hybrid-Singapore", region: "Singapore", country: "SG", service: ["xray", "Xray"], bases: [72, 78, 91], resources: [31.5, 52.7, 87.2] },
 ];
 
 function probeDefinitions(node) {
@@ -55,7 +55,6 @@ function latestData() {
   const nodes = nodeDefinitions.map((definition, nodeIndex) => ({
     id: definition.id,
     label: definition.label,
-    role: definition.role,
     region: definition.region,
     order: nodeIndex + 1,
     online: true,
@@ -81,7 +80,7 @@ function latestData() {
     server_time: now,
     catalog: {
       known_node_ids: nodeDefinitions.map((node) => node.id),
-      nodes: nodeDefinitions.map((node, index) => ({ id: node.id, label: node.label, role: node.role, region: node.region, order: index + 1 })),
+      nodes: nodeDefinitions.map((node, index) => ({ id: node.id, label: node.label, region: node.region, order: index + 1 })),
     },
     nodes,
   };
