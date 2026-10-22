@@ -44,32 +44,95 @@ onBeforeUnmount(() => {
 });
 
 // 时间戳单位为秒
-const bounds = computed(() => {
+const xRange = computed(() => {
   let minX = Infinity,
-    maxX = -Infinity,
-    minY = Infinity,
-    maxY = -Infinity;
-  for (const s of usable.value) {
-    for (const p of s.points) {
+    maxX = -Infinity;
+  for (const s of usable.value)
+    for (const p of s.points)
       if (finite(p.x)) {
         minX = Math.min(minX, p.x);
         maxX = Math.max(maxX, p.x);
       }
-      if (finite(p.y)) {
-        minY = Math.min(minY, p.y);
-        maxY = Math.max(maxY, p.y);
-      }
-    }
-  }
   if (!isFinite(minX) || !isFinite(maxX) || minX === maxX) {
     maxX = Date.now() / 1000;
     minX = maxX - props.hours * 3600;
   }
+  return { minX, maxX };
+});
+
+// 每个绘制点至少占 MIN_POINT_SPACING 像素：分钟级数据按时间槽合并取平均，
+// 避免把逐分钟的抖动画成锯齿。悬停提示读取的也是合并后的点，与曲线一致。
+const MIN_POINT_SPACING = 4;
+function mergePoints(points: ChartPoint[]): ChartPoint[] {
+  const { minX, maxX } = xRange.value;
+  const slots = Math.max(2, Math.floor((width.value - 64) / MIN_POINT_SPACING));
+  if (points.length <= slots) return points;
+  const slotSeconds = (maxX - minX) / slots;
+  const merged: ChartPoint[] = [];
+  let slot = -1,
+    sumX = 0,
+    sumY = 0,
+    count = 0,
+    missing = false;
+  const flush = () => {
+    if (count) merged.push({ x: sumX / count, y: sumY / count });
+    else if (missing) merged.push({ x: minX + (slot + 0.5) * slotSeconds, y: null });
+  };
+  for (const p of points) {
+    if (!finite(p.x)) continue;
+    const index = Math.min(slots - 1, Math.floor((p.x - minX) / slotSeconds));
+    if (index !== slot) {
+      flush();
+      slot = index;
+      sumX = sumY = count = 0;
+      missing = false;
+    }
+    if (finite(p.y)) {
+      sumX += p.x;
+      sumY += p.y;
+      count += 1;
+    } else missing = true;
+  }
+  flush();
+  return merged;
+}
+
+// 相邻两点间隔超过常规间隔的 1.5 倍（或任一点缺值）即视为缺失，曲线在此断开
+function gapSeconds(points: ChartPoint[]): number {
+  const steps: number[] = [];
+  for (let i = 1; i < points.length; i++) steps.push(points[i].x - points[i - 1].x);
+  steps.sort((a, b) => a - b);
+  return (steps[Math.floor(steps.length / 2)] ?? Infinity) * 1.5;
+}
+
+const displayed = computed(() =>
+  usable.value.map((s) => {
+    const points = mergePoints(s.points);
+    return { ...s, points, gap: gapSeconds(points) };
+  }),
+);
+
+const bounds = computed(() => {
+  const { minX, maxX } = xRange.value;
+  let minY = Infinity,
+    maxY = -Infinity;
+  for (const s of displayed.value)
+    for (const p of s.points)
+      if (finite(p.y)) {
+        minY = Math.min(minY, p.y);
+        maxY = Math.max(maxY, p.y);
+      }
   if (!isFinite(maxY)) return { minX, maxX, minY: 0, maxY: 10 };
   // 丢包率从 0 起画，至少显示到 5%，最多 100%
   if (props.kind === "loss")
     return { minX, maxX, minY: 0, maxY: Math.min(100, Math.max(5, maxY * 1.15)) };
-  // 其余纵轴按数据范围自适应（上下各留 15%），不强制从 0 开始，避免数值接近的曲线挤成一团
+  // 其余纵轴按数据范围自适应（上下各留 15%），不强制从 0 开始，避免数值接近的曲线挤成一团；
+  // 延迟纵轴至少跨最大值的一半，1–2 ms 的抖动不会被放大成锯齿
+  if (props.kind === "latency" && maxY - minY < maxY * 0.5) {
+    const middle = (maxY + minY) / 2;
+    minY = Math.max(0, middle - maxY * 0.25);
+    maxY = minY + maxY * 0.5;
+  }
   const span = maxY - minY || Math.max(1, maxY * 0.1);
   return {
     minX,
@@ -125,35 +188,62 @@ function getY(val: number) {
   );
 }
 
-function generateSmoothPath(points: ChartPoint[]): { linePath: string; areaPath: string } {
-  const valid = points.filter((p): p is { x: number; y: number } => finite(p.x) && finite(p.y));
-  if (valid.length === 0) return { linePath: "", areaPath: "" };
-  if (valid.length === 1) {
-    const x = getX(valid[0].x);
-    const y = getY(valid[0].y);
-    return { linePath: `M ${x} ${y} L ${x + 1} ${y}`, areaPath: "" };
+// 单调三次插值（Fritsch–Butland，与 d3 / Recharts 的 monotone 同类）：曲线经过每个点时保留斜率，
+// 不会在数据点处出现小平台，也不会越过相邻两点的取值范围，丢包率不会被画成负数
+function monotonePath(xs: number[], ys: number[]): string {
+  const n = xs.length;
+  if (n === 1) return `M ${xs[0]} ${ys[0]} L ${xs[0] + 1} ${ys[0]}`;
+  const slopes = xs.slice(1).map((x, i) => (ys[i + 1] - ys[i]) / (x - xs[i] || 1));
+  const tangents = xs.map((_x, i) => {
+    if (i === 0) return slopes[0];
+    if (i === n - 1) return slopes[n - 2];
+    const [a, b] = [slopes[i - 1], slopes[i]];
+    if (a * b <= 0) return 0;
+    const [h0, h1] = [xs[i] - xs[i - 1], xs[i + 1] - xs[i]];
+    return (3 * (h0 + h1)) / ((2 * h1 + h0) / a + (h1 + 2 * h0) / b);
+  });
+  let path = `M ${xs[0]} ${ys[0]}`;
+  for (let i = 0; i < n - 1; i++) {
+    const third = (xs[i + 1] - xs[i]) / 3;
+    path += ` C ${xs[i] + third} ${ys[i] + tangents[i] * third}, ${xs[i + 1] - third} ${ys[i + 1] - tangents[i + 1] * third}, ${xs[i + 1]} ${ys[i + 1]}`;
   }
+  return path;
+}
 
-  let line = `M ${getX(valid[0].x)} ${getY(valid[0].y)}`;
-  for (let i = 0; i < valid.length - 1; i++) {
-    const x0 = getX(valid[i].x);
-    const y0 = getY(valid[i].y);
-    const x1 = getX(valid[i + 1].x);
-    const y1 = getY(valid[i + 1].y);
-    const mx = (x0 + x1) / 2;
-    line += ` C ${mx} ${y0}, ${mx} ${y1}, ${x1} ${y1}`;
+function generateSmoothPath(
+  points: ChartPoint[],
+  gap: number,
+): { linePath: string; areaPath: string } {
+  const runs: ChartPoint[][] = [];
+  let run: ChartPoint[] = [];
+  for (const p of points) {
+    const previous = run[run.length - 1];
+    if (!finite(p.x) || !finite(p.y) || (previous && p.x - previous.x > gap)) {
+      if (run.length) runs.push(run);
+      run = finite(p.x) && finite(p.y) ? [p] : [];
+    } else run.push(p);
   }
+  if (run.length) runs.push(run);
 
   const baseLineY = height - padding.value.bottom;
-  const area = `${line} L ${getX(valid[valid.length - 1].x)} ${baseLineY} L ${getX(valid[0].x)} ${baseLineY} Z`;
-  return { linePath: line, areaPath: area };
+  let linePath = "",
+    areaPath = "";
+  for (const segment of runs) {
+    const xs = segment.map((p) => getX(p.x));
+    const ys = segment.map((p) => getY(p.y as number));
+    const line = monotonePath(xs, ys);
+    linePath += `${line} `;
+    if (segment.length > 1)
+      areaPath += `${line} L ${xs[xs.length - 1]} ${baseLineY} L ${xs[0]} ${baseLineY} Z `;
+  }
+  return { linePath: linePath.trim(), areaPath: areaPath.trim() };
 }
 
 const renderedSeries = computed(() =>
-  usable.value.map((s, idx) => ({
+  displayed.value.map((s, idx) => ({
     ...s,
     gradientId: `grad-${props.id}-${idx}`,
-    ...generateSmoothPath(s.points),
+    ...generateSmoothPath(s.points, s.gap),
   })),
 );
 
@@ -218,7 +308,7 @@ function closest(points: ChartPoint[] | undefined, target: number) {
 const activeTooltipData = computed(() => {
   if (hoveredX.value === null) return null;
   const target = hoveredX.value;
-  const rows = usable.value.map((s) => {
+  const rows = displayed.value.map((s) => {
     const point = closest(s.points, target);
     return {
       id: s.id,
@@ -227,7 +317,7 @@ const activeTooltipData = computed(() => {
       value: point && finite(point.y) ? formatValue(point.y) : "—",
     };
   });
-  const anchor = closest(usable.value[0]?.points, target)?.x ?? target;
+  const anchor = closest(displayed.value[0]?.points, target)?.x ?? target;
   return { time: formatTime(anchor, true), rows };
 });
 </script>
