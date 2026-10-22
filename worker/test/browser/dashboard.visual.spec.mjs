@@ -267,7 +267,7 @@ test("node detail renders charts, color keys and mobile controls", async ({ page
     expect(probeRows).toBeLessThanOrEqual(3);
   }
 
-  // 图表按容器宽度绘制，手机上不会整体缩小；纵轴刻度只写数字、不带单位
+  // 图表按容器宽度绘制，手机上不会整体缩小；纵轴刻度为整数加单位，单位完整显示不换行
   const plot = await page.locator("#latency-plot svg").boundingBox();
   expect(plot.height).toBeGreaterThanOrEqual(220);
   for (const id of ["#latency-plot", "#loss-plot", "#traffic-plot"]) {
@@ -277,12 +277,14 @@ test("node detail renders charts, color keys and mobile controls", async ({ page
       return {
         clipped: labels.some((text) => text.getBoundingClientRect().left < frame.left - 0.5),
         axisWidth: Math.max(...labels.map((text) => text.getBoundingClientRect().right)) - frame.left,
-        numericOnly: labels.every((text) => /^[\d.]+$/.test(text.textContent.trim())),
+        integerWithUnit: labels.every((text) =>
+          /^\d+(ms|%|[KMGT]?B\/s)$/.test(text.textContent.trim()),
+        ),
       };
     });
     expect(axis.clipped).toBe(false);
-    expect(axis.numericOnly).toBe(true);
-    if (narrow) expect(axis.axisWidth).toBeLessThanOrEqual(48);
+    expect(axis.integerWithUnit).toBe(true);
+    if (narrow) expect(axis.axisWidth).toBeLessThanOrEqual(64);
   }
 
   if (testInfo.project.use.hasTouch) {
