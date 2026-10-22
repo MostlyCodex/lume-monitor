@@ -20,7 +20,7 @@ const emit = defineEmits<{ refresh: []; theme: []; logout: [] }>();
       <BrandLockup
         class="shrink-0"
         brand="Lume"
-        :tagline="demo ? '公开演示 · 虚构数据' : 'SECURE OBSERVABILITY'"
+        :tagline="demo ? '公开演示 · 虚构数据' : undefined"
       />
 
       <!-- 右侧控制区 -->

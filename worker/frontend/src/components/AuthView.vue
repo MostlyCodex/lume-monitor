@@ -38,7 +38,7 @@ async function copyCommand() {
   >
     <Card class="w-full max-w-sm">
       <CardHeader>
-        <BrandLockup brand="Lume" tagline="MINIMAL OBSERVABILITY" class="mb-4" />
+        <BrandLockup brand="Lume" class="mb-4" />
         <CardTitle class="text-xl">登录面板</CardTitle>
         <CardDescription>
           在已绑定的 Telegram 机器人私聊中发送
