@@ -112,7 +112,8 @@ const displayed = computed(() =>
   }),
 );
 
-const bounds = computed(() => {
+// 数据本身的纵向范围（含留白），最终坐标轴再按整数刻度向外取整
+const dataBounds = computed(() => {
   const { minX, maxX } = xRange.value;
   let minY = Infinity,
     maxY = -Infinity;
@@ -142,32 +143,59 @@ const bounds = computed(() => {
   };
 });
 
-// 纵轴刻度只写数字（不带单位）；速率按最大值换算为 B/KB/MB… 的数值，带单位的完整数值见悬停提示
-const axisScale = computed(() => {
-  if (props.kind !== "rate") return 1;
+// 纵轴刻度带单位（ms / % / B/s…），数字与单位之间不留空格以节省窄屏宽度；
+// 速率按最大值换算为 B/s、KB/s、MB/s… 中的一个，整轴单位一致
+const RATE_UNITS = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"];
+const rateUnitIndex = computed(() => {
+  if (props.kind !== "rate") return 0;
   let index = 0;
-  while (bounds.value.maxY / 1024 ** index >= 1024 && index < 4) index += 1;
-  return 1024 ** index;
+  while (dataBounds.value.maxY / 1024 ** index >= 1024 && index < RATE_UNITS.length - 1) index += 1;
+  return index;
+});
+const axisUnit = computed(() =>
+  props.kind === "latency" ? "ms" : props.kind === "loss" ? "%" : RATE_UNITS[rateUnitIndex.value],
+);
+
+// 刻度只取整数：间距取 1、2、2.5、5×10ⁿ 中最接近四等分的值（至少 1 个单位），
+// 上下边界向外取整到刻度上；带小数的精确数值见悬停 / 点按提示
+const tickValues = computed(() => {
+  const divisor = 1024 ** rateUnitIndex.value;
+  const minY = dataBounds.value.minY / divisor;
+  const maxY = dataBounds.value.maxY / divisor;
+  const rough = Math.max(1, (maxY - minY) / 4);
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  // 2.5 只在 ≥ 10 的量级使用（25、250…），保证刻度仍是整数
+  const factors = magnitude >= 10 ? [1, 2, 2.5, 5] : [1, 2, 5];
+  const step = magnitude * (factors.find((n) => n * magnitude >= rough) ?? 10);
+  const first = Math.floor(minY / step) * step;
+  const last = Math.max(first + step, Math.ceil(maxY / step) * step);
+  const ticks: number[] = [];
+  for (let tick = first; tick <= last; tick += step) ticks.push(tick * divisor);
+  return ticks;
+});
+const bounds = computed(() => {
+  const ticks = tickValues.value;
+  return { ...dataBounds.value, minY: ticks[0], maxY: ticks[ticks.length - 1] };
 });
 function tickLabel(val: number) {
-  const scaled = val / axisScale.value;
-  // 小数位按相邻刻度间距决定：刻度贴得很近时多保留小数，避免出现重复的刻度值
-  const step = (bounds.value.maxY - bounds.value.minY) / 3 / axisScale.value;
-  const digits = step >= 10 ? 0 : step >= 1 ? (scaled < 10 ? 1 : 0) : step >= 0.1 ? 1 : 2;
-  return scaled.toFixed(digits);
+  return `${Math.round(val / 1024 ** rateUnitIndex.value)}${axisUnit.value}`;
 }
-const tickValues = computed(() => {
-  const { minY, maxY } = bounds.value;
-  return [0, 1, 2, 3].map((step) => minY + ((maxY - minY) * step) / 3);
-});
+// 12px Geist 下各字符的近似宽度（数字为 tabular-nums 等宽）；SVG 文字不会换行，
+// 纵轴宽度按最长刻度估算，保证单位完整显示、不被左边缘截断
+const GLYPH_WIDTH: Record<string, number> = { m: 10.5, M: 10, "%": 10.5, "/": 5, s: 6.5 };
+function labelWidth(label: string) {
+  let total = 0;
+  for (const char of label)
+    total += GLYPH_WIDTH[char] ?? (/[0-9.]/.test(char) ? 7.2 : /[A-Z]/.test(char) ? 8.5 : 7);
+  return total;
+}
 const padding = computed(() => {
-  const longest = Math.max(...tickValues.value.map((val) => tickLabel(val).length));
-  // 12px Geist 数字约 7.2px 一个字符（tabular-nums）；纵轴宽度随最长刻度变化
+  const longest = Math.max(...tickValues.value.map((val) => labelWidth(tickLabel(val))));
   return {
     top: 16,
     right: compact.value ? 8 : 16,
     bottom: 28,
-    left: Math.max(24, Math.ceil(longest * 7.2) + 8),
+    left: Math.max(24, Math.ceil(longest) + 8),
   };
 });
 
@@ -294,7 +322,7 @@ function onPointerLeave(event: PointerEvent) {
 }
 
 function formatValue(value: number) {
-  if (props.kind === "latency") return `${Math.round(value)} ms`;
+  if (props.kind === "latency") return `${value.toFixed(1)} ms`;
   return props.kind === "loss" ? formatLoss(value) : formatRate(value);
 }
 
@@ -365,8 +393,8 @@ const activeTooltipData = computed(() => {
           />
         </g>
 
-        <!-- Y 轴标签；窄屏时单位单独标在轴顶 -->
-        <g class="fill-muted-foreground text-xs tabular-nums">
+        <!-- Y 轴标签（带单位） -->
+        <g class="y-axis fill-muted-foreground text-xs tabular-nums">
           <text
             v-for="(tick, idx) in yTicks"
             :key="idx"
