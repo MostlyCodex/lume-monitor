@@ -205,6 +205,11 @@ export function useDashboard(api: DashboardApi, notify: Notice) {
     detailError.value = "";
     if (updateUrl) history.pushState(null, "", DASHBOARD_HOME);
     window.scrollTo({ top: 0, behavior: "auto" });
+    refreshStaleFleet();
+  }
+  // 总览历史只在总览页显示：停在详情页时不轮询，回到总览时过期才补拉
+  function refreshStaleFleet() {
+    if (Date.now() - fleetLoadedAt >= HISTORY_INTERVAL) void loadFleet();
   }
   function setHours(value: HistoryHours) {
     if (!HISTORY_RANGES.includes(value)) return;
@@ -218,8 +223,7 @@ export function useDashboard(api: DashboardApi, notify: Notice) {
     try {
       const results = await Promise.all([
         loadLatest(),
-        loadFleet(),
-        selectedId.value ? loadDetail() : Promise.resolve(true),
+        selectedId.value ? loadDetail() : loadFleet(),
       ]);
       if (results.every(Boolean) && view.value === "dashboard") notify("状态已刷新");
     } finally {
@@ -232,8 +236,7 @@ export function useDashboard(api: DashboardApi, notify: Notice) {
       void loadLatest();
     }, LATEST_INTERVAL);
     historyTimer ??= setInterval(() => {
-      void loadFleet();
-      if (selectedId.value) void loadDetail();
+      void (selectedId.value ? loadDetail() : loadFleet());
     }, HISTORY_INTERVAL);
   }
   function visibilityChanged() {
@@ -244,9 +247,8 @@ export function useDashboard(api: DashboardApi, notify: Notice) {
     if (!canRefresh()) return;
     startTimers();
     void loadLatest();
-    if (Date.now() - fleetLoadedAt >= HISTORY_INTERVAL) void loadFleet();
-    if (selectedId.value && Date.now() - (cache.get(key())?.loadedAt ?? 0) >= HISTORY_INTERVAL)
-      void loadDetail();
+    if (!selectedId.value) refreshStaleFleet();
+    else if (Date.now() - (cache.get(key())?.loadedAt ?? 0) >= HISTORY_INTERVAL) void loadDetail();
   }
   function navigateBack() {
     const id = new URLSearchParams(location.search).get("node");
@@ -267,8 +269,8 @@ export function useDashboard(api: DashboardApi, notify: Notice) {
     document.addEventListener("visibilitychange", visibilityChanged);
     window.addEventListener("popstate", navigateBack);
     if (await loadLatest(true)) {
-      await loadFleet();
       if (selectedId.value) await loadDetail();
+      else await loadFleet();
     }
   });
   onScopeDispose(() => {

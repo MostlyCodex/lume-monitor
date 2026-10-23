@@ -88,6 +88,9 @@ CREATE TABLE metric_samples (
   PRIMARY KEY (reported_at, node_id)
 ) WITHOUT ROWID;
 
+-- Node-scoped history reads one node's range; the time-first primary keys would scan every node.
+CREATE INDEX idx_metric_samples_node_time ON metric_samples(node_id, reported_at);
+
 CREATE TABLE probe_rounds (
   round_at INTEGER NOT NULL,
   node_id TEXT NOT NULL,
@@ -95,6 +98,8 @@ CREATE TABLE probe_rounds (
   probes_json TEXT NOT NULL,
   PRIMARY KEY (round_at, node_id)
 ) WITHOUT ROWID;
+
+CREATE INDEX idx_probe_rounds_node_time ON probe_rounds(node_id, round_at);
 
 CREATE TABLE metric_series_rollups (
   node_id TEXT NOT NULL,
@@ -132,4 +137,4 @@ CREATE TABLE observability_events (
 
 CREATE INDEX idx_observability_events_time ON observability_events(occurred_at DESC);
 
-INSERT INTO settings(key, value, updated_at) VALUES ('database_schema', 'lume-3', 0);
+INSERT INTO settings(key, value, updated_at) VALUES ('database_schema', 'lume-4', 0);

@@ -20,13 +20,19 @@ test("hidden dashboard pauses polling and resumes without duplicate requests or 
  await page.clock.fastForward(6*60_000);expect(requests).toBe(paused);
  const latest=page.waitForResponse(response=>response.url().endsWith("/dashboard/latest"));
  await setHidden(page,false);await latest;
- await page.waitForLoadState("networkidle");expect(requests-paused).toBe(3);
+ // 详情页只刷新自己的历史：最新状态 + 详情历史，不重读首页全节点历史
+ await page.waitForLoadState("networkidle");expect(requests-paused).toBe(2);
  const fresh=requests;
  await setHidden(page,true);
  await page.clock.fastForward(1000);
  const refresh=page.waitForResponse(response=>response.url().endsWith("/dashboard/latest"));
  await setHidden(page,false);await refresh;
  await page.waitForLoadState("networkidle");expect(requests-fresh).toBe(1);
+ // 回到首页时，首页历史已超过 5 分钟，只补读这一份
+ const back=requests;
+ const fleet=page.waitForResponse(response=>response.url().includes("/dashboard/history")&&!response.url().includes("node="));
+ await page.goBack();await fleet;
+ await page.waitForLoadState("networkidle");expect(requests-back).toBe(1);
  expired=true;
  await setHidden(page,true);await setHidden(page,false);
  await expect(page.locator("#auth-view")).toBeVisible();const signedOut=requests;
