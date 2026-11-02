@@ -3,80 +3,111 @@
 @tailwind utilities;
 
 /*
- * shadcn/ui v4 "neutral" 主题（ui.shadcn.com 当前配色），OKLCH 已换算为 HSL 三元组。
- * --border / --input 在深色模式下带透明度，因此不要对它们使用 /xx 透明度修饰。
+ * 中性石墨灰主题：一条灰阶 + 品牌青（只用于标志和在线点）+ 黄 / 红两个异常色。
+ * 变量名沿用 shadcn（HSL 三元组），组件里的 bg-card、text-muted-foreground 等类无需改动。
+ * --border / --input 带透明度，因此不要对它们使用 /xx 透明度修饰。
  */
 @layer base {
   :root {
-    --radius: 0.625rem;
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    --radius: 0.75rem;
+    --background: 220 14% 96%;
+    --foreground: 228 8% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    --card-foreground: 228 8% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
+    --popover-foreground: 228 8% 10%;
+    --primary: 228 8% 10%;
     --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 357 100% 45.3%;
+    --secondary: 216 13% 92%;
+    --secondary-foreground: 228 8% 10%;
+    --muted: 216 13% 92%;
+    --muted-foreground: 224 5% 43%;
+    --accent: 216 13% 90%;
+    --accent-foreground: 228 8% 10%;
+    --destructive: 354 64% 53%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 63.9%;
+    --border: 225 20% 8% / 0.09;
+    --input: 225 20% 8% / 0.14;
+    --ring: 224 5% 60%;
 
-    /* 状态色：绿 / 蓝 / 黄 / 红四档，饱和度低于 Tailwind 默认色 */
-    --status-ok: 152 55% 36%;
-    --status-info: 214 72% 47%;
-    --status-warn: 35 85% 44%;
-    --status-bad: 0 70% 50%;
+    /* 状态色：服务徽标、事件圆点、资源条与光带共用 */
+    --status-ok: 178 83% 33%;
+    --status-info: 217 75% 52%;
+    --status-warn: 37 87% 41%;
+    --status-bad: 354 64% 53%;
 
-    /* 图表探针配色（hex，供 charts/theme.ts 的 cssColor 直接读取） */
-    --probe-telecom: #1769d2;
-    --probe-unicom: #c94467;
-    --probe-mobile: #c87500;
-    --probe-link: #087d67;
-    --green: #087d67;
-    --red: #c94467;
+    /* 光带与资源条：正常时是安静的灰 */
+    --bar: 225 7% 84%;
+    --track: 220 14% 93%;
+    --brand: 178 83% 33%;
+
+    /* 毛玻璃卡片与背景光晕（背景要有内容，模糊才看得出来） */
+    --glass: rgb(255 255 255 / 0.55);
+    --glass-hover: rgb(255 255 255 / 0.75);
+    --glass-edge: rgb(255 255 255 / 0.8);
+    --glass-top: rgb(255 255 255 / 0.9);
+    --glass-shadow: 0 1px 2px rgb(16 18 24 / 0.04), 0 8px 24px -12px rgb(16 18 24 / 0.1);
+    --glow-a: rgb(90 125 245 / 0.12);
+    --glow-b: rgb(150 115 240 / 0.09);
+
+    /* 图表线路配色（hex，供 charts/theme.ts 的 cssColor 直接读取） */
+    --probe-telecom: #2b6fe0;
+    --probe-unicom: #c8457a;
+    --probe-mobile: #7056e0;
+    --probe-link: #0e9893;
+    --green: #0e9893;
+    --red: #d43c4b;
+    --chart-download: #2b6fe0;
+    --chart-upload: #c27c0e;
   }
 
   .dark,
   [data-theme="dark"] {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 89.8%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 25.1%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 359 100% 69.6%;
+    --background: 228 9% 8.6%;
+    --foreground: 240 7% 93%;
+    --card: 228 8% 12%;
+    --card-foreground: 240 7% 93%;
+    --popover: 228 8% 12%;
+    --popover-foreground: 240 7% 93%;
+    --primary: 240 7% 93%;
+    --primary-foreground: 228 9% 9%;
+    --secondary: 230 8% 16%;
+    --secondary-foreground: 240 7% 93%;
+    --muted: 230 8% 16%;
+    --muted-foreground: 227 5% 62%;
+    --accent: 230 8% 19%;
+    --accent-foreground: 240 7% 93%;
+    --destructive: 355 84% 66%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 100% / 0.1;
-    --input: 0 0% 100% / 0.15;
-    --ring: 0 0% 45.1%;
+    --border: 0 0% 100% / 0.08;
+    --input: 0 0% 100% / 0.12;
+    --ring: 228 6% 45%;
 
-    --status-ok: 152 45% 48%;
-    --status-info: 214 85% 64%;
-    --status-warn: 40 80% 56%;
-    --status-bad: 0 72% 64%;
+    --status-ok: 178 62% 48%;
+    --status-info: 217 100% 68%;
+    --status-warn: 38 85% 62%;
+    --status-bad: 355 84% 66%;
 
-    --probe-telecom: #3f8cff;
-    --probe-unicom: #f26f8f;
-    --probe-mobile: #ffad28;
-    --probe-link: #24d6a5;
-    --green: #a0f6ce;
-    --red: #ff6875;
+    --bar: 228 7% 25%;
+    --track: 230 7% 18%;
+    --brand: 178 62% 48%;
+
+    --glass: rgb(255 255 255 / 0.045);
+    --glass-hover: rgb(255 255 255 / 0.07);
+    --glass-edge: rgb(255 255 255 / 0.09);
+    --glass-top: rgb(255 255 255 / 0.06);
+    --glass-shadow: 0 0 #0000;
+    --glow-a: rgb(96 130 255 / 0.13);
+    --glow-b: rgb(150 120 255 / 0.1);
+
+    --probe-telecom: #5b9bff;
+    --probe-unicom: #f07aa5;
+    --probe-mobile: #b39cff;
+    --probe-link: #8fd6d3;
+    --green: #8fd6d3;
+    --red: #f1626e;
+    --chart-download: #5b9bff;
+    --chart-upload: #f0b34a;
   }
 }
 
@@ -87,7 +118,40 @@
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
+    font-variant-numeric: tabular-nums;
     /* 去掉 iOS Safari 点按时的灰色高亮，按钮状态只由自身样式表达 */
     -webkit-tap-highlight-color: transparent;
+  }
+  /* 两团很淡的冷色光晕，固定在视口里，供毛玻璃卡片透出 */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(40vw 34vw at 12% 8%, var(--glow-a), transparent 70%),
+      radial-gradient(44vw 38vw at 92% 62%, var(--glow-b), transparent 70%);
+  }
+}
+
+@layer components {
+  /* 轻薄毛玻璃：半透明底 + 背景模糊 + 一圈细亮边与顶部高光 */
+  .glass {
+    background-color: var(--glass);
+    -webkit-backdrop-filter: blur(22px) saturate(150%);
+    backdrop-filter: blur(22px) saturate(150%);
+    box-shadow:
+      inset 0 0 0 1px var(--glass-edge),
+      inset 0 1px 0 var(--glass-top),
+      var(--glass-shadow);
+  }
+  /* 系统要求减少透明度时退回实色卡片 */
+  @media (prefers-reduced-transparency: reduce) {
+    .glass {
+      background-color: hsl(var(--card));
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
   }
 }

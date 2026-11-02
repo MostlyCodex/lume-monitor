@@ -30,6 +30,16 @@ export function displayProbeLabel(value: string | { label?: string }) {
     .trim();
 }
 
+// 首页卡片不重复地区：节点名（如“Zoro 日本”）去掉末尾的中文地名，只留“Zoro”。
+// 节点互联以目标节点命名，同样处理；完整名称放在悬停提示里
+export function withoutRegionSuffix(label: string) {
+  return label.replace(/^(.*\S)\s+\p{Script=Han}+$/u, "$1");
+}
+
+export function shortProbeLabel(value: string | { label?: string }) {
+  return withoutRegionSuffix(displayProbeLabel(value));
+}
+
 export function allProbes(node: NodeSnapshot | null | undefined) {
   return (node?.probes || []).slice().sort((left, right) => {
     const categoryDelta =
@@ -151,6 +161,40 @@ export function aggregateMetricEnergy(
     buckets.push({ empty: false, start: slotStart, end: slotEnd, value, tone: latencyTone(value) });
   }
   return buckets;
+}
+
+export type RibbonState = "normal" | "warn" | "bad" | "empty";
+export interface RibbonCell {
+  start: number;
+  state: RibbonState;
+  /** 柱高（0–1）：相对本线路基线的延迟，平时约一半高，越慢越高 */
+  height: number;
+  latency: number | null;
+  loss: number | null;
+}
+
+// 光带把延迟与丢包合成一条：颜色只表示“偏离本线路平时水平”，不用固定毫秒阈值，
+// 洛杉矶到国内 160 ms 的线路平时也保持灰色。基线取 24 格延迟的中位数。
+export function ribbonCells(latency: EnergyBucket[], loss: EnergyBucket[]): RibbonCell[] {
+  const answered = latency
+    .map((bucket) => bucket.value)
+    .filter((value): value is number => value != null && Number.isFinite(value))
+    .sort((a, b) => a - b);
+  const baseline = answered.length ? answered[Math.floor(answered.length / 2)] : null;
+  return latency.map((bucket, index) => {
+    const lost = loss[index]?.empty ? null : (loss[index]?.value ?? null);
+    const cell = { start: bucket.start, latency: bucket.value ?? null, loss: lost };
+    if (bucket.empty) return { ...cell, state: "empty", height: 0.3 };
+    // 有采样但全部无响应
+    if (bucket.value == null) return { ...cell, state: "bad", height: 1 };
+    const ratio = baseline ? bucket.value / baseline : 1;
+    const height = clamp(0.5 + (ratio - 1) * 1.4, 0.36, 1);
+    let state: RibbonState = "normal";
+    if ((lost ?? 0) >= 5 || ratio > 1.6) state = "bad";
+    else if ((lost ?? 0) >= 1 || (ratio > 1.25 && bucket.value - (baseline ?? 0) > 15))
+      state = "warn";
+    return { ...cell, state, height };
+  });
 }
 
 /** Loss over every attempted sample in the cells, the same weighting each cell uses. */

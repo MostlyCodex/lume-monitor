@@ -13,16 +13,29 @@ const props = defineProps<{
   kind: "latency" | "loss" | "rate";
   hours: number;
   theme: Theme;
+  /** 画在横轴下方、与曲线共用时间轴的丢包时段（每条线路一行） */
+  bands?: ChartSeries[];
 }>();
 
 const usable = computed(() =>
   props.series.filter((series) => series.points.some((point) => finite(point.y))),
 );
+// 丢包时段单独判断：线路完全不通时没有任何延迟样本，但丢包时段仍要画出来
+const usableBands = computed(() =>
+  (props.bands ?? []).filter((band) => band.points.some((point) => finite(point.y))),
+);
+const hasData = computed(() => usable.value.length > 0 || usableBands.value.length > 0);
 
 // 按容器实际宽度绘制、高度固定，避免手机上整张图等比缩小到无法阅读
 const root = ref<HTMLElement | null>(null);
 const width = ref(800);
-const height = 240;
+// 曲线区固定 240px；有丢包时段时在下方追加标题行与每条线路一行
+const plotHeight = 240;
+const BAND_ROW = 14;
+const bandsTop = plotHeight + 22;
+const height = computed(() =>
+  props.bands?.length ? bandsTop + props.bands.length * BAND_ROW + 4 : plotHeight,
+);
 // 窄屏（手机）下收窄右侧留白
 const compact = computed(() => width.value < 640);
 let resizeObserver: ResizeObserver | undefined;
@@ -47,7 +60,7 @@ onBeforeUnmount(() => {
 const xRange = computed(() => {
   let minX = Infinity,
     maxX = -Infinity;
-  for (const s of usable.value)
+  for (const s of [...usable.value, ...usableBands.value])
     for (const p of s.points)
       if (finite(p.x)) {
         minX = Math.min(minX, p.x);
@@ -180,7 +193,7 @@ const bounds = computed(() => {
 function tickLabel(val: number) {
   return `${Math.round(val / 1024 ** rateUnitIndex.value)}${axisUnit.value}`;
 }
-// 12px Geist 下各字符的近似宽度（数字为 tabular-nums 等宽）；SVG 文字不会换行，
+// 12px 界面字体下各字符的近似宽度（数字为 tabular-nums 等宽）；SVG 文字不会换行，
 // 纵轴宽度按最长刻度估算，保证单位完整显示、不被左边缘截断
 const GLYPH_WIDTH: Record<string, number> = { m: 10.5, M: 10, "%": 10.5, "/": 5, s: 6.5 };
 function labelWidth(label: string) {
@@ -210,9 +223,9 @@ function getX(val: number) {
 function getY(val: number) {
   const { minY, maxY } = bounds.value;
   return (
-    height -
+    plotHeight -
     padding.value.bottom -
-    ((val - minY) / (maxY - minY)) * (height - padding.value.top - padding.value.bottom)
+    ((val - minY) / (maxY - minY)) * (plotHeight - padding.value.top - padding.value.bottom)
   );
 }
 
@@ -253,7 +266,7 @@ function generateSmoothPath(
   }
   if (run.length) runs.push(run);
 
-  const baseLineY = height - padding.value.bottom;
+  const baseLineY = plotHeight - padding.value.bottom;
   let linePath = "",
     areaPath = "";
   for (const segment of runs) {
@@ -274,6 +287,38 @@ const renderedSeries = computed(() =>
     ...generateSmoothPath(s.points, s.gap),
   })),
 );
+
+// 丢包 ≥ 1% 的采样点各占半个采样间隔，相邻时段合并成一段
+const bandRows = computed(() => {
+  const { minX, maxX } = bounds.value;
+  return (props.bands ?? []).map((band, index) => {
+    const points = band.points.filter((p) => finite(p.x)).sort((a, b) => a.x - b.x);
+    const steps = points
+      .slice(1)
+      .map((p, i) => p.x - points[i].x)
+      .sort((a, b) => a - b);
+    const half = (steps[Math.floor(steps.length / 2)] ?? 60) / 2;
+    const segments: { x1: number; x2: number }[] = [];
+    for (const p of points) {
+      if (!finite(p.y) || p.y < 1) continue;
+      const start = Math.max(minX, p.x - half);
+      const end = Math.min(maxX, p.x + half);
+      const last = segments[segments.length - 1];
+      if (last && start <= last.x2) last.x2 = Math.max(last.x2, end);
+      else segments.push({ x1: start, x2: end });
+    }
+    return {
+      id: band.id,
+      label: band.label,
+      color: band.color,
+      y: bandsTop + index * BAND_ROW + BAND_ROW / 2,
+      segments: segments.map((seg) => ({
+        x1: getX(seg.x1),
+        x2: Math.max(getX(seg.x1) + 3, getX(seg.x2)),
+      })),
+    };
+  });
+});
 
 const yTicks = computed(() =>
   tickValues.value.map((val) => ({ y: getY(val), label: tickLabel(val) })),
@@ -333,26 +378,35 @@ function closest(points: ChartPoint[] | undefined, target: number) {
   return best;
 }
 
+// 每条选中的线路一行：数值 + 有丢包时附上丢包率（取最接近的原始采样）
 const activeTooltipData = computed(() => {
   if (hoveredX.value === null) return null;
   const target = hoveredX.value;
-  const rows = displayed.value.map((s) => {
-    const point = closest(s.points, target);
-    return {
-      id: s.id,
-      label: s.label,
-      color: s.color,
-      value: point && finite(point.y) ? formatValue(point.y) : "—",
-    };
-  });
-  const anchor = closest(displayed.value[0]?.points, target)?.x ?? target;
+  const merged = new Map(displayed.value.map((s) => [s.id, s.points]));
+  const bands = new Map((props.bands ?? []).map((band) => [band.id, band.points]));
+  const rows = props.series
+    .filter((s) => merged.has(s.id) || bands.get(s.id)?.some((point) => finite(point.y)))
+    .map((s) => {
+      const point = closest(merged.get(s.id), target);
+      const loss = closest(bands.get(s.id), target);
+      const value = point && finite(point.y) ? formatValue(point.y) : "—";
+      return {
+        id: s.id,
+        label: s.label,
+        color: s.color,
+        value:
+          loss && finite(loss.y) && loss.y > 0 ? `${value} · 丢包 ${formatLoss(loss.y)}` : value,
+      };
+    });
+  const reference = displayed.value[0]?.points ?? usableBands.value[0]?.points;
+  const anchor = closest(reference, target)?.x ?? target;
   return { time: formatTime(anchor, true), rows };
 });
 </script>
 
 <template>
   <div :id="id" ref="root" class="history-chart relative w-full overflow-hidden select-none">
-    <div v-if="usable.length" class="relative w-full">
+    <div v-if="hasData" class="relative w-full">
       <svg
         class="block w-full touch-pan-y"
         :width="width"
@@ -412,7 +466,7 @@ const activeTooltipData = computed(() => {
             v-for="(tick, idx) in xTicks"
             :key="idx"
             :x="tick.x"
-            :y="height - 8"
+            :y="plotHeight - 8"
             :text-anchor="idx === 0 ? 'start' : idx === xTicks.length - 1 ? 'end' : 'middle'"
           >
             {{ tick.label }}
@@ -435,13 +489,45 @@ const activeTooltipData = computed(() => {
           </g>
         </g>
 
+        <!-- 丢包时段：标题 + 每条线路一行，颜色圆点对应上方曲线 -->
+        <g v-if="bandRows.length" class="loss-bands">
+          <text :x="padding.left" :y="bandsTop - 6" class="fill-muted-foreground text-[11px]">
+            丢包时段
+          </text>
+          <g v-for="row in bandRows" :key="row.id" :data-band="row.id">
+            <circle :cx="padding.left - 10" :cy="row.y" r="3" :fill="row.color" />
+            <line
+              :x1="padding.left"
+              :x2="width - padding.right"
+              :y1="row.y"
+              :y2="row.y"
+              class="stroke-track"
+              stroke-width="4"
+              stroke-linecap="round"
+            />
+            <line
+              v-for="(seg, idx) in row.segments"
+              :key="idx"
+              :x1="seg.x1"
+              :x2="seg.x2"
+              :y1="row.y"
+              :y2="row.y"
+              class="stroke-status-bad"
+              stroke-width="6"
+              stroke-linecap="round"
+            >
+              <title>{{ row.label }} 出现丢包</title>
+            </line>
+          </g>
+        </g>
+
         <!-- 悬停指示垂线 -->
         <line
           v-if="hoveredX !== null"
           :x1="getX(hoveredX)"
           :y1="padding.top"
           :x2="getX(hoveredX)"
-          :y2="height - padding.bottom"
+          :y2="plotHeight - padding.bottom"
           class="stroke-foreground/60"
           stroke-width="1"
           stroke-dasharray="2 2"

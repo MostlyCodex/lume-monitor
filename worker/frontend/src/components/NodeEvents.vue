@@ -3,7 +3,6 @@ import { computed } from "vue";
 import type { HistoryEvent } from "../types";
 import { formatTime } from "../domain/format";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
-import { Badge } from "./ui/badge";
 
 const props = defineProps<{ events: HistoryEvent[]; hours: number }>();
 
@@ -13,7 +12,7 @@ const recentEvents = computed(() =>
 
 function dotClass(value: string) {
   if (value === "P1" || value === "critical") return "bg-status-bad";
-  if (value === "INFO" || value === "healthy") return "bg-status-ok";
+  if (value === "INFO" || value === "healthy") return "bg-muted-foreground/50";
   return "bg-status-warn";
 }
 </script>
@@ -22,7 +21,7 @@ function dotClass(value: string) {
   <Card id="detail-events">
     <CardHeader class="grid-cols-[1fr_auto] items-center">
       <CardTitle>运行时事件</CardTitle>
-      <Badge variant="outline" class="tabular-nums"> {{ recentEvents.length }} 条记录 </Badge>
+      <span class="text-[13px] text-muted-foreground">{{ recentEvents.length }} 条</span>
     </CardHeader>
 
     <CardContent>

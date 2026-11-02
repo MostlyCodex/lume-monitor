@@ -9,7 +9,7 @@ test.afterAll(async () => {
   server.closeAllConnections?.();
   await new Promise((resolve) => server.close(resolve));
 });
-async function pointAtChart(page, testInfo, id = "#loss-plot") {
+async function pointAtChart(page, testInfo, id = "#latency-plot") {
   const host = page.locator(id);
   await host.scrollIntoViewIfNeeded();
   const box = await host.boundingBox();
@@ -26,7 +26,7 @@ async function pointAtChart(page, testInfo, id = "#loss-plot") {
   return tooltip;
 }
 
-test("failure-only histories keep the loss chart and selection works with duplicate labels", async ({ page }, testInfo) => {
+test("failure-only histories keep the loss bands and selection works with duplicate labels", async ({ page }, testInfo) => {
   const label = '<img src=x onerror="window.injected=true">';
   await page.route("**/api/v1/dashboard/latest*", async (route) => {
     const response = await route.fetch(), data = await response.json();
@@ -42,9 +42,11 @@ test("failure-only histories keep the loss chart and selection works with duplic
   });
   await page.goto(`${origin}/dashboard/`, { waitUntil: "networkidle" });
   await page.locator(".node-card").first().click();
-  // 没有任何成功的延迟样本时延迟图显示空状态，丢包率图照常绘制全部 5 条线路
-  await expect(page.locator("#latency-empty")).toHaveText("暂无延迟历史");
-  await expect(page.locator("#loss-plot svg")).toBeVisible();
+  // 没有任何成功的延迟样本时不画曲线，但图表照常显示 5 条线路的丢包时段
+  await expect(page.locator("#latency-empty")).toHaveCount(0);
+  await expect(page.locator("#latency-plot svg")).toBeVisible();
+  await expect(page.locator("#latency-plot .line-layer path[stroke]")).toHaveCount(0);
+  await expect(page.locator("#latency-plot .loss-bands [data-band]")).toHaveCount(5);
   const tooltip = await pointAtChart(page, testInfo);
   await expect(tooltip.locator(".plot-tooltip-row")).toHaveCount(5);
   await expect(tooltip).toContainText("100%");
@@ -52,10 +54,10 @@ test("failure-only histories keep the loss chart and selection works with duplic
   await expect(tooltip.locator("img")).toHaveCount(0);
   expect(await page.evaluate(() => window.injected)).toBeUndefined();
   await page.locator('[data-probe-action="none"]').click();
-  await expect(page.locator("#loss-empty")).toHaveText("未选择要显示的线路");
-  await expect(page.locator("#loss-plot svg")).toHaveCount(0);
+  await expect(page.locator("#latency-empty")).toHaveText("未选择要显示的线路");
+  await expect(page.locator("#latency-plot svg")).toHaveCount(0);
   await page.locator(".detail-probe-card").first().click();
-  await expect(page.locator("#loss-plot svg")).toBeVisible();
+  await expect(page.locator("#latency-plot svg")).toBeVisible();
   await pointAtChart(page, testInfo);
   await expect(tooltip.locator(".plot-tooltip-row")).toHaveCount(1);
   await expect(tooltip).toContainText("100%");

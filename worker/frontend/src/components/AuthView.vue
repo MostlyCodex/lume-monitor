@@ -32,10 +32,7 @@ async function copyCommand() {
 </script>
 
 <template>
-  <main
-    id="auth-view"
-    class="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6"
-  >
+  <main id="auth-view" class="flex min-h-screen items-center justify-center p-4 sm:p-6">
     <Card class="w-full max-w-sm">
       <CardHeader>
         <BrandLockup brand="Lume" class="mb-4" />

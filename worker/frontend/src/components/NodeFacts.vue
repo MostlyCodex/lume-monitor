@@ -39,14 +39,14 @@ const facts = computed(() => {
       <CardTitle>节点规格</CardTitle>
     </CardHeader>
     <CardContent>
-      <dl id="detail-facts" class="grid grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-3">
+      <dl id="detail-facts" class="flex flex-col gap-2.5 text-sm">
         <div
           v-for="fact in facts"
           :key="fact.label"
-          class="detail-fact flex min-w-0 flex-col gap-1"
+          class="detail-fact grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] gap-4"
         >
-          <dt class="text-sm text-muted-foreground">{{ fact.label }}</dt>
-          <dd class="break-all text-sm font-medium tabular-nums">{{ fact.value }}</dd>
+          <dt class="text-muted-foreground">{{ fact.label }}</dt>
+          <dd class="break-all font-medium">{{ fact.value }}</dd>
         </div>
       </dl>
     </CardContent>

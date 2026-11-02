@@ -29,7 +29,7 @@ test("public demo works without authentication or telemetry requests", async ({ 
   await expect(page.locator("#demo-notice")).toContainText("虚构数据");
   await page.locator('.node-card[data-node="transit-la"]').click();
   await expect(page.locator("#node-detail")).toBeVisible();
-  // 服务只显示名称与状态色圆点，状态文字保留在 aria-label / title 中
+  // 服务只显示状态图标与名称，状态文字保留在 aria-label / title 中
   await expect(page.locator(".detail-service")).toHaveText(["nftables"]);
   await expect(page.locator(".detail-service")).toHaveAttribute("aria-label", /运行正常/);
   await expect(page.locator("#latency-plot svg")).toBeVisible();
@@ -83,39 +83,44 @@ async function expectNoHorizontalOverflow(page) {
   expect(geometry.bodyWidth).toBeLessThanOrEqual(geometry.viewport + 1);
 }
 
-// 卡片是一个整体：没有内嵌面板、国旗、页脚；四个区块以分割线隔开；
-// 每个探测点两条 24 格（每格 1 小时）的格栅（延迟、丢包率），两列等分卡片宽度；格高固定，格宽随列宽等分。
+// 卡片是一个整体：没有内嵌面板、国旗、页脚；头部单行（名称 | 地区、在线时长），资源区以一条分割线隔开。
+// 每条线路一行：名称 | 24 格光带（每格 1 小时）| 延迟 | 丢包率，四项等距；光带格宽等分，格高表示相对延迟。
 async function expectCompactNodeCards(page) {
   const firstCard = page.locator(".node-card").first();
   await expect(firstCard.locator(".node-network-row")).toHaveCount(2);
   // 全部探测都上首页：三网 + 两条节点互联
   await expect(firstCard.locator(".probe-row")).toHaveCount(5);
-  // 节点互联只显示目标节点名称；名称在延迟格栅左上角，卡片顶部有“延迟 / 丢包”列标题
+  // 节点互联只显示目标节点名称
   await expect(firstCard.locator(".probe-row").last().locator(".probe-name")).toHaveText("Egress-Las-Vegas");
-  await expect(firstCard.locator(".probe-columns")).toHaveText(/延迟\s*丢包/);
   await expect(firstCard.locator(".node-status")).toHaveText(/^\s*在线\s+\d/);
-  await expect(firstCard.locator(".probe-row").last().locator('[data-metric="loss"]')).toHaveCount(1);
+  await expect(firstCard.locator('.probe-row [data-value="latency"]')).toHaveCount(5);
+  await expect(firstCard.locator('.probe-row [data-value="loss"]')).toHaveCount(5);
   await expect(firstCard.locator('.probe-row [data-metric="latency"] .energy-cell')).toHaveCount(5 * 24);
-  await expect(firstCard.locator('.probe-row [data-metric="loss"] .energy-cell')).toHaveCount(5 * 24);
-  // 两列格栅等宽，且合起来铺满网络质量区，不留大块空白
-  const grids = await firstCard.locator(".probe-row").first().evaluate((row) => {
-    const [latency, loss] = [...row.querySelectorAll("[data-metric]")].map((grid) => grid.getBoundingClientRect());
-    const area = row.getBoundingClientRect();
-    return { latencyWidth: latency.width, lossWidth: loss.width, start: latency.left - area.left, end: area.right - loss.right };
+  await expect(firstCard.locator('[data-metric="loss"]')).toHaveCount(0);
+  // 四项之间的间距相同
+  const gaps = await firstCard.locator(".probe-row").first().evaluate((row) => {
+    const boxes = [...row.children].map((child) => child.getBoundingClientRect());
+    return boxes.slice(1).map((box, index) => box.left - boxes[index].right);
   });
-  expect(Math.abs(grids.latencyWidth - grids.lossWidth)).toBeLessThanOrEqual(1);
-  expect(grids.start).toBeLessThanOrEqual(1);
-  expect(grids.end).toBeLessThanOrEqual(1);
-  // 所有行的延迟格栅左对齐
-  const latencyLeft = await firstCard
-    .locator('.probe-row [data-metric="latency"]')
-    .evaluateAll((grids) => [...new Set(grids.map((grid) => Math.round(grid.getBoundingClientRect().left)))]);
-  expect(latencyLeft).toHaveLength(1);
+  expect(gaps).toHaveLength(3);
+  expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThanOrEqual(1);
+  // 同一张卡片内所有行的光带左右对齐、行高一致
+  const ribbons = await firstCard.locator('.probe-row [data-metric="latency"]').evaluateAll((grids) => ({
+    lefts: [...new Set(grids.map((grid) => Math.round(grid.getBoundingClientRect().left)))],
+    rights: [...new Set(grids.map((grid) => Math.round(grid.getBoundingClientRect().right)))],
+  }));
+  expect(ribbons.lefts).toHaveLength(1);
+  expect(ribbons.rights).toHaveLength(1);
+  const rowHeights = await firstCard
+    .locator(".probe-row")
+    .evaluateAll((rows) => [...new Set(rows.map((row) => Math.round(row.getBoundingClientRect().height)))]);
+  expect(rowHeights).toHaveLength(1);
   const layout = await page.locator(".node-card").evaluateAll((cards) =>
     cards.map((card) => {
       const cardRect = card.getBoundingClientRect();
       const values = [...card.querySelectorAll(".node-network-row span")];
       const cells = [...card.querySelectorAll(".energy-cell")].map((cell) => cell.getBoundingClientRect());
+      const ribbon = card.querySelector('[data-metric="latency"]')?.getBoundingClientRect();
       return {
         height: cardRect.height,
         titleSize: parseFloat(getComputedStyle(card.querySelector(".node-title")).fontSize),
@@ -134,17 +139,18 @@ async function expectCompactNodeCards(page) {
         }).length,
         graphics: card.querySelectorAll("svg, img").length,
         footerText: /前更新|线路中转机/.test(card.textContent),
-        cellHeights: [...new Set(cells.map((cell) => cell.height))],
+        cellHeights: cells.map((cell) => cell.height),
+        ribbonHeight: ribbon?.height ?? 0,
         cellWidths: cells.map((cell) => cell.width),
-        dividers: [...card.querySelectorAll("section")].filter(
+        dividers: [...card.querySelectorAll("section, footer")].filter(
           (section) => parseFloat(getComputedStyle(section).borderTopWidth) > 0,
         ).length,
         probeText: card.querySelector(".probe-row")?.parentElement?.parentElement?.textContent ?? "",
       };
     }),
   );
-  expect(layout[0].dividers).toBe(3);
-  const maxHeight = page.viewportSize().width <= 760 ? 460 : 480;
+  expect(layout[0].dividers).toBe(1);
+  const maxHeight = page.viewportSize().width <= 760 ? 420 : 440;
   for (const card of layout) {
     expect(card.height).toBeLessThan(maxHeight);
     expect(card.titleSize).toBeGreaterThanOrEqual(16);
@@ -153,7 +159,9 @@ async function expectCompactNodeCards(page) {
     expect(card.graphics).toBe(0);
     expect(card.footerText).toBe(false);
     if (card.cellWidths.length) {
-      expect(card.cellHeights).toEqual([14]);
+      // 格高在光带高度的 30%–100% 之间
+      expect(Math.max(...card.cellHeights)).toBeLessThanOrEqual(card.ribbonHeight + 0.5);
+      expect(Math.min(...card.cellHeights)).toBeGreaterThanOrEqual(card.ribbonHeight * 0.3 - 0.5);
       expect(Math.min(...card.cellWidths)).toBeGreaterThanOrEqual(2);
       expect(Math.max(...card.cellWidths) - Math.min(...card.cellWidths)).toBeLessThanOrEqual(1);
     }
@@ -197,17 +205,20 @@ test("fleet page keeps its visual and responsive contract", async ({ page }, tes
   await expect(page.locator("#settings-button")).toHaveCount(0);
   await expect(page.locator("#summary-strip")).toHaveCount(0);
   await expect(page.locator("#fleet-view")).not.toContainText(/拖动可调整顺序|节点$/);
+  // 顶栏吸顶、透明，只做背景模糊，让页面背景的光晕连续透出
   const header = await page.locator("header").first().evaluate((element) => {
     const style = getComputedStyle(element);
-    return { backdrop: style.backdropFilter, background: style.backgroundColor };
+    return { position: style.position, backdrop: style.backdropFilter, background: style.backgroundColor };
   });
-  expect(header.backdrop).toBe("none");
-  expect(header.background).not.toMatch(/rgba(.*,s*0?.d+)$/);
-  // 搜索框位于右侧且不再占满整行（手机竖屏除外）
-  const search = await page.locator("#node-search").boundingBox();
-  const grid = await page.locator("#node-grid").boundingBox();
-  expect(Math.abs(search.x + search.width - (grid.x + grid.width))).toBeLessThanOrEqual(1);
-  if (page.viewportSize().width >= 640) expect(search.width).toBeLessThanOrEqual(260);
+  expect(header.position).toBe("sticky");
+  expect(header.backdrop).toMatch(/blur/);
+  expect(header.background).toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+  // 搜索框在顶栏右侧、宽度有限；手机竖屏不显示
+  if (page.viewportSize().width >= 640) {
+    const search = await page.locator("#node-search").boundingBox();
+    expect(search.width).toBeLessThanOrEqual(260);
+    expect(search.x).toBeGreaterThan(page.viewportSize().width / 2);
+  } else await expect(page.locator("#node-search")).toBeHidden();
 
   await focusByKeyboard(page, ".node-card");
   const focusRing = await page.evaluate(() => getComputedStyle(document.activeElement).boxShadow);
@@ -229,12 +240,11 @@ test("node detail renders charts, color keys and mobile controls", async ({ page
   await page.locator(".node-card").first().click();
   await expect(page.locator("#node-detail")).toBeVisible();
   await expect(page.locator("#latency-plot svg")).toBeVisible();
-  await expect(page.locator("#loss-plot svg")).toBeVisible();
   await expect(page.locator("#traffic-plot svg")).toBeVisible();
   await expect(page.locator(".detail-probe-card")).toHaveCount(5);
-  // 延迟图和丢包率图都画全部 5 条线路（TCP 的丢包是超时未完成的握手）
+  // 延迟曲线画全部 5 条线路，横轴下方每条线路一行丢包时段（TCP 的丢包是超时未完成的握手）
   await expect(page.locator("#latency-plot .line-layer path[stroke]")).toHaveCount(5);
-  await expect(page.locator("#loss-plot .line-layer path[stroke]")).toHaveCount(5);
+  await expect(page.locator("#latency-plot .loss-bands [data-band]")).toHaveCount(5);
   await expect(page.locator("#node-detail")).not.toContainText(/建连失败|可达性/);
   await expect(page.locator("#counter-section")).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
@@ -254,8 +264,9 @@ test("node detail renders charts, color keys and mobile controls", async ({ page
   const focusRing = await page.evaluate(() => getComputedStyle(document.activeElement).boxShadow);
   expect(focusRing).not.toBe("none");
 
-  // 详情顶部卡片不显示国旗，保持紧凑
-  await expect(page.locator("#detail-hero svg, #detail-hero img")).toHaveCount(0);
+  // 详情顶部不显示国旗，保持紧凑；唯一的图形是服务的状态图标
+  await expect(page.locator("#detail-hero img")).toHaveCount(0);
+  await expect(page.locator("#detail-hero svg")).toHaveCount(await page.locator("#detail-hero .detail-service svg").count());
   const narrow = page.viewportSize().width < 640;
   if (narrow) {
     const hero = await page.locator("#detail-hero").boundingBox();
@@ -270,10 +281,10 @@ test("node detail renders charts, color keys and mobile controls", async ({ page
   // 图表按容器宽度绘制，手机上不会整体缩小；纵轴刻度为整数加单位，单位完整显示不换行
   const plot = await page.locator("#latency-plot svg").boundingBox();
   expect(plot.height).toBeGreaterThanOrEqual(220);
-  for (const id of ["#latency-plot", "#loss-plot", "#traffic-plot"]) {
+  for (const id of ["#latency-plot", "#traffic-plot"]) {
     const axis = await page.locator(`${id} svg`).evaluate((svg) => {
       const frame = svg.getBoundingClientRect();
-      const labels = [...svg.querySelectorAll("text")].filter((text) => !text.closest(".x-axis"));
+      const labels = [...svg.querySelectorAll("text")].filter((text) => !text.closest(".x-axis, .loss-bands"));
       return {
         clipped: labels.some((text) => text.getBoundingClientRect().left < frame.left - 0.5),
         axisWidth: Math.max(...labels.map((text) => text.getBoundingClientRect().right)) - frame.left,
@@ -300,18 +311,21 @@ test("node detail renders charts, color keys and mobile controls", async ({ page
   await attachScreenshot(page, testInfo, `${testInfo.project.name}-detail-dark`);
 });
 
-test("probe chips show their state immediately and drive both latency and loss charts", async ({ page }, testInfo) => {
+test("probe chips show their state immediately and drive the latency curves and loss bands", async ({ page }, testInfo) => {
   await openDashboard(page);
   await page.locator(".node-card").first().click();
   // 点击后指针仍停在按钮上（触屏上悬停状态会一直保留），状态也必须立即正确显示
   const press = (locator) => (testInfo.project.use.hasTouch ? locator.tap() : locator.click());
 
   const chip = page.locator(".detail-probe-card").first();
+  const swatchColor = () => chip.locator(".detail-probe-swatch").evaluate((element) => getComputedStyle(element).backgroundColor);
+  const selectedColor = await swatchColor();
   await press(chip);
   await expect(chip).toHaveAttribute("aria-pressed", "false");
-  await expect.poll(() => chip.evaluate((element) => Number(getComputedStyle(element).opacity))).toBeLessThan(0.7);
+  // 未选中的线路色块立即变灰
+  await expect.poll(swatchColor).not.toBe(selectedColor);
   await expect(page.locator("#latency-plot .line-layer path[stroke]")).toHaveCount(4);
-  await expect(page.locator("#loss-plot .line-layer path[stroke]")).toHaveCount(4);
+  await expect(page.locator("#latency-plot .loss-bands [data-band]")).toHaveCount(4);
   // 探测点按钮没有外框
   expect(
     await page.locator(".detail-probe-card").evaluateAll((elements) =>
@@ -321,13 +335,12 @@ test("probe chips show their state immediately and drive both latency and loss c
 
   await press(page.locator('[data-probe-action="none"]'));
   await expect(page.locator("#latency-empty")).toHaveText("未选择要显示的线路");
-  await expect(page.locator("#loss-empty")).toHaveText("未选择要显示的线路");
   await press(page.locator('[data-probe-action="all"]'));
   await expect(page.locator("#latency-plot svg")).toBeVisible();
-  await expect(page.locator("#loss-plot svg")).toBeVisible();
+  await expect(page.locator("#latency-plot .loss-bands [data-band]")).toHaveCount(5);
 });
 
-test("a node with a single probe still shows both grids and the loss chart", async ({ page }) => {
+test("a node with a single probe still shows its ribbon, loss value and loss band", async ({ page }) => {
   await page.route("**/api/v1/dashboard/latest*", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
@@ -337,8 +350,9 @@ test("a node with a single probe still shows both grids and the loss chart", asy
   await openDashboard(page);
   const card = page.locator(".node-card").first();
   await expect(card.locator(".probe-row")).toHaveCount(1);
-  await expect(card.locator('.probe-row [data-metric="loss"]')).toHaveCount(1);
+  await expect(card.locator('.probe-row [data-metric="latency"]')).toHaveCount(1);
+  await expect(card.locator('.probe-row [data-value="loss"]')).toHaveCount(1);
   await card.click();
   await expect(page.locator("#latency-plot svg")).toBeVisible();
-  await expect(page.locator("#detail-loss")).toHaveCount(1);
+  await expect(page.locator("#latency-plot .loss-bands [data-band]")).toHaveCount(1);
 });

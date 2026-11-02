@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { normalizeLayout } from "../frontend/src/domain/layout";
-import { displayNodes } from "../frontend/src/domain/nodes";
+import { displayNodes, nodeRegion } from "../frontend/src/domain/nodes";
 import { aggregateMetricEnergy } from "../frontend/src/domain/probes";
 import { trafficSummary } from "../frontend/src/domain/traffic";
-import type { HistorySnapshot, LatestSnapshot, Probe } from "../frontend/src/types";
+import type {
+  HistorySnapshot,
+  LatestSnapshot,
+  Probe,
+} from "../frontend/src/types";
 
 describe("frontend data boundaries", () => {
   it("keeps only a valid node order and drops legacy display overrides", () => {
@@ -25,7 +29,9 @@ describe("frontend data boundaries", () => {
           { id: "b", label: "B", order: 2 },
         ],
       },
-      nodes: [{ id: "a", label: "A", online: true, metrics: { cpu_percent: 12 } }],
+      nodes: [
+        { id: "a", label: "A", online: true, metrics: { cpu_percent: 12 } },
+      ],
     };
     const before = JSON.stringify(latest);
     const nodes = displayNodes(
@@ -39,9 +45,35 @@ describe("frontend data boundaries", () => {
     expect(JSON.stringify(latest)).toBe(before);
   });
   it("shows cycle traffic only and leaves it unknown until the Agent reports it", () => {
-    expect(trafficSummary({ network_valid: true })).toEqual({ label: "周期流量", rx: "—", tx: "—" });
-    expect(trafficSummary({ network_valid: false, traffic_cycle: { rx_bytes: 1024, tx_bytes: 0 } }).rx).toBe("—");
-    expect(trafficSummary({ network_valid: true, traffic_cycle: { rx_bytes: 1024, tx_bytes: 0 } }).rx).not.toBe("—");
+    expect(trafficSummary({ network_valid: true })).toEqual({
+      label: "周期流量",
+      rx: "—",
+      tx: "—",
+      total: "—",
+    });
+    expect(
+      trafficSummary({
+        network_valid: true,
+        traffic_cycle: { rx_bytes: 1024, tx_bytes: 1024 },
+      }).total,
+    ).toBe(
+      trafficSummary({
+        network_valid: true,
+        traffic_cycle: { rx_bytes: 2048, tx_bytes: 0 },
+      }).rx,
+    );
+    expect(
+      trafficSummary({
+        network_valid: false,
+        traffic_cycle: { rx_bytes: 1024, tx_bytes: 0 },
+      }).rx,
+    ).toBe("—");
+    expect(
+      trafficSummary({
+        network_valid: true,
+        traffic_cycle: { rx_bytes: 1024, tx_bytes: 0 },
+      }).rx,
+    ).not.toBe("—");
   });
   it("does not count null latency or loss as a successful zero measurement", () => {
     const probe: Probe = { name: "carrier", kind: "tcp", samples: 5 };
@@ -70,10 +102,30 @@ describe("frontend data boundaries", () => {
       ],
     };
     expect(
-      aggregateMetricEnergy("a", probe, "latency", history, history.server_time).at(-1)?.value,
+      aggregateMetricEnergy(
+        "a",
+        probe,
+        "latency",
+        history,
+        history.server_time,
+      ).at(-1)?.value,
     ).toBe(120);
     expect(
-      aggregateMetricEnergy("a", probe, "loss", history, history.server_time).at(-1)?.empty,
+      aggregateMetricEnergy(
+        "a",
+        probe,
+        "loss",
+        history,
+        history.server_time,
+      ).at(-1)?.empty,
     ).toBe(true);
+  });
+});
+
+describe("node region", () => {
+  it("shows only the configured region and leaves it blank otherwise", () => {
+    expect(nodeRegion({ region: "广州" })).toBe("广州");
+    expect(nodeRegion({ region: "unspecified" })).toBe("");
+    expect(nodeRegion({ region: "" })).toBe("");
   });
 });

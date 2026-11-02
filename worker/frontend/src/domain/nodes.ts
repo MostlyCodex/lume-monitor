@@ -30,3 +30,12 @@ export function displayNodes(
         },
     );
 }
+
+/**
+ * 节点地区只显示配置里填写的地区（lumectl 的“国家 / 城市”），没填就留空。
+ * 不用 country：那是 Cloudflare 按上报来源 IP 推断的国家代码，经代理上报的节点会显示成代理所在地。
+ */
+export function nodeRegion(node: Pick<NodeSnapshot, "region">) {
+  const region = String(node.region ?? "").trim();
+  return region === "unspecified" ? "" : region;
+}

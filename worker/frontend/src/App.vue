@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { createDashboardApi } from "./services/dashboardApi";
 import { DEMO_MODE } from "./runtime";
 import { useDashboard } from "./composables/useDashboard";
@@ -40,6 +40,7 @@ watch(
   },
 );
 
+const search = ref("");
 const nodes = computed(() => displayNodes(latest.value, layout.value));
 const selected = computed(() => nodes.value.find((node) => node.id === selectedId.value));
 
@@ -49,13 +50,15 @@ function reorder(order: string[]) {
 </script>
 
 <template>
-  <div class="min-h-screen bg-background font-sans text-foreground antialiased">
+  <div class="min-h-screen font-sans text-foreground antialiased">
     <!-- 视图路由 -->
     <LoadingView v-if="view === 'loading'" />
     <AuthView v-else-if="view === 'auth'" @notify="notify" />
 
     <div v-else id="dashboard-view" class="flex min-h-screen flex-col">
       <DashboardHeader
+        v-model:search="search"
+        :show-search="!selected"
         :refreshed-at="latest?.server_time"
         :refreshing="refreshing"
         :demo="DEMO_MODE"
@@ -64,12 +67,12 @@ function reorder(order: string[]) {
         @logout="logout"
       />
 
-      <main class="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <main class="mx-auto w-full max-w-7xl flex-1 space-y-5 px-4 pb-12 pt-3 sm:px-6 lg:px-8">
         <!-- 演示模式提示栏 -->
         <aside
           v-if="DEMO_MODE"
           id="demo-notice"
-          class="flex items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground"
+          class="glass flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm text-muted-foreground"
           aria-label="演示说明"
         >
           <span>公开演示环境（虚构数据），可随意点击节点体验链路图表与控制面板。</span>
@@ -79,7 +82,7 @@ function reorder(order: string[]) {
             target="_blank"
             rel="noreferrer"
           >
-            部署自己的 Lume →
+            部署自己的 Lume
           </a>
         </aside>
 
@@ -89,6 +92,7 @@ function reorder(order: string[]) {
           :nodes="nodes"
           :history="fleetHistory"
           :now="latest?.server_time ?? 0"
+          :search="search"
           @open="openNode"
           @reorder="reorder"
         />
@@ -106,8 +110,6 @@ function reorder(order: string[]) {
           @range="setHours"
         />
       </main>
-
-      <footer class="mt-2 h-6 border-t" aria-hidden="true"></footer>
     </div>
 
     <!-- 全局 Floating Toast 提示 -->

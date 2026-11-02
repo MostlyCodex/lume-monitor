@@ -29,13 +29,15 @@ async function expectCompactFacts(page) {
     const cells = [...element.querySelectorAll(".detail-fact")].map((cell) => cell.getBoundingClientRect());
     return {
       firstRowCells: cells.filter((cell) => Math.abs(cell.top - cells[0].top) < 1).length,
+      valueLefts: new Set([...element.querySelectorAll("dd")].map((value) => Math.round(value.getBoundingClientRect().left))).size,
       height: element.getBoundingClientRect().height,
       overflowingValues: [...element.querySelectorAll("dd")].filter((value) => value.scrollWidth > value.clientWidth + 1).length,
       pageOverflow: document.documentElement.scrollWidth > innerWidth + 1,
     };
   });
-  // 手机竖屏是单列；更宽的视口至少两列
-  expect(geometry.firstRowCells).toBeGreaterThanOrEqual(page.viewportSize().width < 640 ? 1 : 2);
+  // 每项一行“名称 | 数值”，所有数值左对齐成一列
+  expect(geometry.firstRowCells).toBe(1);
+  expect(geometry.valueLefts).toBe(1);
   expect(geometry.height).toBeLessThan(page.viewportSize().width < 640 ? 760 : 440);
   expect(geometry.overflowingValues).toBe(0);
   expect(geometry.pageOverflow).toBe(false);

@@ -1,19 +1,13 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type {
-  EnergyBucket,
-  HistorySnapshot,
-  MetricKind,
-  NodeSnapshot,
-  Probe,
-  Tone,
-} from "../types";
+import type { HistorySnapshot, NodeSnapshot, Probe } from "../types";
 import {
   aggregateMetricEnergy,
   displayProbeLabel,
-  latencyTone,
-  lossTone,
+  shortProbeLabel,
+  ribbonCells,
   windowLoss,
+  type RibbonCell,
 } from "../domain/probes";
 import { formatLoss, formatTime } from "../domain/format";
 
@@ -24,114 +18,77 @@ const props = defineProps<{
   now: number;
 }>();
 
-const latencyBuckets = computed(() =>
-  aggregateMetricEnergy(props.node.id, props.probe, "latency", props.history, props.now),
-);
 const lossBuckets = computed(() =>
   aggregateMetricEnergy(props.node.id, props.probe, "loss", props.history, props.now),
 );
+const cells = computed(() =>
+  ribbonCells(
+    aggregateMetricEnergy(props.node.id, props.probe, "latency", props.history, props.now),
+    lossBuckets.value,
+  ),
+);
 
-// 延迟取最新一轮；丢包取与格栅相同口径的 24 小时加权值，没有历史时退回最新一轮
+// 延迟取最新一轮，数值不着色；异常只由光带的颜色表达
 const latency = computed(() =>
-  props.probe.success && props.probe.duration_ms != null ? props.probe.duration_ms : null,
-);
-const loss = computed(
-  () => windowLoss(lossBuckets.value) ?? props.probe.packet_loss_percent ?? null,
+  props.probe.success && props.probe.duration_ms != null
+    ? Math.round(props.probe.duration_ms)
+    : null,
 );
 
-const metrics = computed(() => [
-  {
-    kind: "latency" as MetricKind,
-    label: "延迟",
-    value: latency.value == null ? "— ms" : `${Math.round(latency.value)} ms`,
-    tone: latencyTone(latency.value) as Tone | "empty",
-    buckets: latencyBuckets.value,
-  },
-  {
-    kind: "loss" as MetricKind,
-    label: "丢包",
-    value: loss.value == null ? "—" : formatLoss(loss.value),
-    tone: (loss.value == null ? "empty" : lossTone(loss.value)) as Tone | "empty",
-    buckets: lossBuckets.value,
-  },
-]);
+// 丢包率取光带覆盖的 24 小时，按每次采样加权；同样不着色
+const loss = computed(() => windowLoss(lossBuckets.value));
 
-function bucketTitle(bucket: EnergyBucket, kind: MetricKind) {
-  const time = formatTime(bucket.start, true);
-  if (bucket.empty) return `${time} · 无采样`;
-  if (kind === "latency") {
-    return bucket.value == null
-      ? `${time} · 无响应`
-      : `${time} · 延迟 ${Math.round(bucket.value)} ms`;
-  }
-  const lost = bucket.attempted
-    ? ` · 丢失 ${Math.round(Math.max(0, bucket.attempted - (bucket.successful ?? 0)))}/${Math.round(bucket.attempted)} 次握手`
-    : "";
-  return `${time} · 丢包 ${formatLoss(bucket.value)}${lost}`;
+function cellTitle(cell: RibbonCell) {
+  const time = formatTime(cell.start, true);
+  if (cell.state === "empty") return `${time} · 无采样`;
+  if (cell.latency == null) return `${time} · 无响应`;
+  const loss = cell.loss ? ` · 丢包 ${formatLoss(cell.loss)}` : "";
+  return `${time} · ${Math.round(cell.latency)} ms${loss}`;
 }
 
-// 绿色数值保持正文色，只有偏离正常时才着色
-const textClass: Record<Tone | "empty", string> = {
-  green: "text-foreground",
-  blue: "text-status-info",
-  yellow: "text-status-warn",
-  red: "text-status-bad",
-  empty: "text-muted-foreground",
-};
-
-const cellClass: Record<Tone | "empty", string> = {
-  green: "bg-status-ok",
-  blue: "bg-status-info",
-  yellow: "bg-status-warn",
-  red: "bg-status-bad",
-  empty: "bg-muted",
+const cellClass: Record<RibbonCell["state"], string> = {
+  normal: "bg-bar",
+  warn: "bg-status-warn",
+  bad: "bg-status-bad",
+  empty: "bg-transparent ring-1 ring-inset ring-border",
 };
 </script>
 
 <template>
-  <!-- 延迟、丢包两列等分卡片宽度，每列 24 格（每格 1 小时）随列宽拉伸、格高固定；
-       上行：延迟列左侧为探测名称、右侧为延迟值，丢包列右侧为丢包率；下行为两条格栅 -->
-  <div class="probe-row grid grid-cols-2 items-end gap-x-4 gap-y-1 text-xs">
-    <div class="col-start-1 row-start-1 flex min-w-0 items-baseline justify-between gap-1.5">
-      <span
-        class="probe-name min-w-0 truncate text-[11px] leading-none text-muted-foreground"
-        :title="displayProbeLabel(probe)"
-      >
-        {{ displayProbeLabel(probe) }}
-      </span>
-      <span
-        class="shrink-0 font-medium leading-none tabular-nums"
-        :class="textClass[metrics[0].tone]"
-        data-value="latency"
-      >
-        {{ metrics[0].value }}
-      </span>
-    </div>
+  <!-- 名称 | 24 小时光带（每柱 1 小时）| 当前延迟 | 24 小时丢包率，四项等距。
+       列宽来自卡片的共享网格（subgrid）：名称、数值列按本卡最宽的内容收紧，光带占满其余空间 -->
+  <div class="probe-row col-span-full grid h-[22px] grid-cols-subgrid items-center">
     <span
-      class="col-start-2 row-start-1 justify-self-end font-medium leading-none tabular-nums"
-      :class="textClass[metrics[1].tone]"
-      data-value="loss"
+      class="probe-name truncate text-[13px] text-muted-foreground"
+      :title="displayProbeLabel(probe)"
     >
-      {{ metrics[1].value }}
+      {{ shortProbeLabel(probe) }}
     </span>
-
-    <!-- 格子等宽填满所在列，格高与间距固定 -->
     <div
-      v-for="metric in metrics"
-      :key="metric.kind"
-      class="row-start-2 flex min-w-0 gap-[2px]"
-      :class="metric.kind === 'loss' ? 'col-start-2' : 'col-start-1'"
-      :data-metric="metric.kind"
-      :aria-label="`24 小时${metric.label}`"
+      class="flex h-full items-end justify-between gap-[2px]"
+      data-metric="latency"
+      :aria-label="`${displayProbeLabel(probe)} 过去 24 小时`"
     >
-      <div
-        v-for="(bucket, idx) in metric.buckets"
-        :key="bucket.start || idx"
-        class="energy-cell h-3.5 min-w-[2px] flex-1 rounded-[1px]"
-        :class="cellClass[bucket.tone]"
-        :data-tone="bucket.tone"
-        :title="bucketTitle(bucket, metric.kind)"
-      ></div>
+      <i
+        v-for="(cell, idx) in cells"
+        :key="cell.start || idx"
+        class="energy-cell block min-w-0.5 max-w-[7px] flex-1 rounded-[2px]"
+        :class="cellClass[cell.state]"
+        :style="{ height: `${Math.round(cell.height * 100)}%` }"
+        :data-tone="cell.state"
+        :title="cellTitle(cell)"
+      ></i>
     </div>
+    <span class="text-right text-[15px] font-medium tabular-nums leading-none" data-value="latency">
+      {{ latency ?? "—"
+      }}<small class="ml-0.5 text-[11px] font-normal text-muted-foreground/70">ms</small>
+    </span>
+    <span
+      class="text-right text-[13px] tabular-nums leading-none text-muted-foreground"
+      data-value="loss"
+      :title="`过去 24 小时丢包率`"
+    >
+      {{ loss == null ? "—" : formatLoss(loss) }}
+    </span>
   </div>
 </template>

@@ -2,23 +2,22 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import Sortable from "sortablejs";
 import type { HistorySnapshot, NodeSnapshot } from "../types";
-import AppIcon from "./AppIcon.vue";
 import NodeCard from "./NodeCard.vue";
 
 const props = defineProps<{
   nodes: NodeSnapshot[];
   history: HistorySnapshot | null;
   now: number;
+  search: string;
 }>();
 
 const emit = defineEmits<{ open: [id: string]; reorder: [order: string[]] }>();
-const search = ref("");
 const grid = ref<HTMLElement | null>(null);
 let sortable: Sortable | undefined;
 let restoreBefore: Node | null = null;
 
 const filtered = computed(() => {
-  const query = search.value.trim().toLocaleLowerCase("zh-CN");
+  const query = props.search.trim().toLocaleLowerCase("zh-CN");
   return props.nodes.filter(
     (node) =>
       !query ||
@@ -63,36 +62,20 @@ onMounted(() => {
   });
 });
 // 搜索时只显示部分节点，此时禁用拖拽以免顺序含义不清
-watch(search, (value) => sortable?.option("disabled", Boolean(value.trim())));
+watch(
+  () => props.search,
+  (value) => sortable?.option("disabled", Boolean(value.trim())),
+);
 onBeforeUnmount(() => sortable?.destroy());
 </script>
 
 <template>
-  <section id="fleet-view" class="space-y-6">
-    <!-- 搜索 -->
-    <div class="flex justify-end">
-      <div class="relative w-full sm:w-64">
-        <AppIcon
-          name="search"
-          class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
-        />
-        <input
-          id="node-search"
-          v-model="search"
-          type="search"
-          placeholder="搜索节点..."
-          aria-label="搜索节点名称、角色、地区"
-          autocomplete="off"
-          class="h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 pl-9 text-sm shadow-sm outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-white/[0.045]"
-        />
-      </div>
-    </div>
-
+  <section id="fleet-view">
     <!-- 节点网格卡片 -->
     <div
       id="node-grid"
       ref="grid"
-      class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5"
+      class="grid grid-cols-1 gap-4 sm:gap-5 md:grid-cols-2 xl:grid-cols-3"
       aria-live="polite"
     >
       <NodeCard
@@ -108,7 +91,7 @@ onBeforeUnmount(() => sortable?.destroy());
     <!-- 搜索为空状态 -->
     <div
       v-if="!filtered.length"
-      class="flex flex-col items-center justify-center rounded-xl border border-dashed p-12 text-center"
+      class="glass flex flex-col items-center justify-center rounded-2xl p-12 text-center"
     >
       <strong class="text-sm font-medium">没有符合条件的节点</strong>
       <span class="mt-1 text-sm text-muted-foreground">请尝试调整搜索关键词</span>
@@ -119,9 +102,10 @@ onBeforeUnmount(() => sortable?.destroy());
 <style scoped>
 /* 原位置留下虚线占位，提示松手后卡片会落在这里 */
 #node-grid :deep(.node-card-ghost) {
-  border: 2px dashed hsl(var(--border));
-  background: hsl(var(--muted) / 0.4);
-  box-shadow: none;
+  background: transparent;
+  box-shadow: inset 0 0 0 2px hsl(var(--border));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 #node-grid :deep(.node-card-ghost > *) {
   visibility: hidden;

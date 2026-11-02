@@ -12,9 +12,15 @@ module.exports = {
   },
   theme: {
     extend: {
-      // 拉丁字符与数字使用 Geist（与 ui.shadcn.com 一致），中文回落到系统字体
+      // 拉丁字符与数字使用打包的 IBM Plex Sans Condensed，中文回落到系统字体
       fontFamily: {
-        sans: ['"Geist Variable"', ...defaultTheme.fontFamily.sans],
+        sans: [
+          '"IBM Plex Sans Condensed"',
+          '"PingFang SC"',
+          '"Microsoft YaHei UI"',
+          '"Microsoft YaHei"',
+          ...defaultTheme.fontFamily.sans,
+        ],
       },
       colors: {
         status: {
@@ -23,6 +29,9 @@ module.exports = {
           warn: "hsl(var(--status-warn))",
           bad: "hsl(var(--status-bad))",
         },
+        bar: "hsl(var(--bar))",
+        track: "hsl(var(--track))",
+        brand: "hsl(var(--brand))",
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

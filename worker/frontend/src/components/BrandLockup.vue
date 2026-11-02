@@ -6,9 +6,8 @@ defineProps<{ brand: string; tagline?: string }>();
 
 <template>
   <div class="brand-lockup">
-    <img class="lume-mark" :src="markUrl" width="28" height="28" alt="" aria-hidden="true" />
-    <!-- The mark alone identifies the panel; the name stays available to assistive technology. -->
-    <strong data-dashboard-brand class="sr-only">{{ brand }}</strong>
+    <img class="lume-mark" :src="markUrl" width="22" height="22" alt="" aria-hidden="true" />
+    <strong data-dashboard-brand class="brand-name">{{ brand }}</strong>
     <small v-if="tagline" class="brand-tagline">{{ tagline }}</small>
   </div>
 </template>
@@ -17,30 +16,22 @@ defineProps<{ brand: string; tagline?: string }>();
 .brand-lockup {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 .lume-mark {
   display: block;
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
+}
+.brand-name {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1;
 }
 .brand-tagline {
   color: hsl(var(--muted-foreground));
-  font-size: 9px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+  font-size: 12px;
 }
 </style>
