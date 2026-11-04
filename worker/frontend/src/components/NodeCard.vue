@@ -94,16 +94,22 @@ const region = computed(() => nodeRegion(props.node));
         >
           <span class="text-muted-foreground">实时速率</span>
           <span class="font-medium tabular-nums"
-            >↑ {{ formatRate(node.metrics.network_tx_rate_bps) }}</span
+            ><span class="text-faint">↑</span>
+            {{ formatRate(node.metrics.network_tx_rate_bps) }}</span
           >
           <span class="font-medium tabular-nums"
-            >↓ {{ formatRate(node.metrics.network_rx_rate_bps) }}</span
+            ><span class="text-faint">↓</span>
+            {{ formatRate(node.metrics.network_rx_rate_bps) }}</span
           >
         </div>
         <div class="node-network-row col-span-3 grid grid-cols-subgrid text-[12.5px] leading-tight">
           <span class="text-muted-foreground">{{ traffic.label }}</span>
-          <span class="font-medium tabular-nums">↑ {{ traffic.tx }}</span>
-          <span class="font-medium tabular-nums">↓ {{ traffic.rx }}</span>
+          <span class="font-medium tabular-nums"
+            ><span class="text-faint">↑</span> {{ traffic.tx }}</span
+          >
+          <span class="font-medium tabular-nums"
+            ><span class="text-faint">↓</span> {{ traffic.rx }}</span
+          >
         </div>
       </footer>
     </template>

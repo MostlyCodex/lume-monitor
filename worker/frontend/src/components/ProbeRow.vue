@@ -80,8 +80,7 @@ const cellClass: Record<RibbonCell["state"], string> = {
       ></i>
     </div>
     <span class="text-right text-[15px] font-medium tabular-nums leading-none" data-value="latency">
-      {{ latency ?? "—"
-      }}<small class="ml-0.5 text-[11px] font-normal text-muted-foreground/70">ms</small>
+      {{ latency ?? "—" }}<small class="ml-0.5 text-[11px] font-normal text-faint">ms</small>
     </span>
     <span
       class="text-right text-[13px] tabular-nums leading-none text-muted-foreground"

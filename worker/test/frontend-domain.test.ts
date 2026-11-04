@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { formatLoss } from "../frontend/src/domain/format";
 import { normalizeLayout } from "../frontend/src/domain/layout";
 import { displayNodes, nodeRegion } from "../frontend/src/domain/nodes";
 import { aggregateMetricEnergy } from "../frontend/src/domain/probes";
@@ -10,6 +11,13 @@ import type {
 } from "../frontend/src/types";
 
 describe("frontend data boundaries", () => {
+  it("formats loss without a trailing .0 once rounded to a whole number", () => {
+    expect(formatLoss(0)).toBe("0%");
+    expect(formatLoss(0.04)).toBe("0%");
+    expect(formatLoss(0.26)).toBe("0.3%");
+    expect(formatLoss(0.96)).toBe("1%");
+    expect(formatLoss(5)).toBe("5%");
+  });
   it("keeps only a valid node order and drops legacy display overrides", () => {
     const layout = normalizeLayout({
       brand: "  My Lume  ",

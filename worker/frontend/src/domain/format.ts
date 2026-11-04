@@ -3,8 +3,9 @@ export function clamp(value: unknown, minimum: number, maximum: number) {
 }
 
 export function formatLoss(value: unknown) {
-  const numeric = clamp(value, 0, 100);
-  return `${Number.isInteger(numeric) ? numeric.toFixed(0) : numeric.toFixed(1)}%`;
+  // 先按一位小数取整，取整后是整数就不带小数：0.04 显示 0% 而不是 0.0%
+  const rounded = Math.round(clamp(value, 0, 100) * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}%`;
 }
 
 export function formatUptime(seconds: unknown) {

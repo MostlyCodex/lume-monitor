@@ -448,7 +448,7 @@ const activeTooltipData = computed(() => {
         </g>
 
         <!-- Y 轴标签（带单位） -->
-        <g class="y-axis fill-muted-foreground text-xs tabular-nums">
+        <g class="y-axis fill-faint text-xs tabular-nums">
           <text
             v-for="(tick, idx) in yTicks"
             :key="idx"
@@ -461,7 +461,7 @@ const activeTooltipData = computed(() => {
         </g>
 
         <!-- X 轴时间标签 -->
-        <g class="x-axis fill-muted-foreground text-xs tabular-nums">
+        <g class="x-axis fill-faint text-xs tabular-nums">
           <text
             v-for="(tick, idx) in xTicks"
             :key="idx"
@@ -491,9 +491,7 @@ const activeTooltipData = computed(() => {
 
         <!-- 丢包时段：标题 + 每条线路一行，颜色圆点对应上方曲线 -->
         <g v-if="bandRows.length" class="loss-bands">
-          <text :x="padding.left" :y="bandsTop - 6" class="fill-muted-foreground text-[11px]">
-            丢包时段
-          </text>
+          <text :x="padding.left" :y="bandsTop - 6" class="fill-faint text-[11px]">丢包时段</text>
           <g v-for="row in bandRows" :key="row.id" :data-band="row.id">
             <circle :cx="padding.left - 10" :cy="row.y" r="3" :fill="row.color" />
             <line

@@ -75,7 +75,7 @@ onBeforeUnmount(() => sortable?.destroy());
     <div
       id="node-grid"
       ref="grid"
-      class="grid grid-cols-1 gap-4 sm:gap-5 md:grid-cols-2 xl:grid-cols-3"
+      class="grid grid-cols-1 items-start gap-4 sm:gap-5 md:grid-cols-2 xl:grid-cols-3"
       aria-live="polite"
     >
       <NodeCard

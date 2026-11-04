@@ -104,7 +104,7 @@ function toggleProbe(name: string) {
           :class="
             selected.has(chip.name)
               ? 'bg-[var(--glass-hover)] text-foreground shadow-[inset_0_0_0_1px_var(--glass-edge)]'
-              : 'text-muted-foreground/70'
+              : 'text-faint'
           "
           :data-detail-probe="chip.name"
           :aria-pressed="selected.has(chip.name)"

@@ -29,6 +29,8 @@ module.exports = {
           warn: "hsl(var(--status-warn))",
           bad: "hsl(var(--status-bad))",
         },
+        // 第三档文字灰：单位、箭头、时间、坐标轴等辅助信息
+        faint: "hsl(var(--faint-foreground))",
         bar: "hsl(var(--bar))",
         track: "hsl(var(--track))",
         brand: "hsl(var(--brand))",

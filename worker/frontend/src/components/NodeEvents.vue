@@ -21,7 +21,7 @@ function dotClass(value: string) {
   <Card id="detail-events">
     <CardHeader class="grid-cols-[1fr_auto] items-center">
       <CardTitle>运行时事件</CardTitle>
-      <span class="text-[13px] text-muted-foreground">{{ recentEvents.length }} 条</span>
+      <span class="text-[13px] text-faint">{{ recentEvents.length }} 条</span>
     </CardHeader>
 
     <CardContent>
@@ -39,7 +39,7 @@ function dotClass(value: string) {
           <div class="min-w-0 flex-1">
             <div class="flex items-baseline justify-between gap-2">
               <strong class="truncate text-sm font-medium">{{ event.title || "状态事件" }}</strong>
-              <time class="shrink-0 text-xs tabular-nums text-muted-foreground">
+              <time class="shrink-0 text-xs tabular-nums text-faint">
                 {{ formatTime(event.timestamp, hours > 24) }}
               </time>
             </div>

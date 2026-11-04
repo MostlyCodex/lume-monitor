@@ -26,7 +26,7 @@ const emit = defineEmits<{ refresh: []; theme: []; logout: [] }>();
         :tagline="demo ? '公开演示，虚构数据' : undefined"
       />
 
-      <span id="last-refresh" class="mr-2 hidden text-[13px] text-muted-foreground lg:inline-block">
+      <span id="last-refresh" class="mr-2 hidden text-[13px] text-faint lg:inline-block">
         {{ refreshedAt ? `${formatTime(refreshedAt)} 更新` : "尚未刷新" }}
       </span>
 

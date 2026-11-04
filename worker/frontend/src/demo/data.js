@@ -23,8 +23,77 @@ function probeDefinitions(node) {
   return probes;
 }
 
-function currentProbe(node, probe, index) {
-  const elevated = node.id === "hybrid-sg" && probe.name === "carrier-cm";
+// 确定性伪随机：同一节点、线路、时刻总是得到同一个值，截图和测试可复现
+function noise(...parts) {
+  let hash = 2166136261;
+  for (const character of parts.join("|")) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+  hash ^= hash >>> 13;
+  hash = Math.imul(hash, 0x5bd1e995);
+  hash ^= hash >>> 15;
+  return (hash >>> 0) / 4294967296;
+}
+
+// 平滑噪声：相邻时段之间缓慢起伏，避免锯齿和规则正弦
+function drift(seed, timestamp, period) {
+  const slot = Math.floor(timestamp / period);
+  const fraction = timestamp / period - slot;
+  const eased = fraction * fraction * (3 - 2 * fraction);
+  const from = noise(seed, slot);
+  return from + (noise(seed, slot + 1) - from) * eased;
+}
+
+// 国内晚高峰（北京时间 21:30 前后）
+function eveningPeak(timestamp) {
+  const hour = (((timestamp / 3600 + 8) % 24) + 24) % 24;
+  const distance = hour - 21.5;
+  return Math.exp(-(distance * distance) / (2 * 1.6 * 1.6));
+}
+
+const PEAK_AMPLITUDE = { "carrier-ct": 0.04, "carrier-cu": 0.09, "carrier-cm": 0.12 };
+
+// 少数几次异常，其余时间平稳：新加坡移动正在拥塞，洛杉矶联通 9 小时前短暂丢包，
+// 东京移动 15 小时前绕路变慢，Edge-Bridge 6 小时前 Agent 重启断报 20 分钟。
+function incident(node, probe, timestamp) {
+  const ago = previewNow - timestamp;
+  if (node.id === "hybrid-sg" && probe.name === "carrier-cm" && ago < 2.5 * 3600)
+    return { slow: 1.38 + noise(node.id, probe.name, "slow", timestamp) * 0.08, loss: 3 + noise(node.id, probe.name, "loss", timestamp) * 5 };
+  if (node.id === "transit-la" && probe.name === "carrier-cu" && ago >= 8.4 * 3600 && ago < 9 * 3600)
+    return { slow: 1.22, loss: 5 + noise(node.id, probe.name, "loss", timestamp) * 6 };
+  if (node.id === "transit-tokyo" && probe.name === "carrier-cm" && ago >= 14 * 3600 && ago < 15 * 3600)
+    return { slow: 1.55, loss: 0 };
+  return { slow: 1, loss: 0 };
+}
+
+function agentOffline(node, timestamp) {
+  const ago = previewNow - timestamp;
+  return node.id === "transit-eb" && ago >= 6 * 3600 && ago < 6 * 3600 + 20 * 60;
+}
+
+function latencyAt(node, probe, timestamp) {
+  const seed = `${node.id}/${probe.name}`;
+  const amplitude = (PEAK_AMPLITUDE[probe.name] ?? 0.01) * (node.country === "US" ? 1 : 0.6);
+  const jitter = noise(seed, "spike", Math.floor(timestamp / 300)) < 0.006 ? 0.08 : 0;
+  const ratio =
+    1 +
+    amplitude * eveningPeak(timestamp) +
+    0.03 * (drift(seed, timestamp, 1800) - 0.5) +
+    0.015 * (noise(seed, timestamp) - 0.5) +
+    jitter;
+  return probe.base * ratio * incident(node, probe, timestamp).slow;
+}
+
+// 偶发单包丢失只出现在美国节点的联通、移动线路上，24 小时丢包率不到 0.1%
+function lossAt(node, probe, timestamp, rounds) {
+  const planned = incident(node, probe, timestamp).loss;
+  if (planned) return planned;
+  const sporadic = node.country === "US" && (probe.name === "carrier-cu" || probe.name === "carrier-cm");
+  return sporadic && noise(node.id, probe.name, "drop", timestamp) < Math.min(0.5, 0.004 * rounds)
+    ? 100 / (rounds * 5)
+    : 0;
+}
+
+function currentProbe(node, probe) {
+  const congested = incident(node, probe, previewNow).loss > 0;
   return {
     name: probe.name,
     label: probe.label,
@@ -33,9 +102,9 @@ function currentProbe(node, probe, index) {
     order: probe.order,
     success: true,
     complete: true,
-    duration_ms: Math.round((elevated ? probe.base * 1.42 : probe.base + Math.sin(index + 0.8) * 3) * 10) / 10,
+    duration_ms: Math.round(latencyAt(node, probe, previewNow) * 10) / 10,
     samples: 5,
-    packet_loss_percent: elevated ? 5 : 0,
+    packet_loss_percent: congested ? 20 : 0,
   };
 }
 
@@ -73,7 +142,7 @@ function latestData() {
       network_rx_rate_bps: 180000 + nodeIndex * 46000, network_tx_rate_bps: 92000 + nodeIndex * 22000,
     },
     services: [{ name: definition.service[0], label: definition.service[1], state: "active" }],
-    probes: probeDefinitions(definition).map((probe, index) => currentProbe(definition, probe, index)),
+    probes: probeDefinitions(definition).map((probe) => currentProbe(definition, probe)),
   }));
   return {
     schema_version: 2,
@@ -94,25 +163,26 @@ function historyData(hours, selectedNode) {
   const selected = selectedNode ? nodeDefinitions.filter((node) => node.id === selectedNode) : nodeDefinitions;
   const metrics = [];
   const probes = [];
+  const rounds = Math.max(1, Math.round(bucket / 60));
   for (const [nodeIndex, node] of selected.entries()) {
     for (let step = 0; step < steps; step += 1) {
       const timestamp = now - (steps - 1 - step) * bucket;
-      const cycle = step / 9 + nodeIndex * 0.7;
+      if (agentOffline(node, timestamp)) continue;
+      // 下载随晚高峰起伏，偶有大文件下载的突增
+      const busy = 0.45 + 0.7 * eveningPeak(timestamp) + 0.4 * drift(node.id, timestamp, 900);
+      const burst = noise(node.id, "burst", Math.floor(timestamp / 600)) < 0.03 ? 2.2 : 1;
       metrics.push({
         node_id: node.id, timestamp,
-        network_rx_rate_bps: 150000 + Math.abs(Math.sin(cycle * 1.7)) * 620000,
-        network_tx_rate_bps: 70000 + Math.abs(Math.cos(cycle * 1.4)) * 280000,
+        network_rx_rate_bps: (160000 + nodeIndex * 40000) * busy * burst,
+        network_tx_rate_bps: (80000 + nodeIndex * 18000) * (0.6 + 0.5 * drift(`${node.id}/tx`, timestamp, 1200)) * busy,
       });
       for (const probe of probeDefinitions(node)) {
-        const burst = step % 83 >= 79 ? probe.base * 0.38 : 0;
-        const loss = step % 97 === 93 ? 8 : step % 47 === 31 ? 2 : 0;
-        const missing = step % 113 === 42;
         probes.push({
           node_id: node.id, probe_name: probe.name, timestamp,
-          latency_ms: missing ? null : Math.max(1, probe.base + Math.sin(cycle + probe.order) * Math.max(1.5, probe.base * 0.04) + burst),
-          packet_loss_percent: missing ? 100 : loss,
-          success_percent: missing ? 0 : 100,
-          rounds: 1,
+          latency_ms: latencyAt(node, probe, timestamp),
+          packet_loss_percent: lossAt(node, probe, timestamp, rounds),
+          success_percent: 100,
+          rounds,
         });
       }
     }
@@ -121,7 +191,7 @@ function historyData(hours, selectedNode) {
     schema_version: 2, server_time: now, hours, selected_node: selectedNode || null,
     metrics, probes,
     annotations: selectedNode ? [
-      { node_id: selectedNode, timestamp: now - Math.min(hours * 1800, 5 * 3600), severity: "INFO", title: "Agent 启动", detail: "监控进程完成一次正常重启" },
+      { node_id: selectedNode, timestamp: now - Math.min(hours * 1800, 6 * 3600), severity: "INFO", title: "Agent 启动", detail: "监控进程完成一次正常重启" },
       { node_id: selectedNode, timestamp: now - Math.min(hours * 900, 2 * 3600), severity: "P2", title: "线路出现短时波动", detail: "连续采样后已恢复到正常范围" },
     ] : [],
   };
